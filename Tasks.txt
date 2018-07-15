@@ -1,0 +1,16 @@
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=1
+instance="tm1srv02" process="Bedrock.Server.Wait" pWaitSec=2
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=7
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=3
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=5
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=3
+instance="tm1srv02" process="Bedrock.Server.Wait" pWaitSec=2
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=1
+instance="tm1srv02" process="Bedrock.Server.Wait" pWaitSec=5
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=2
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=1
+instance="tm1srv02" process="Bedrock.Server.Wait" pWaitSec=5
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=2
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=1
+instance="tm1srv02" process="Bedrock.Server.Wait" pWaitSec=5
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=2
