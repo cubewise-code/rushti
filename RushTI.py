@@ -87,7 +87,7 @@ def execute_line(line, tm1_services):
             parameters=parameters,
             instance_name=instance_name))
         tm1.processes.execute(process_name=process_name, **parameters)
-        logging.info("Execution Successfull: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
+        logging.info("Execution Successful: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
             process_name=process_name,
             parameters=parameters,
             instance_name=instance_name))
