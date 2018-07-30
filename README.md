@@ -1,6 +1,8 @@
+<img src="https://s3-ap-southeast-2.amazonaws.com/downloads.cubewise.com/web_assets/tm1py-asset/rushti-noBackground.png" />
+
 # RushTI
 
-Smooth parallelization of TI Processes with TM1py
+Smooth parallelization of TI Processes with [TM1py](https://code.cubewise.com/tm1py-overview)
 
 ## Installing
 
@@ -31,6 +33,14 @@ No tests yet
 
 * [requests](http://docs.python-requests.org/en/master/) - Python HTTP Requests for Humans
 * [TM1py](https://github.com/cubewise-code/TM1py) - A python wrapper for the TM1 REST API
+
+## More about TM1py
+There are lots of things you can do with TM1py:
+* [Upload data from Webservices](https://code.cubewise.com/tm1py-help-content/upload-exchange-rate-from-a-webservice)
+* [Data Science with TM1 and Planning Analytics](https://code.cubewise.com/blog/data-science-with-tm1-planning-analytics)
+* [Cleaning your instance](https://code.cubewise.com/tm1py-help-content/cleanup-your-tm1-application)
+
+If you are interested you should check the [TM1py-samples](https://github.com/cubewise-code/TM1py-samples).
 
 
 ## License
