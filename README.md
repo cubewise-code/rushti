@@ -24,6 +24,14 @@ Clone or download the RushTI Repository
 python RushTI.py Tasks.txt 16
 ```
 
+Example of Tasks.txt:
+```
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=1
+instance="tm1srv02" process="Bedrock.Server.Wait" pWaitSec=2
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=7
+instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=3
+```
+
 ## Running the tests
 
 No tests yet
