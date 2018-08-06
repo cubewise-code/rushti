@@ -24,6 +24,8 @@ def setup_tm1_services():
     
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
     """
+    if not os.path.isfile(CONFIG):
+        raise ValueError("config.ini does not exist.")
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
@@ -72,6 +74,8 @@ def execute_line(line, tm1_services):
     :param tm1_services: 
     :return: 
     """
+    if len(line.strip()) == 0:
+        return
     instance_name, process_name, parameters = extract_info_from_line(line)
     if instance_name not in tm1_services:
         msg = "Process {process_name} not executed on {instance_name}. {instance_name} not accessible.".format(
