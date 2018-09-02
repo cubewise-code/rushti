@@ -1,13 +1,13 @@
-import sys
-import os
-import logging
 import asyncio
 import configparser
+import logging
+import os
+import shlex
+import sys
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 
 from TM1py import TM1Service
-
 
 APPNAME = "RushTI"
 LOGFILE = "{current_directory}/RushTI.log".format(current_directory=sys.path[0])
@@ -36,7 +36,7 @@ def setup_tm1_services():
         if tm1_server_name != config.default_section:
             try:
                 params["password"] = decrypt_password(params["password"])
-                tm1_services[tm1_server_name] = TM1Service(**params)
+                tm1_services[tm1_server_name] = TM1Service(**params, session_context=APPNAME)
             # Instance not running, Firewall or wrong connection parameters
             except Exception as e:
                 logging.error("TM1 instance {} not accessible. Error: {}".format(tm1_server_name, str(e)))
@@ -59,9 +59,14 @@ def extract_info_from_line(line):
     :return: instance_name, process_name, parameters
     """
     parameters = {}
-    for pair in line.split(" "):
+    for pair in shlex.split(line):
         param, value = pair.split("=")
-        parameters[param] = value.strip('"').strip()
+        # if instance or process needs to be case insensitive
+        if param.lower() == 'process' or param.lower() == 'instance':
+            parameters[param.lower()] = value.strip('"').strip()
+        # parameters (e.g. pWaitSec) are case sensitive in TM1 REST API !
+        else:
+            parameters[param] = value.strip('"').strip()
     instance_name = parameters.pop("instance")
     process_name = parameters.pop("process")
     return instance_name, process_name, parameters
@@ -86,20 +91,23 @@ def execute_line(line, tm1_services):
     tm1 = tm1_services[instance_name]
     # Execute it
     try:
-        logging.info("Executing process: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
+        msg = "Executing process: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
             process_name=process_name,
             parameters=parameters,
-            instance_name=instance_name))
+            instance_name=instance_name)
+        logging.info(msg)
         tm1.processes.execute(process_name=process_name, **parameters)
-        logging.info("Execution Successful: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
+        msg = "Execution Successful: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
             process_name=process_name,
             parameters=parameters,
-            instance_name=instance_name))
+            instance_name=instance_name)
+        logging.info(msg)
     except Exception as e:
-        logging.error("Execution Failed. Process: {process}, Parameters: {parameters}, Error: {error}".format(
+        msg = "Execution Failed. Process: {process}, Parameters: {parameters}, Error: {error}".format(
             process=process_name,
             parameters=parameters,
-            error=str(e)))
+            error=str(e))
+        logging.error(msg)
 
 
 async def work_through_tasks(path, max_workers, tm1_services):
