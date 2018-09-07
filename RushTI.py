@@ -4,10 +4,16 @@ import logging
 import os
 import shlex
 import sys
+import datetime
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 
 from TM1py import TM1Service
+
+#Set Current directory to the script path.
+abspath = os.path.abspath(__file__)
+dname = os.path.dirname(abspath)
+os.chdir(dname)
 
 APPNAME = "RushTI"
 LOGFILE = "{current_directory}/RushTI.log".format(current_directory=sys.path[0])
@@ -18,6 +24,7 @@ logging.basicConfig(
     format='%(asctime)s - RushTI - %(levelname)s - %(message)s',
     level=logging.INFO)
 
+start = datetime.datetime.now()
 
 def setup_tm1_services():
     """ Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
@@ -179,4 +186,8 @@ if __name__ == "__main__":
     finally:
         logout(tm1_services)
         loop.close()
-    logging.info("{app_name} ends".format(app_name=APPNAME))
+		
+end = datetime.datetime.now()
+duration = (end-start)
+	
+logging.info(("{app_name} ends with the duration "+str(end-start)).format(app_name=APPNAME))
