@@ -101,17 +101,20 @@ def execute_line(line, tm1_services):
         return
     tm1 = tm1_services[instance_name]
     # Execute it
+    msg = "Executing process: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
+        process_name=process_name,
+        parameters=parameters,
+        instance_name=instance_name)
+    logging.info(msg)
     try:
-        msg = "Executing process: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
+        response = tm1.processes.execute(process_name=process_name, **parameters)
+        msg_raw = "Execution Successful: {process_name} with Parameters: {parameters} on instance: {instance_name}. " \
+                  "Elapsed time: {elapsed_time}"
+        msg = msg_raw.format(
             process_name=process_name,
             parameters=parameters,
-            instance_name=instance_name)
-        logging.info(msg)
-        tm1.processes.execute(process_name=process_name, **parameters)
-        msg = "Execution Successful: {process_name} with Parameters: {parameters} on instance: {instance_name}".format(
-            process_name=process_name,
-            parameters=parameters,
-            instance_name=instance_name)
+            instance_name=instance_name,
+            elapsed_time=response.elapsed)
         logging.info(msg)
     except Exception as e:
         msg = "Execution Failed. Process: {process}, Parameters: {parameters}, Error: {error}".format(
