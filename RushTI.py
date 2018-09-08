@@ -1,30 +1,34 @@
 import asyncio
 import configparser
+import datetime
 import logging
 import os
 import shlex
 import sys
-import datetime
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 
 from TM1py import TM1Service
 
-#Set Current directory to the script path.
-abspath = os.path.abspath(__file__)
-dname = os.path.dirname(abspath)
-os.chdir(dname)
+
+def set_current_directory():
+    abspath = os.path.abspath(__file__)
+    directory = os.path.dirname(abspath)
+    # set current directory
+    os.chdir(directory)
+    return directory
+
 
 APPNAME = "RushTI"
-LOGFILE = "{current_directory}/RushTI.log".format(current_directory=sys.path[0])
-CONFIG = "{current_directory}/config.ini".format(current_directory=sys.path[0])
+CURRENT_DIRECTORY = set_current_directory()
+LOGFILE = os.path.join(CURRENT_DIRECTORY, APPNAME + ".log")
+CONFIG = os.path.join(CURRENT_DIRECTORY, "config.ini")
 
 logging.basicConfig(
     filename=LOGFILE,
-    format='%(asctime)s - RushTI - %(levelname)s - %(message)s',
+    format='%(asctime)s - ' + APPNAME + ' - %(levelname)s - %(message)s',
     level=logging.INFO)
 
-start = datetime.datetime.now()
 
 def setup_tm1_services():
     """ Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
@@ -32,7 +36,7 @@ def setup_tm1_services():
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
     """
     if not os.path.isfile(CONFIG):
-        raise ValueError("config.ini does not exist.")
+        raise ValueError("{config} does not exist.".format(config=CONFIG))
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
@@ -68,7 +72,7 @@ def extract_info_from_line(line):
     parameters = {}
     for pair in shlex.split(line):
         param, value = pair.split("=")
-        # if instance or process needs to be case insensitive
+        # if instance or process, needs to be case insensitive
         if param.lower() == 'process' or param.lower() == 'instance':
             parameters[param.lower()] = value.strip('"').strip()
         # parameters (e.g. pWaitSec) are case sensitive in TM1 REST API !
@@ -154,7 +158,7 @@ def translate_cmd_arguments(*args):
     """
     # too few arguments
     if len(args) < 3:
-        msg = "RushTI needs to executed with two arguments."
+        msg = "{app_name} needs to be executed with two arguments.".format(app_name=APPNAME)
         logging.error(msg)
         raise ValueError(msg)
     # txt file doesnt exist
@@ -175,6 +179,8 @@ if __name__ == "__main__":
     logging.info("{app_name} starts. Parameters: {parameters}.".format(
         app_name=APPNAME,
         parameters=sys.argv))
+    # start timer
+    start = datetime.datetime.now()
     # read commandline arguments
     path_to_file, max_workers = translate_cmd_arguments(*sys.argv)
     # setup connections
@@ -186,8 +192,7 @@ if __name__ == "__main__":
     finally:
         logout(tm1_services)
         loop.close()
-		
-end = datetime.datetime.now()
-duration = (end-start)
-	
-logging.info(("{app_name} ends with the duration "+str(end-start)).format(app_name=APPNAME))
+    # timing
+    end = datetime.datetime.now()
+    duration = end - start
+    logging.info(("{app_name} ends. Duration: " + str(duration)).format(app_name=APPNAME))
