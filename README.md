@@ -1,4 +1,4 @@
-<img src="https://s3-ap-southeast-2.amazonaws.com/downloads.cubewise.com/web_assets/tm1py-asset/rushti-noBackground.png" />
+<img src="https://s3-ap-southeast-2.amazonaws.com/downloads.cubewise.com/web_assets/CubewiseLogos/Final+logos_Rushti.png" />
 
 # RushTI
 
