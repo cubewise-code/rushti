@@ -5,6 +5,7 @@ import logging
 import os
 import shlex
 import sys
+import itertools
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 
@@ -135,12 +136,18 @@ async def work_through_tasks(path, max_workers, tm1_services):
     with open(path) as file:
         lines = file.readlines()
     loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor(max_workers=int(max_workers)) as executor:
-        futures = [loop.run_in_executor(executor, execute_line, line, tm1_services)
-                   for line
-                   in lines]
-        for future in futures:
-            await future
+    
+    """ Split lines into the blocks separated by 'wait' line """
+    line_sets = [list(y) for x, y in itertools.groupby(lines, lambda z: z.lower().strip() == 'wait') if not x]
+
+    for line_set in line_sets:
+        with ThreadPoolExecutor(max_workers=int(max_workers)) as executor:
+            futures = [loop.run_in_executor(executor, execute_line, line, tm1_services)
+                       for line
+                       in line_set]
+            for future in futures:
+                await future
+
 
 
 def logout(tm1_services):
