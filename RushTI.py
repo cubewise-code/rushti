@@ -48,7 +48,7 @@ logging.basicConfig(
     level=logging.INFO)
 
 
-def setup_tm1_services():
+def setup_tm1_services(max_workers):
     """ Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
     
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
@@ -64,8 +64,10 @@ def setup_tm1_services():
         # handle default values from configparser
         if tm1_server_name != config.default_section:
             try:
-                params["password"] = decrypt_password(params["password"])
-                tm1_services[tm1_server_name] = TM1Service(**params, session_context=APP_NAME)
+                tm1_services[tm1_server_name] = TM1Service(
+                    **params,
+                    session_context=APP_NAME,
+                    connection_pool_size=max_workers)
             # Instance not running, Firewall or wrong connection parameters
             except Exception as e:
                 logging.error("TM1 instance {} not accessible. Error: {}".format(tm1_server_name, str(e)))
@@ -251,7 +253,7 @@ if __name__ == "__main__":
     # read commandline arguments
     path_to_file, maximum_workers = translate_cmd_arguments(*sys.argv)
     # setup connections
-    tm1_service_by_instance = setup_tm1_services()
+    tm1_service_by_instance = setup_tm1_services(maximum_workers)
     # execution
     event_loop = asyncio.get_event_loop()
     try:
