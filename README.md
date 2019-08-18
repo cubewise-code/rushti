@@ -18,9 +18,10 @@ Clone or download the RushTI Repository
 
 * Adjust config.ini to match your TM1 environment
 * Create the Tasks.txt file
-* Execute the RushTI.py script : 
+* Execute the RushTI.py script: 
 
-  Execution for classical type of tasks file with two arguments: path to tasks.txt, Number of maximum workers to run in parallel
+  Execution for classical type of tasks file with two arguments: 
+  path to tasks.txt, Number of maximum workers to run in parallel
   ```
   python RushTI.py Tasks_type_classic.txt 16
   ```
@@ -43,7 +44,8 @@ Clone or download the RushTI Repository
 
   Or
 
-  Execution for optimized type of tasks file with three arguments: path to tasks.txt, Number of maximum workers to run in parallel, 'opt' to specify the optimized execution mode
+  Execution for optimized type of tasks file with three arguments: 
+  path to tasks.txt, Number of maximum workers to run in parallel, 'opt' to specify the optimized execution mode
   ```
   python RushTI.py Tasks_type_optimized.txt 16 opt
   ```
