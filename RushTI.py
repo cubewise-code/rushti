@@ -45,7 +45,7 @@ logging.basicConfig(
 )
 
 
-def setup_tm1_services(maximum_workers: int) -> dict:
+def setup_tm1_services(max_workers: int) -> dict:
     """ Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
     
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
@@ -64,7 +64,7 @@ def setup_tm1_services(maximum_workers: int) -> dict:
                 tm1_services[tm1_server_name] = TM1Service(
                     **params,
                     session_context=APP_NAME,
-                    connection_pool_size=maximum_workers)
+                    connection_pool_size=max_workers)
             # Instance not running, Firewall or wrong connection parameters
             except Exception as e:
                 logging.error(
@@ -106,7 +106,8 @@ def extract_task_from_line(line: str) -> Task:
 def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
     """ Translate one line from txt file type 'opt' into arguments for execution
 
-    :param: line: Arguments for execution. E.g. id="5" predecessors="2,3" instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=5
+    :param: line: Arguments for execution. E.g. id="5" predecessors="2,3" instance="tm1srv01"
+    process="Bedrock.Server.Wait" pWaitSec=5
     :return: attributes
     """
     line_arguments = dict()
@@ -134,14 +135,14 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
         parameters=line_arguments)
 
 
-def extract_lines_from_file_type_opt(maximum_workers, tasks_file_path: str) -> list:
+def extract_lines_from_file_type_opt(max_workers: int, file_path: str) -> list:
     lines = list()
-    tasks = extract_tasks_from_file_type_opt(tasks_file_path)
+    tasks = extract_tasks_from_file_type_opt(file_path)
 
     # mapping of level (int) against list of tasks
     tasks_by_level = deduce_levels_of_tasks(tasks)
-    # ToDo: Find out why (not) necessary
-    # tasks_by_level = rearrange_tasks_in_levels(maximum_workers, tasks)
+    # balance levels
+    tasks_by_level = balance_tasks_among_levels(max_workers, tasks, tasks_by_level)
     for level in tasks_by_level.values():
         for task_id in level:
             task = tasks[task_id]
@@ -151,15 +152,15 @@ def extract_lines_from_file_type_opt(maximum_workers, tasks_file_path: str) -> l
     return lines
 
 
-def extract_tasks_from_file_type_opt(tasks_file_path: str) -> dict:
+def extract_tasks_from_file_type_opt(file_path: str) -> dict:
     """
 
-    :param tasks_file_path:
+    :param file_path:
     :return: tasks
     """
     # Mapping of id against task
     tasks = dict()
-    with open(tasks_file_path) as input_file:
+    with open(file_path) as input_file:
         lines = input_file.readlines()
         # Build tasks dictionary
         for line in lines:
@@ -216,49 +217,52 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
     return levels
 
 
-def rearrange_tasks_in_levels(maximum_workers, tasks: dict):
+def balance_tasks_among_levels(max_workers: int, tasks: dict, levels: dict):
     """Rearrange tasks across levels to optimize execution regarding the maximum workers.
     The constraint between tasks of same level (no relationship) must be conserved
 
 
-    :param maximum_workers:
     :param tasks:
+    :param max_workers:
+    :param levels:
     :return:
     """
-    levels = deduce_levels_of_tasks(tasks)
+
     levels_count = len(levels)
-    for _ in tasks:
+    for _ in levels:
         for level_key in range(levels_count - 1):
             level = levels[level_key]
             next_level = levels[level_key + 1]
-            if len(next_level) < int(maximum_workers):
-                for task in level:
-                    successors = tasks[task].successors
+            if len(level) >= max_workers >= len(next_level):
+                for task_id in level:
+                    successors = tasks[task_id].successors
+                    # if next level contains successor don't move this task
                     next_level_contains_successor = False
                     for successor in successors:
-                        if next_level.count(successor) != 0:
+                        if successor in next_level:
                             next_level_contains_successor = True
+
                     if not next_level_contains_successor:
                         # move task from level to next_level
-                        levels[level_key].remove(task)
-                        levels[level_key + 1].append(task)
+                        levels[level_key].remove(task_id)
+                        levels[level_key + 1].append(task_id)
     return levels
 
 
-def get_lines(tasks_file_path: str, maximum_workers: int, tasks_file_type: ExecutionMode) -> list:
+def get_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> list:
     """ Extract tasks from file
     if necessary transform a file that respects type 'opt' specification into a scheduled and optimized list of tasks
 
-    :param tasks_file_path:
-    :param maximum_workers:
+    :param file_path:
+    :param max_workers:
     :param tasks_file_type:
     :return:
     """
     if tasks_file_type == ExecutionMode.NORM:
-        with open(tasks_file_path) as file:
+        with open(file_path) as file:
             return file.readlines()
     else:
-        return extract_lines_from_file_type_opt(maximum_workers, tasks_file_path)
+        return extract_lines_from_file_type_opt(max_workers, file_path)
 
 
 def execute_line(line, tm1_services):
@@ -313,16 +317,16 @@ def execute_line(line, tm1_services):
         return False
 
 
-async def work_through_tasks(tasks_file_path, maximum_workers, execution_mode, tm1_services):
+async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMode, tm1_services: dict):
     """ loop through file. Add all lines to the execution queue.
     
-    :param tasks_file_path: 
-    :param maximum_workers:
-    :param execution_mode:
+    :param file_path:
+    :param max_workers:
+    :param mode:
     :param tm1_services: 
     :return: 
     """
-    lines = get_lines(tasks_file_path, maximum_workers, execution_mode)
+    lines = get_lines(file_path, max_workers, mode)
     loop = asyncio.get_event_loop()
     # split lines into the blocks separated by 'wait' line
     line_sets = [
@@ -332,7 +336,7 @@ async def work_through_tasks(tasks_file_path, maximum_workers, execution_mode, t
     # True or False for every execution
     outcomes = []
     for line_set in line_sets:
-        with ThreadPoolExecutor(int(maximum_workers)) as executor:
+        with ThreadPoolExecutor(int(max_workers)) as executor:
             futures = [
                 loop.run_in_executor(executor, execute_line, line, tm1_services)
                 for line
