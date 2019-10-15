@@ -36,7 +36,7 @@ MSG_PROCESS_FAIL_WITH_ERROR_FILE = (
 MSG_PROCESS_FAIL_UNEXPECTED = (
     "Execution failed. Process: {process} with parameters: {parameters}. "
     "Elapsed time: {time}. Error: {error}.")
-MSG_RUSHTI_ENDS = "{app_name} ends. {fails} fails out of {executions} executions. Elapsed time: {time}"
+MSG_RUSHTI_ENDS = "{app_name} ends. {fails} fails out of {executions} executions. Elapsed time: {time}. Ran with parameters: {parameters}"
 
 logging.basicConfig(
     filename=LOGFILE,
@@ -399,7 +399,7 @@ def exit_rushti(executions, successes, elapsed_time):
     """
     fails = executions - successes
     message = MSG_RUSHTI_ENDS.format(
-        app_name=APP_NAME, fails=fails, executions=executions, time=str(elapsed_time)
+        app_name=APP_NAME, fails=fails, executions=executions, time=str(elapsed_time), parameters=sys.argv
     )
     if fails > 0:
         logging.error(message)
@@ -426,7 +426,7 @@ if __name__ == "__main__":
                 tasks_file_path,
                 maximum_workers,
                 execution_mode,
-                tm1_service_by_instance,
+                tm1_service_by_instance
             )
         )
     finally:
