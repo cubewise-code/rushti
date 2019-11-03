@@ -20,7 +20,7 @@ class Task:
         return 'instance="{instance}" process="{process}" {parameters}\n'.format(
             instance=self.instance_name,
             process=self.process_name,
-            parameters=' '.join('{}={}'.format(parameter, value) for parameter, value in self.parameters.items()))
+            parameters=' '.join('{}="{}"'.format(parameter, value) for parameter, value in self.parameters.items()))
 
 
 class OptimizedTask(Task):
