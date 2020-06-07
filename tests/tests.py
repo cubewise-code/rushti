@@ -1,6 +1,6 @@
 import unittest
 
-from RushTI import deduce_levels_of_tasks, extract_tasks_from_file_type_opt
+from rushti import deduce_levels_of_tasks, extract_tasks_from_file_type_opt
 
 
 class TestDataMethods(unittest.TestCase):
