@@ -8,6 +8,7 @@ import shlex
 import sys
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
+from logging.config import fileConfig
 
 from TM1py import TM1Service
 
@@ -19,30 +20,29 @@ LOGFILE = os.path.join(CURRENT_DIRECTORY, APP_NAME + ".log")
 CONFIG = os.path.join(CURRENT_DIRECTORY, "config.ini")
 
 MSG_RUSHTI_STARTS = "{app_name} starts. Parameters: {parameters}."
-MSG_RUSHTI_TOO_FEW_ARGUMENTS = "{app_name} needs to be executed with two arguments."
+MSG_RUSHTI_WRONG_NUMBER_OF_ARGUMENTS = "{app_name} needs to be executed with two to four arguments."
 MSG_RUSHTI_ARGUMENT1_INVALID = "Argument 1 (path to tasks file) invalid. File needs to exist."
-MSG_RUSHTI_ARGUMENT2_INVALID = "Argument 2 (maximum workers) invalid. Argument needs to be an integer number."
-MSG_RUSHTI_ARGUMENT3_INVALID = "Argument 3 (tasks file type) invalid. Argument can only take the value 'opt'."
-MSG_PROCESS_EXECUTE = "Executing process: {process_name} with parameters: {parameters} on instance: {instance_name}"
+MSG_RUSHTI_ARGUMENT2_INVALID = "Argument 2 (maximum workers) invalid. Argument must be an integer number."
+MSG_RUSHTI_ARGUMENT3_INVALID = "Argument 3 (tasks file type) invalid. Argument can be 'opt' or 'norm'."
+MSG_RUSHTI_ARGUMENT4_INVALID = "Argument 4 (retries) invalid. Argument must be an integer number."
+MSG_PROCESS_EXECUTE = "Executing process: '{process_name}' with parameters: {parameters} on instance: '{instance_name}'"
 MSG_PROCESS_SUCCESS = (
-    "Execution successful: Process {process} with parameters: {parameters} on instance: "
+    "Execution successful: Process '{process}' with parameters: {parameters} with {retries} retries on instance: "
     "{instance}. Elapsed time: {time}")
 MSG_PROCESS_FAIL_INSTANCE_NOT_AVAILABLE = (
-    "Process {process_name} not executed on {instance_name}. "
-    "{instance_name} not accessible.")
+    "Process '{process_name}' not executed on '{instance_name}'. "
+    "'{instance_name}' not accessible.")
 MSG_PROCESS_FAIL_WITH_ERROR_FILE = (
-    "Execution failed. Process: {process} with parameters: {parameters} and status: "
-    "{status}, on instance: {instance}. Elapsed time : {time}. Error file: {error_file}")
+    "Execution failed. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
+    "{status}, on instance: '{instance}'. Elapsed time : {time}. Error file: {error_file}")
 MSG_PROCESS_FAIL_UNEXPECTED = (
-    "Execution failed. Process: {process} with parameters: {parameters}. "
+    "Execution failed. Process: '{process}' with parameters: {parameters}. "
     "Elapsed time: {time}. Error: {error}.")
-MSG_RUSHTI_ENDS = "{app_name} ends. {fails} fails out of {executions} executions. Elapsed time: {time}. Ran with parameters: {parameters}"
+MSG_RUSHTI_ENDS = ("{app_name} ends. {fails} fails out of {executions} executions. "
+                   "Elapsed time: {time}. Ran with parameters: {parameters}")
 
-logging.basicConfig(
-    filename=LOGFILE,
-    format="%(asctime)s - " + APP_NAME + " - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+fileConfig('logging_config.ini')
+logger = logging.getLogger()
 
 
 def setup_tm1_services(max_workers: int) -> dict:
@@ -67,7 +67,7 @@ def setup_tm1_services(max_workers: int) -> dict:
                     connection_pool_size=max_workers)
             # Instance not running, Firewall or wrong connection parameters
             except Exception as e:
-                logging.error(
+                logger.error(
                     "TM1 instance {} not accessible. Error: {}".format(
                         tm1_server_name, str(e)))
     return tm1_services
@@ -265,10 +265,28 @@ def get_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) 
         return extract_lines_from_file_type_opt(max_workers, file_path)
 
 
-def execute_line(line, tm1_services):
+def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
+    attempt = 0
+    while True:
+        try:
+            success, status, error_log_file = tm1.processes.execute_with_return(
+                process_name=task.process_name,
+                **task.parameters)
+            if success:
+                return success, status, error_log_file, attempt
+            if attempt == retries:
+                return success, status, error_log_file, attempt
+        except:
+            continue
+        finally:
+            attempt += 1
+
+
+def execute_line(line, retries, tm1_services):
     """ Execute one line from the txt file
-    
-    :param line: 
+
+    :param line:
+    :param retries:
     :param tm1_services: 
     :return: 
     """
@@ -278,17 +296,17 @@ def execute_line(line, tm1_services):
     if task.instance_name not in tm1_services:
         msg = MSG_PROCESS_FAIL_INSTANCE_NOT_AVAILABLE.format(
             process_name=task.process_name, instance_name=task.instance_name)
-        logging.error(msg)
+        logger.error(msg)
         return False
     tm1 = tm1_services[task.instance_name]
     # Execute it
     msg = MSG_PROCESS_EXECUTE.format(
         process_name=task.process_name, parameters=task.parameters, instance_name=task.instance_name)
-    logging.info(msg)
+    logger.info(msg)
     start_time = datetime.datetime.now()
     try:
-        success, status, error_log_file = tm1.processes.execute_with_return(
-            process_name=task.process_name, **task.parameters)
+        success, status, error_log_file, attempts = execute_process_with_retries(
+            tm1=tm1, task=task, retries=retries)
         elapsed_time = datetime.datetime.now() - start_time
         if success:
             msg = MSG_PROCESS_SUCCESS
@@ -296,8 +314,9 @@ def execute_line(line, tm1_services):
                 process=task.process_name,
                 parameters=task.parameters,
                 instance=task.instance_name,
+                retries=attempts,
                 time=elapsed_time)
-            logging.info(msg)
+            logger.info(msg)
             return True
         else:
             msg = MSG_PROCESS_FAIL_WITH_ERROR_FILE.format(
@@ -305,24 +324,26 @@ def execute_line(line, tm1_services):
                 parameters=task.parameters,
                 status=status,
                 instance=task.instance_name,
+                retries=attempts,
                 time=elapsed_time,
                 error_file=error_log_file)
-            logging.error(msg)
+            logger.error(msg)
             return False
     except Exception as e:
         elapsed_time = datetime.datetime.now() - start_time
         msg = MSG_PROCESS_FAIL_UNEXPECTED.format(
             process=task.process_name, parameters=task.parameters, error=str(e), time=elapsed_time)
-        logging.error(msg)
+        logger.error(msg)
         return False
 
 
-async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMode, tm1_services: dict):
+async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMode, retries: int, tm1_services: dict):
     """ loop through file. Add all lines to the execution queue.
-    
+
     :param file_path:
     :param max_workers:
     :param mode:
+    :param retries:
     :param tm1_services: 
     :return: 
     """
@@ -333,12 +354,13 @@ async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMo
         list(y)
         for x, y in itertools.groupby(lines, lambda z: z.lower().strip() == "wait")
         if not x]
+
     # True or False for every execution
     outcomes = []
     for line_set in line_sets:
         with ThreadPoolExecutor(int(max_workers)) as executor:
             futures = [
-                loop.run_in_executor(executor, execute_line, line, tm1_services)
+                loop.run_in_executor(executor, execute_line, line, retries, tm1_services)
                 for line
                 in line_set]
             for future in futures:
@@ -363,30 +385,46 @@ def translate_cmd_arguments(*args):
     :return: tasks_file_path, maximum_workers, execution_mode
     """
     # too few arguments
-    if len(args) < 3:
-        msg = MSG_RUSHTI_TOO_FEW_ARGUMENTS.format(app_name=APP_NAME)
-        logging.error(msg)
+    if len(args) < 3 or len(args) > 5:
+        msg = MSG_RUSHTI_WRONG_NUMBER_OF_ARGUMENTS.format(app_name=APP_NAME)
+        logger.error(msg)
         sys.exit(msg)
-    elif len(args) == 3:
-        # txt file doesnt exist
-        if not os.path.isfile(args[1]):
-            msg = MSG_RUSHTI_ARGUMENT1_INVALID
-            logging.error(msg)
-            sys.exit(msg)
-        # maximum_workers is not a number
-        if not args[2].isdigit():
-            msg = MSG_RUSHTI_ARGUMENT2_INVALID
-            logging.error(msg)
-            sys.exit(msg)
-        return args[1], int(args[2]), ExecutionMode.NORM
-    elif len(args) == 4:
-        try:
-            mode = ExecutionMode(args[3])
-        except ValueError:
-            msg = MSG_RUSHTI_ARGUMENT3_INVALID
-            logging.error(msg)
-            sys.exit(msg)
-        return args[1], int(args[2]), mode
+
+    # txt file doesnt exist
+    if not os.path.isfile(args[1]):
+        msg = MSG_RUSHTI_ARGUMENT1_INVALID
+        logger.error(msg)
+        sys.exit(msg)
+
+    # maximum_workers is not a number
+    if not args[2].isdigit():
+        msg = MSG_RUSHTI_ARGUMENT2_INVALID
+        logger.error(msg)
+        sys.exit(msg)
+
+    # default values
+    mode = ExecutionMode.NORM
+    retries = 0
+
+    if len(args) == 3:
+        return args[1], int(args[2]), mode, retries
+
+    try:
+        mode = ExecutionMode(args[3])
+    except ValueError:
+        msg = MSG_RUSHTI_ARGUMENT3_INVALID
+        logger.error(msg)
+        sys.exit(msg)
+
+    if len(args) == 4:
+        return args[1], int(args[2]), mode, retries
+
+    if not args[4].isdigit():
+        msg = MSG_RUSHTI_ARGUMENT4_INVALID
+        logger.error(msg)
+        sys.exit(msg)
+
+    return args[1], int(args[2]), mode, int(args[4])
 
 
 def exit_rushti(executions, successes, elapsed_time):
@@ -402,20 +440,20 @@ def exit_rushti(executions, successes, elapsed_time):
         app_name=APP_NAME, fails=fails, executions=executions, time=str(elapsed_time), parameters=sys.argv
     )
     if fails > 0:
-        logging.error(message)
+        logger.error(message)
         sys.exit(message)
     else:
-        logging.info(message)
+        logger.info(message)
         sys.exit(0)
 
 
-# receives three arguments: 1) tasks_file_path, 2) maximum_workers, 3) execution_mode
+# receives three arguments: 1) tasks_file_path, 2) maximum_workers, 3) execution_mode, 4) retries
 if __name__ == "__main__":
-    logging.info(MSG_RUSHTI_STARTS.format(app_name=APP_NAME, parameters=sys.argv))
+    logger.info(MSG_RUSHTI_STARTS.format(app_name=APP_NAME, parameters=sys.argv))
     # start timer
     start = datetime.datetime.now()
     # read commandline arguments
-    tasks_file_path, maximum_workers, execution_mode = translate_cmd_arguments(*sys.argv)
+    tasks_file_path, maximum_workers, execution_mode, process_execution_retries = translate_cmd_arguments(*sys.argv)
     # setup connections
     tm1_service_by_instance = setup_tm1_services(maximum_workers)
     # execution
@@ -426,6 +464,7 @@ if __name__ == "__main__":
                 tasks_file_path,
                 maximum_workers,
                 execution_mode,
+                process_execution_retries,
                 tm1_service_by_instance
             )
         )
