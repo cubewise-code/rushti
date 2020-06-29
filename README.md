@@ -20,10 +20,14 @@ Clone or download the RushTI Repository
 * Create the Tasks.txt file
 * Execute the RushTI.py script: 
 
-  Execution for classical type of tasks file with two arguments: 
-  path to tasks.txt, Number of maximum workers to run in parallel
+  Execution for classical type of tasks file with four arguments: 
+  - path to tasks.txt 
+  - number of maximum workers to run in parallel
+  - 'norm' to select the normal execution mode
+  - number of retries per process
+  
   ```
-  python RushTI.py Tasks_type_classic.txt 16
+  python RushTI.py Tasks_type_classic.txt 16 norm 2
   ```
 
   Example of Tasks_type_classic.txt:
@@ -44,10 +48,14 @@ Clone or download the RushTI Repository
 
   Or
 
-  Execution for optimized type of tasks file with three arguments: 
-  path to tasks.txt, Number of maximum workers to run in parallel, 'opt' to specify the optimized execution mode
+  Execution for optimized type of tasks file with four arguments: 
+  - path to tasks.txt
+  - number of maximum workers to run in parallel
+  - 'opt' to specify the optimized execution mode
+  - number of retries per process
+  
   ```
-  python RushTI.py Tasks_type_optimized.txt 16 opt
+  python RushTI.py Tasks_type_optimized.txt 16 opt 3
   ```
 
   Example of Tasks_type_optimized.txt:

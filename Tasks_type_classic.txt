@@ -2,11 +2,11 @@ instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=1
 wait
 instance="tm1srv02" process="}bedrock.server.wait" pWaitSec=2
 instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3
-instance="tm1srv02" process="}bedrock.server.wait" pWaitSec=4
+instance="tm1srv02" process="}bedrock.server.wait" pWaitSec=3
 wait
-instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=2
 wait
-instance="tm1srv02" process="}bedrock.server.wait" pWaitSec=6
-instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=7
+instance="tm1srv02" process="}bedrock.server.wait" pWaitSec=2
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=2
 wait
-instance="tm1srv02" process="}bedrock.server.wait" pWaitSec=8
+instance="tm1srv02" process="}bedrock.server.wait" pWaitSec=2

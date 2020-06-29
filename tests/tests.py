@@ -56,3 +56,11 @@ class TestDataMethods(unittest.TestCase):
             0: ['9']}
         outcome = deduce_levels_of_tasks(tasks)
         self.assertEqual(expected_outcome, outcome)
+
+    def test_deduce_levels_of_tasks_case5(self):
+        tasks = extract_tasks_from_file_type_opt(r"tests/resources/tasks_opt_case5.txt")
+        expected_outcome = {
+            0: ['11', '12', '21', '22'],
+            1: ['13', '23']}
+        outcome = deduce_levels_of_tasks(tasks)
+        self.assertEqual(expected_outcome, outcome)
