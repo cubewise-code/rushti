@@ -1,10 +1,16 @@
 import os
+import sys
 from enum import Enum
 
 
 def set_current_directory():
-    abspath = os.path.abspath(__file__)
-    directory = os.path.dirname(abspath)
+    # determine if application is a script file or frozen exe
+    if getattr(sys, 'frozen', False):
+        application_path = os.path.abspath(sys.executable)
+    elif __file__:
+        application_path = os.path.abspath(__file__)
+
+    directory = os.path.dirname(application_path)
     # set current directory
     os.chdir(directory)
     return directory

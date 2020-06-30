@@ -18,6 +18,7 @@ APP_NAME = "RushTI"
 CURRENT_DIRECTORY = set_current_directory()
 LOGFILE = os.path.join(CURRENT_DIRECTORY, APP_NAME + ".log")
 CONFIG = os.path.join(CURRENT_DIRECTORY, "config.ini")
+LOGGING_CONFIG = os.path.join(CURRENT_DIRECTORY, 'logging_config.ini')
 
 MSG_RUSHTI_STARTS = "{app_name} starts. Parameters: {parameters}."
 MSG_RUSHTI_WRONG_NUMBER_OF_ARGUMENTS = "{app_name} needs to be executed with two to four arguments."
@@ -41,7 +42,9 @@ MSG_PROCESS_FAIL_UNEXPECTED = (
 MSG_RUSHTI_ENDS = ("{app_name} ends. {fails} fails out of {executions} executions. "
                    "Elapsed time: {time}. Ran with parameters: {parameters}")
 
-fileConfig('logging_config.ini')
+if not os.path.isfile(LOGGING_CONFIG):
+    raise ValueError("{config} does not exist".format(config=LOGGING_CONFIG))
+fileConfig(LOGGING_CONFIG)
 logger = logging.getLogger()
 
 
@@ -51,7 +54,7 @@ def setup_tm1_services(max_workers: int) -> dict:
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
     """
     if not os.path.isfile(CONFIG):
-        raise ValueError("{config} does not exist.".format(config=CONFIG))
+        raise ValueError("{config} does not exist".format(config=CONFIG))
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
@@ -160,7 +163,7 @@ def extract_tasks_from_file_type_opt(file_path: str) -> dict:
     """
     # Mapping of id against task
     tasks = dict()
-    with open(file_path) as input_file:
+    with open(file_path, encoding='utf-8') as input_file:
         lines = input_file.readlines()
         # Build tasks dictionary
         for line in lines:
@@ -259,7 +262,7 @@ def get_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) 
     :return:
     """
     if tasks_file_type == ExecutionMode.NORM:
-        with open(file_path) as file:
+        with open(file_path, encoding='utf-8') as file:
             return file.readlines()
     else:
         return extract_lines_from_file_type_opt(max_workers, file_path)
