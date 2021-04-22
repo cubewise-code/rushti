@@ -122,7 +122,8 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
         # Convert string attribute value into list
         elif argument.lower() == "predecessors":
             predecessors = value.strip('"').strip().split(",")
-            if predecessors[0] == "":
+            # "", "0" and 0 is understood as 'no predecessor'
+            if predecessors[0] in ["", "0", 0]:
                 line_arguments[argument] = []
             else:
                 line_arguments[argument] = predecessors
