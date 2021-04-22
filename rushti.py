@@ -168,6 +168,9 @@ def extract_tasks_from_file_type_opt(file_path: str) -> dict:
         lines = input_file.readlines()
         # Build tasks dictionary
         for line in lines:
+            # skip empty lines
+            if not line.strip():
+                continue
             task = extract_tasks_from_line_type_opt(line)
             tasks[task.id] = task
 
