@@ -92,7 +92,7 @@ def extract_task_from_line(line: str) -> Task:
     :return: instance_name, process_name, parameters
     """
     line_arguments = dict()
-    for pair in shlex.split(line):
+    for pair in shlex.split(line, posix=False):
         param, value = pair.split("=")
         # if instance or process, needs to be case insensitive
         if param.lower() == "process" or param.lower() == "instance":
@@ -114,7 +114,7 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
     :return: attributes
     """
     line_arguments = dict()
-    for pair in shlex.split(line):
+    for pair in shlex.split(line, posix=False):
         argument, value = pair.split("=")
         # if instance or process, needs to be case insensitive
         if argument.lower() == "process" or argument.lower() == "instance" or argument.lower() == "id":
