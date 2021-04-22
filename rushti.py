@@ -149,9 +149,9 @@ def extract_lines_from_file_type_opt(max_workers: int, file_path: str) -> list:
     tasks_by_level = balance_tasks_among_levels(max_workers, tasks, tasks_by_level)
     for level in tasks_by_level.values():
         for task_id in level:
-            task = tasks[task_id]
-            line = task.translate_to_line()
-            lines.append(line)
+            for task in tasks[task_id]:
+                line = task.translate_to_line()
+                lines.append(line)
         lines.append("wait\n")
     return lines
 
@@ -172,14 +172,18 @@ def extract_tasks_from_file_type_opt(file_path: str) -> dict:
             if not line.strip():
                 continue
             task = extract_tasks_from_line_type_opt(line)
-            tasks[task.id] = task
+            if task.id not in tasks:
+                tasks[task.id] = [task]
+            else:
+                tasks[task.id].append(task)
 
     # Populate the successors attribute
-    for task in tasks.values():
-        predecessors = task.predecessors
-        for predecessor_id in predecessors:
-            pre_task = tasks[predecessor_id]
-            pre_task.successors.append(task.id)
+    for task_id in tasks:
+        for task in tasks[task_id]:
+            predecessors = task.predecessors
+            for predecessor_id in predecessors:
+                for pre_task in tasks[predecessor_id]:
+                    pre_task.successors.append(task.id)
     return tasks
 
 
@@ -195,32 +199,32 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
     # level 0 contains all tasks without predecessors
     level = 0
     levels[level] = list()
-    for task in tasks.values():
-        if not task.has_predecessors:
-            levels[level].append(task.id)
+    for task_id in tasks:
+        for task in tasks[task_id]:
+            if not task.has_predecessors:
+                levels[level].append(task.id)
 
     # Handle other levels. Iterative approach.
     for _ in tasks:
         task_ids_in_level = levels[level]
         next_level_created = False
         for task_id in task_ids_in_level:
-            task = tasks[task_id]
+            for task in tasks[task_id]:
+                # Create next level if necessary and add successors to this new level
+                if task.has_successors:
+                    if not next_level_created:
+                        precedent_level = level
+                        level += 1
+                        levels[level] = list()
+                        next_level_created = True
 
-            # Create next level if necessary and add successors to this new level
-            if task.has_successors:
-                if not next_level_created:
-                    precedent_level = level
-                    level += 1
-                    levels[level] = list()
-                    next_level_created = True
-
-                for successor in task.successors:
-                    # test if task exists in current level
-                    if not (successor in levels[level]):
-                        levels[level].append(successor)
-                    # Delete successor in precedent level
-                    if successor in levels[precedent_level]:
-                        levels[precedent_level].remove(successor)
+                    for successor in task.successors:
+                        # test if task exists in current level
+                        if not (successor in levels[level]):
+                            levels[level].append(successor)
+                        # Delete successor in precedent level
+                        if successor in levels[precedent_level]:
+                            levels[precedent_level].remove(successor)
     return levels
 
 
@@ -242,17 +246,20 @@ def balance_tasks_among_levels(max_workers: int, tasks: dict, levels: dict):
             next_level = levels[level_key + 1]
             if len(level) >= max_workers >= len(next_level):
                 for task_id in level:
-                    successors = tasks[task_id].successors
-                    # if next level contains successor don't move this task
-                    next_level_contains_successor = False
-                    for successor in successors:
-                        if successor in next_level:
-                            next_level_contains_successor = True
+                    for task in tasks[task_id]:
+                        successors = task.successors
+                        # if next level contains successor don't move this task
+                        next_level_contains_successor = False
+                        for successor in successors:
+                            if successor in next_level:
+                                next_level_contains_successor = True
 
-                    if not next_level_contains_successor:
-                        # move task from level to next_level
-                        levels[level_key].remove(task_id)
-                        levels[level_key + 1].append(task_id)
+                        if not next_level_contains_successor:
+                            # move task from level to next_level
+                            if task_id in levels[level_key]:
+                                levels[level_key].remove(task_id)
+                            if task_id not in levels[level_key + 1]:
+                                levels[level_key + 1].append(task_id)
     return levels
 
 
