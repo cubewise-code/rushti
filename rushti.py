@@ -6,6 +6,7 @@ import logging
 import os
 import shlex
 import sys
+import uuid
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 from logging.config import fileConfig
@@ -41,6 +42,9 @@ MSG_PROCESS_FAIL_UNEXPECTED = (
     "Elapsed time: {time}. Error: {error}.")
 MSG_RUSHTI_ENDS = ("{app_name} ends. {fails} fails out of {executions} executions. "
                    "Elapsed time: {time}. Ran with parameters: {parameters}")
+
+# used to wrap blackslashes before using
+UNIQUE_STRING = uuid.uuid4().hex[:8].upper()
 
 if not os.path.isfile(LOGGING_CONFIG):
     raise ValueError("{config} does not exist".format(config=LOGGING_CONFIG))
@@ -92,8 +96,12 @@ def extract_task_from_line(line: str) -> Task:
     :return: instance_name, process_name, parameters
     """
     line_arguments = dict()
+    line = line.replace("\\", UNIQUE_STRING)
     for pair in shlex.split(line):
         param, value = pair.split("=")
+        param = param.replace(UNIQUE_STRING, "\\")
+        value = value.replace(UNIQUE_STRING, "\\")
+
         # if instance or process, needs to be case insensitive
         if param.lower() == "process" or param.lower() == "instance":
             line_arguments[param.lower()] = value.strip('"').strip()
@@ -114,8 +122,12 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
     :return: attributes
     """
     line_arguments = dict()
-    for pair in shlex.split(line, posix=False):
+    line = line.replace("\\", UNIQUE_STRING)
+    for pair in shlex.split(line):
         argument, value = pair.split("=")
+        argument = argument.replace(UNIQUE_STRING, "\\")
+        value = value.replace(UNIQUE_STRING, "\\")
+
         # if instance or process, needs to be case insensitive
         if argument.lower() == "process" or argument.lower() == "instance" or argument.lower() == "id":
             line_arguments[argument.lower()] = value.strip('"').strip()
