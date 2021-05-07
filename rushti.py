@@ -211,11 +211,11 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
     levels = dict()
     # level 0 contains all tasks without predecessors
     level = 0
-    levels[level] = list()
+    levels[level] = set()
     for task_id in tasks:
         for task in tasks[task_id]:
             if not task.has_predecessors:
-                levels[level].append(task.id)
+                levels[level].add(task.id)
 
     # Handle other levels. Iterative approach.
     for _ in tasks:
@@ -228,13 +228,13 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
                     if not next_level_created:
                         precedent_level = level
                         level += 1
-                        levels[level] = list()
+                        levels[level] = set()
                         next_level_created = True
 
                     for successor in task.successors:
                         # test if task exists in current level
                         if not (successor in levels[level]):
-                            levels[level].append(successor)
+                            levels[level].add(successor)
                         # Delete successor in precedent level
                         if successor in levels[precedent_level]:
                             levels[precedent_level].remove(successor)
