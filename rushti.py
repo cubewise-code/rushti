@@ -42,6 +42,7 @@ MSG_PROCESS_FAIL_UNEXPECTED = (
     "Elapsed time: {time}. Error: {error}.")
 MSG_RUSHTI_ENDS = ("{app_name} ends. {fails} fails out of {executions} executions. "
                    "Elapsed time: {time}. Ran with parameters: {parameters}")
+MSG_RUSHTI_ABORTED = "{app_name} aborted with error"
 
 # used to wrap blackslashes before using
 UNIQUE_STRING = uuid.uuid4().hex[:8].upper()
@@ -453,14 +454,20 @@ def translate_cmd_arguments(*args):
     return args[1], int(args[2]), mode, int(args[4])
 
 
-def exit_rushti(executions, successes, elapsed_time):
+def exit_rushti(overall_success, executions, successes, elapsed_time):
     """ Exit RushTI with exit code 0 or 1 depending on the TI execution outcomes
 
+    :param overall_success: Exception raised during executions
     :param executions: Number of executions
     :param successes: Number of executions that succeeded
     :param elapsed_time:
     :return:
     """
+    if not overall_success:
+        message = MSG_RUSHTI_ABORTED.format(app_name=APP_NAME)
+        logger.error(message)
+        sys.exit(message)
+
     fails = executions - successes
     message = MSG_RUSHTI_ENDS.format(
         app_name=APP_NAME, fails=fails, executions=executions, time=str(elapsed_time), parameters=sys.argv
@@ -468,9 +475,9 @@ def exit_rushti(executions, successes, elapsed_time):
     if fails > 0:
         logger.error(message)
         sys.exit(message)
-    else:
-        logger.info(message)
-        sys.exit(0)
+
+    logger.info(message)
+    sys.exit(0)
 
 
 # receives three arguments: 1) tasks_file_path, 2) maximum_workers, 3) execution_mode, 4) retries
@@ -482,6 +489,8 @@ if __name__ == "__main__":
     tasks_file_path, maximum_workers, execution_mode, process_execution_retries = translate_cmd_arguments(*sys.argv)
     # setup connections
     tm1_service_by_instance = setup_tm1_services(maximum_workers)
+    # setup results variable (guarantee it's not empty in case of error)
+    results = list()
     # execution
     event_loop = asyncio.get_event_loop()
     try:
@@ -494,9 +503,16 @@ if __name__ == "__main__":
                 tm1_service_by_instance
             )
         )
+        success = True
+
+    except:
+        logging.exception("Fatal Error")
+        success = False
+
     finally:
         logout(tm1_service_by_instance)
         event_loop.close()
+
     # timing
     duration = datetime.datetime.now() - start
-    exit_rushti(executions=len(results), successes=sum(results), elapsed_time=duration)
+    exit_rushti(overall_success=success, executions=len(results), successes=sum(results), elapsed_time=duration)
