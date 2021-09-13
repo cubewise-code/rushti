@@ -53,19 +53,25 @@ fileConfig(LOGGING_CONFIG)
 logger = logging.getLogger()
 
 
-def setup_tm1_services(max_workers: int) -> dict:
+def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: ExecutionMode) -> dict:
     """ Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
     
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
     """
     if not os.path.isfile(CONFIG):
         raise ValueError("{config} does not exist".format(config=CONFIG))
+
+    tm1_instances_in_tasks = get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path)
+
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
     config.read(CONFIG)
     # build tm1_services dictionary
     for tm1_server_name, params in config.items():
+        if tm1_server_name not in tm1_instances_in_tasks:
+            continue
+
         # handle default values from configparser
         if tm1_server_name != config.default_section:
             try:
@@ -79,6 +85,17 @@ def setup_tm1_services(max_workers: int) -> dict:
                     "TM1 instance {} not accessible. Error: {}".format(
                         tm1_server_name, str(e)))
     return tm1_services
+
+
+def get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path):
+    tm1_instances_in_tasks = set()
+    lines = get_task_lines(file_path=tasks_file_path, max_workers=max_workers, tasks_file_type=execution_mode)
+    for line in lines:
+        if line.lower().strip() == 'wait':
+            continue
+        task = extract_task_from_line(line)
+        tm1_instances_in_tasks.add(task.instance_name)
+    return tm1_instances_in_tasks
 
 
 def decrypt_password(encrypted_password: str) -> str:
@@ -211,11 +228,13 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
     levels = dict()
     # level 0 contains all tasks without predecessors
     level = 0
-    levels[level] = set()
+    levels[level] = list()
     for task_id in tasks:
         for task in tasks[task_id]:
             if not task.has_predecessors:
-                levels[level].add(task.id)
+                # avoid duplicates
+                if task.id not in levels[level]:
+                    levels[level].append(task.id)
 
     # Handle other levels. Iterative approach.
     for _ in tasks:
@@ -228,16 +247,20 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
                     if not next_level_created:
                         precedent_level = level
                         level += 1
-                        levels[level] = set()
+                        levels[level] = list()
                         next_level_created = True
 
                     for successor in task.successors:
                         # test if task exists in current level
                         if not (successor in levels[level]):
-                            levels[level].add(successor)
+                            # avoid duplicates
+                            if successor not in levels[level]:
+                                levels[level].append(successor)
+
                         # Delete successor in precedent level
                         if successor in levels[precedent_level]:
                             levels[precedent_level].remove(successor)
+
     return levels
 
 
@@ -276,7 +299,7 @@ def balance_tasks_among_levels(max_workers: int, tasks: dict, levels: dict):
     return levels
 
 
-def get_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> list:
+def get_task_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> list:
     """ Extract tasks from file
     if necessary transform a file that respects type 'opt' specification into a scheduled and optimized list of tasks
 
@@ -374,7 +397,7 @@ async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMo
     :param tm1_services: 
     :return: 
     """
-    lines = get_lines(file_path, max_workers, mode)
+    lines = get_task_lines(file_path, max_workers, mode)
     loop = asyncio.get_event_loop()
     # split lines into the blocks separated by 'wait' line
     line_sets = [
@@ -488,7 +511,7 @@ if __name__ == "__main__":
     # read commandline arguments
     tasks_file_path, maximum_workers, execution_mode, process_execution_retries = translate_cmd_arguments(*sys.argv)
     # setup connections
-    tm1_service_by_instance = setup_tm1_services(maximum_workers)
+    tm1_service_by_instance = setup_tm1_services(maximum_workers, tasks_file_path, execution_mode)
     # setup results variable (guarantee it's not empty in case of error)
     results = list()
     # execution
