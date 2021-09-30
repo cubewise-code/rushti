@@ -69,7 +69,6 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
     config.read(CONFIG)
     # build tm1_services dictionary
     for tm1_server_name, params in config.items():
-        logger.info(tm1_server_name)
         if tm1_server_name not in tm1_instances_in_tasks:
             continue
 
