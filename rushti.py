@@ -31,9 +31,9 @@ MSG_PROCESS_EXECUTE = "Executing process: '{process_name}' with parameters: {par
 MSG_PROCESS_SUCCESS = (
     "Execution successful: Process '{process}' with parameters: {parameters} with {retries} retries on instance: "
     "{instance}. Elapsed time: {time}")
-MSG_PROCESS_FAIL_INSTANCE_NOT_AVAILABLE = (
+MSG_PROCESS_FAIL_INSTANCE_NOT_IN_CONFIG_FILE = (
     "Process '{process_name}' not executed on '{instance_name}'. "
-    "'{instance_name}' not accessible.")
+    "'{instance_name}' not defined in provided config file. Check for typos and miscapitalization.")
 MSG_PROCESS_FAIL_WITH_ERROR_FILE = (
     "Execution failed. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
     "{status}, on instance: '{instance}'. Elapsed time : {time}. Error file: {error_file}")
@@ -109,7 +109,6 @@ def decrypt_password(encrypted_password: str) -> str:
 
 def extract_task_from_line(line: str) -> Task:
     """ Translate one line from txt file into arguments for execution: instance, process, parameters
-
     :param line: Arguments for execution. E.g. instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=2
     :return: instance_name, process_name, parameters
     """
@@ -134,7 +133,6 @@ def extract_task_from_line(line: str) -> Task:
 
 def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
     """ Translate one line from txt file type 'opt' into arguments for execution
-
     :param: line: Arguments for execution. E.g. id="5" predecessors="2,3" instance="tm1srv01"
     process="Bedrock.Server.Wait" pWaitSec=5
     :return: attributes
@@ -188,7 +186,6 @@ def extract_lines_from_file_type_opt(max_workers: int, file_path: str) -> list:
 
 def extract_tasks_from_file_type_opt(file_path: str) -> dict:
     """
-
     :param file_path:
     :return: tasks
     """
@@ -220,7 +217,6 @@ def extract_tasks_from_file_type_opt(file_path: str) -> dict:
 def deduce_levels_of_tasks(tasks: dict) -> dict:
     """ Deduce the level of each task.
     Tasks at the same level have no relationship (successor / predecessor) between them
-
     :param tasks: mapping of id against Task
     :return: levels
     """
@@ -267,8 +263,6 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
 def balance_tasks_among_levels(max_workers: int, tasks: dict, levels: dict):
     """Rearrange tasks across levels to optimize execution regarding the maximum workers.
     The constraint between tasks of same level (no relationship) must be conserved
-
-
     :param tasks:
     :param max_workers:
     :param levels:
@@ -302,7 +296,6 @@ def balance_tasks_among_levels(max_workers: int, tasks: dict, levels: dict):
 def get_task_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> list:
     """ Extract tasks from file
     if necessary transform a file that respects type 'opt' specification into a scheduled and optimized list of tasks
-
     :param file_path:
     :param max_workers:
     :param tasks_file_type:
@@ -334,7 +327,6 @@ def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
 
 def execute_line(line, retries, tm1_services):
     """ Execute one line from the txt file
-
     :param line:
     :param retries:
     :param tm1_services: 
@@ -344,7 +336,7 @@ def execute_line(line, retries, tm1_services):
         return True
     task = extract_task_from_line(line)
     if task.instance_name not in tm1_services:
-        msg = MSG_PROCESS_FAIL_INSTANCE_NOT_AVAILABLE.format(
+        msg = MSG_PROCESS_FAIL_INSTANCE_NOT_IN_CONFIG_FILE.format(
             process_name=task.process_name, instance_name=task.instance_name)
         logger.error(msg)
         return False
@@ -389,7 +381,6 @@ def execute_line(line, retries, tm1_services):
 
 async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMode, retries: int, tm1_services: dict):
     """ loop through file. Add all lines to the execution queue.
-
     :param file_path:
     :param max_workers:
     :param mode:
@@ -479,7 +470,6 @@ def translate_cmd_arguments(*args):
 
 def exit_rushti(overall_success, executions, successes, elapsed_time):
     """ Exit RushTI with exit code 0 or 1 depending on the TI execution outcomes
-
     :param overall_success: Exception raised during executions
     :param executions: Number of executions
     :param successes: Number of executions that succeeded
