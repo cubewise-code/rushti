@@ -67,7 +67,7 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
-    config.read(CONFIG)
+    config.read(CONFIG, encoding='utf-8')
     # build tm1_services dictionary
     for tm1_server_name, params in config.items():
         if tm1_server_name not in tm1_instances_in_tasks:
