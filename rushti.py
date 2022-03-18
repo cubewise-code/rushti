@@ -11,7 +11,11 @@ from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 from logging.config import fileConfig
 
-import chardet
+try:
+    import chardet
+except ImportError:
+    pass
+
 from TM1py import TM1Service
 
 from utils import set_current_directory, Task, OptimizedTask, ExecutionMode
@@ -295,13 +299,22 @@ def balance_tasks_among_levels(max_workers: int, tasks: dict, levels: dict):
 
 
 def pre_process_file(file_path: str):
+    """ Preprocess file for Python to change encoding from 'utf-8-sig' to 'utf-8'
+
+    Background: Under certain circumstances TM1 / Turbo Integrator generates files with utf-8-sig
+
+    :param file_path:
+    :return:
+    """
     with open(file_path, 'rb') as file:
         raw = file.read(32)  # at most 32 bytes are returned
         encoding = chardet.detect(raw)['encoding']
 
     if encoding.upper() == 'UTF-8-SIG':
-        s = open(file_path, mode='r', encoding='utf-8-sig').read()
-        open(file_path, mode='w', encoding='utf-8').write(s)
+        with open(file_path, mode='r', encoding='utf-8-sig') as file:
+            text = file.read()
+        with open(file_path, mode='w', encoding='utf-8') as file:
+            file.write(text)
 
 
 def get_task_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> list:
@@ -312,7 +325,12 @@ def get_task_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionM
     :param tasks_file_type:
     :return:
     """
-    pre_process_file(file_path)
+    try:
+        import chardet
+        pre_process_file(file_path)
+
+    except ImportError:
+        logging.info(f"Function '{pre_process_file.__name__}' skipped. Optional dependency 'chardet' not installed")
 
     if tasks_file_type == ExecutionMode.NORM:
         with open(file_path, encoding='utf-8') as file:
