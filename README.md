@@ -60,14 +60,14 @@ Clone or download the RushTI Repository
 
   Example of Tasks_type_optimized.txt:
   ```
-  id="1" predecessors="" instance="tm1srv01" process="load.actuals" pMonth=Jan
-  id="2" predecessors="1" instance="tm1srv02" process="load.actuals" pMonth=Feb
-  id="3" predecessors="1" instance="tm1srv01" process="load.actuals" pMonth=Mar
-  id="4" predecessors="1" instance="tm1srv02" process="load.actuals" pMonth=Apr
-  id="5" predecessors="2,3" instance="tm1srv01" process="load.actuals" pMonth=May
-  id="6" predecessors="4,5" instance="tm1srv02" process="load.actuals" pMonth=Jun
-  id="7" predecessors="4" instance="tm1srv01" process="load.actuals" pMonth=Jul
-  id="8" predecessors="6" instance="tm1srv02" process="load.actuals" pMonth=Aug
+  id="1" predecessors="" require_predecessor_succeed="" instance="tm1srv01" process="load.actuals" pMonth=Jan
+  id="2" predecessors="1" require_predecessor_succeed="1" instance="tm1srv02" process="load.actuals" pMonth=Feb
+  id="3" predecessors="1" require_predecessor_succeed="1" instance="tm1srv01" process="load.actuals" pMonth=Mar
+  id="4" predecessors="1" require_predecessor_succeed="0" instance="tm1srv02" process="load.actuals" pMonth=Apr
+  id="5" predecessors="2,3" require_predecessor_succeed="0" instance="tm1srv01" process="load.actuals" pMonth=May
+  id="6" predecessors="4,5" require_predecessor_succeed="1" instance="tm1srv02" process="load.actuals" pMonth=Jun
+  id="7" predecessors="4" require_predecessor_succeed="0" instance="tm1srv01" process="load.actuals" pMonth=Jul
+  id="8" predecessors="6" require_predecessor_succeed="0" instance="tm1srv02" process="load.actuals" pMonth=Aug
   ```
 
 ## Running the tests
