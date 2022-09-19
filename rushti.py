@@ -48,6 +48,9 @@ MSG_PROCESS_FAIL_UNEXPECTED = (
 MSG_RUSHTI_ENDS = ("{app_name} ends. {fails} fails out of {executions} executions. "
                    "Elapsed time: {time}. Ran with parameters: {parameters}")
 MSG_RUSHTI_ABORTED = "{app_name} aborted with error"
+MSG_PROCESS_ABORTED_FAILED_PREDECESSORS = (
+    "Execution aborted. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
+    "Aborted due to failed related predecessors, on instance: '{instance}'. Elapsed time : {time}.")
 
 # used to wrap blackslashes before using
 UNIQUE_STRING = uuid.uuid4().hex[:8].upper()
@@ -138,7 +141,7 @@ def extract_task_from_line(line: str) -> Task:
 
 def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
     """ Translate one line from txt file type 'opt' into arguments for execution
-    :param: line: Arguments for execution. E.g. id="5" predecessors="2,3" instance="tm1srv01"
+    :param: line: Arguments for execution. E.g. id="5" predecessors="2,3" require_predecessor_success="1" instance="tm1srv01"
     process="Bedrock.Server.Wait" pWaitSec=5
     :return: attributes
     """
@@ -150,7 +153,7 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
         value = value.replace(UNIQUE_STRING, "\\")
 
         # if instance or process, needs to be case insensitive
-        if argument.lower() == "process" or argument.lower() == "instance" or argument.lower() == "id":
+        if argument.lower() == "process" or argument.lower() == "instance" or argument.lower() == "id" or argument.lower() == "require_predecessor_success":
             line_arguments[argument.lower()] = value.strip('"').strip()
         # Convert string attribute value into list
         elif argument.lower() == "predecessors":
@@ -169,6 +172,7 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
         instance_name=line_arguments.pop("instance"),
         process_name=line_arguments.pop("process"),
         predecessors=line_arguments.pop("predecessors"),
+        require_predecessor_success=line_arguments["require_predecessor_success"],
         parameters=line_arguments)
 
 
@@ -429,15 +433,107 @@ async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMo
 
     # True or False for every execution
     outcomes = []
-    for line_set in line_sets:
-        with ThreadPoolExecutor(int(max_workers)) as executor:
-            futures = [
-                loop.run_in_executor(executor, execute_line, line, retries, tm1_services)
-                for line
-                in line_set]
-            for future in futures:
-                outcomes.append(await future)
+    if mode.name == "OPT":
+        await work_through_tasks_opt(line_sets, loop, max_workers, outcomes, retries, tm1_services)
+
+    else:
+        for line_set in line_sets:
+            with ThreadPoolExecutor(int(max_workers)) as executor:
+                futures = [
+                    loop.run_in_executor(executor, execute_line, line, retries, tm1_services)
+                    for line
+                    in line_set]
+                for future in futures:
+                    outcomes.append(await future)
+
     return outcomes
+
+
+async def work_through_tasks_opt(line_sets, loop, max_workers, outcomes, retries, tm1_services):
+    index_start_outcomes, index_end_outcomes = 0, 0
+    line_set_arguments = dict()
+    for num_line_set, line_set in enumerate(line_sets):
+        updated_line_set, line_set_successes = [], []
+        line_set_arguments[num_line_set] = dict()
+        line_set_arguments[num_line_set]["lines_properties"] = dict()
+
+        # Parse the optimized list of scheduled tasks to extract the 'require_predecessor_success' value on every lines
+        for num_line, line in enumerate(line_set):
+            line_set_arguments[num_line_set]["lines_properties"][num_line] = dict()
+            line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"] = dict()
+            for pair in shlex.split(line):
+                argument, value = pair.split("=")
+                if argument.lower() == "instance":
+                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = dict()
+                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = value.strip(
+                        '"').strip()
+                elif argument.lower() == "process":
+                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = dict()
+                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = value.strip(
+                        '"').strip()
+                elif argument.lower() == "require_predecessor_success":
+                    success_argument = f'{argument}="{value}"'
+                    b_value = 1 if value.strip('"').strip() in ('True', 'true', 'TRUE', '1', 1) else 0
+                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = b_value
+                    line_set_successes.append(b_value)
+                else:
+                    line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"][argument] = dict()
+                    line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"][
+                        argument] = value.strip('"').strip()
+
+            # Remove 'require_predecessor_success' parameter to be execution ready
+            updated_line_set.append(line.replace(f' {success_argument}', ''))
+
+        # Add some set properties and deduce a 'require_predecessor_success' argument at a set level
+        line_set_arguments[num_line_set]["line_set_properties"] = dict()
+        line_set_arguments[num_line_set]["line_set_properties"]["nb_of_tasks"] = len(line_set)
+        line_set_arguments[num_line_set]["line_set_properties"]["require_predecessor_success"] = all(line_set_successes)
+
+        with ThreadPoolExecutor(int(max_workers)) as executor:
+            # Deduce an outcome status from predecessors at a set level
+            previous_line_outcomes, previous_set_outcome = [], []
+            if num_line_set != 0:
+                nb_of_tasks_prev_set = line_set_arguments[num_line_set - 1]["line_set_properties"]["nb_of_tasks"]
+                index_end_outcomes = index_start_outcomes + nb_of_tasks_prev_set
+                for value in outcomes[index_start_outcomes:index_end_outcomes]:
+                    flag_outcome = 1 if value in ('True', 'true', 'TRUE', '1', 1) else 0
+                    previous_line_outcomes.append(flag_outcome)
+                previous_set_outcome = all(previous_line_outcomes)
+                index_start_outcomes = index_end_outcomes
+            else:
+                previous_set_outcome = True
+
+            # Update the optimized list of scheduled tasks by removing lines with failed predecessors if asked
+            temp_updated_line_set = updated_line_set.copy()
+            for num_line, line in enumerate(temp_updated_line_set):
+                flag_success = line_set_arguments[num_line_set]["lines_properties"][num_line]["require_predecessor_success"]
+                if flag_success == 1 and previous_set_outcome is False:
+                    updated_line_set.remove(line)
+                    outcomes.append(False)
+                    # Pretend the process is currently executing in the message log
+                    msg = MSG_PROCESS_EXECUTE.format(
+                        instance_name=line_set_arguments[num_line_set]["lines_properties"][num_line]["instance"],
+                        process_name=line_set_arguments[num_line_set]["lines_properties"][num_line]["process"],
+                        parameters=line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"])
+                    logger.info(msg)
+                    start_time = datetime.datetime.now()
+                    # Execution aborted due to failed predecessors in the message log
+                    msg = MSG_PROCESS_ABORTED_FAILED_PREDECESSORS.format(
+                        instance=line_set_arguments[num_line_set]["lines_properties"][num_line]["instance"],
+                        process=line_set_arguments[num_line_set]["lines_properties"][num_line]["process"],
+                        retries=0,
+                        parameters=line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"],
+                        time=datetime.datetime.now() - start_time)
+                    logger.error(msg)
+
+            # Run the execution with the optimized and updated list of scheduled tasks
+            if updated_line_set:
+                futures = [
+                    loop.run_in_executor(executor, execute_line, line, retries, tm1_services)
+                    for line
+                    in updated_line_set]
+                for future in futures:
+                    outcomes.append(await future)
 
 
 def logout(tm1_services):

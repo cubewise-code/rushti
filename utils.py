@@ -30,10 +30,11 @@ class Task:
 
 
 class OptimizedTask(Task):
-    def __init__(self, task_id, instance_name, process_name, parameters, predecessors):
+    def __init__(self, task_id, instance_name, process_name, parameters, predecessors, require_predecessor_success):
         super().__init__(instance_name, process_name, parameters)
         self.id = task_id
         self.predecessors = predecessors
+        self.require_predecessor_success = require_predecessor_success
         self.successors = list()
 
     @property
