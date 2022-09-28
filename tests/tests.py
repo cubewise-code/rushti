@@ -1,6 +1,8 @@
 import unittest
 
-from rushti import deduce_levels_of_tasks, extract_tasks_from_file_type_opt, extract_lines_from_file_type_opt
+from rushti import deduce_levels_of_tasks, extract_tasks_from_file_type_opt, \
+    extract_ordered_tasks_and_waits_from_file_type_opt
+from utils import OptimizedTask, Wait
 
 
 class TestDataMethods(unittest.TestCase):
@@ -66,28 +68,52 @@ class TestDataMethods(unittest.TestCase):
         self.assertEqual(expected_outcome, outcome)
 
     def test_extract_lines_from_file_type_opt_happy_case(self):
-        lines = extract_lines_from_file_type_opt(5, r"tests/resources/tasks_opt_happy_case.txt")
-        expected_lines = [
-            'instance="tm1srv01" process="}bedrock.server.wait" pWaitSec="1"\n',
-            'wait\n',
-            'instance="tm1srv02" process="}bedrock.server.wait" pWaitSec="2"\n',
-            'wait\n',
-            'instance="tm1srv02" process="}bedrock.server.wait" pWaitSec="2"\n',
-            'wait\n',
-            'instance="tm1srv02" process="}bedrock.server.wait" pWaitSec="2"\n',
-            'wait\n']
+        ordered_tasks = extract_ordered_tasks_and_waits_from_file_type_opt(
+            5,
+            r"tests/resources/tasks_opt_happy_case.txt")
 
-        self.assertEqual(expected_lines, lines)
+        expected_tasks = [
+            OptimizedTask("1", "tm1srv01", "}bedrock.server.wait", {"pWaitSec": "1"}, [], True),
+            Wait(),
+            OptimizedTask("2", "tm1srv02", "}bedrock.server.wait", {"pWaitSec": "2"}, ["1"], True),
+            Wait(),
+            OptimizedTask("3", "tm1srv02", "}bedrock.server.wait", {"pWaitSec": "2"}, ["2"], True),
+            Wait(),
+            OptimizedTask("4", "tm1srv02", "}bedrock.server.wait", {"pWaitSec": "2"}, ["3"], True),
+            Wait()]
+
+        for (expected_task, ordered_task) in zip(expected_tasks, ordered_tasks):
+            self.assertIsInstance(ordered_task, type(expected_task))
+
+            if isinstance(expected_task, OptimizedTask):
+                self.assertEqual(expected_task.id, ordered_task.id)
+                self.assertEqual(expected_task.instance_name, ordered_task.instance_name)
+                self.assertEqual(expected_task.process_name, ordered_task.process_name)
+                self.assertEqual(expected_task.parameters, ordered_task.parameters)
+                self.assertEqual(expected_task.predecessors, ordered_task.predecessors)
+                self.assertEqual(expected_task.require_predecessor_success, ordered_task.require_predecessor_success)
 
     def test_extract_lines_from_file_type_opt_multi_task_per_id(self):
-        lines = extract_lines_from_file_type_opt(5, r"tests/resources/tasks_opt_multi_task_per_id.txt")
-        expected_lines = [
-            'instance="tm1srv01" process="}bedrock.server.wait" pWaitSec="1"\n',
-            'wait\n',
-            'instance="tm1srv02" process="}bedrock.server.wait" pWaitSec="2"\n',
-            'instance="tm1srv02" process="}bedrock.server.wait" pWaitSec="3"\n',
-            'wait\n',
-            'instance="tm1srv02" process="}bedrock.server.wait" pWaitSec="4"\n',
-            'wait\n']
+        ordered_tasks = extract_ordered_tasks_and_waits_from_file_type_opt(
+            5,
+            r"tests/resources/tasks_opt_multi_task_per_id.txt")
 
-        self.assertEqual(expected_lines, lines)
+        expected_tasks = [
+            OptimizedTask("1", "tm1srv01", "}bedrock.server.wait", {"pWaitSec": "1"}, [], True),
+            Wait(),
+            OptimizedTask("2", "tm1srv02", "}bedrock.server.wait", {"pWaitSec": "2"}, ["1"], True),
+            OptimizedTask("2", "tm1srv02", "}bedrock.server.wait", {"pWaitSec": "3"}, ["1"], True),
+            Wait(),
+            OptimizedTask("3", "tm1srv02", "}bedrock.server.wait", {"pWaitSec": "4"}, ["2"], True),
+            Wait()]
+
+        for (expected_task, ordered_task) in zip(expected_tasks, ordered_tasks):
+            self.assertIsInstance(ordered_task, type(expected_task))
+
+            if isinstance(expected_task, OptimizedTask):
+                self.assertEqual(expected_task.id, ordered_task.id)
+                self.assertEqual(expected_task.instance_name, ordered_task.instance_name)
+                self.assertEqual(expected_task.process_name, ordered_task.process_name)
+                self.assertEqual(expected_task.parameters, ordered_task.parameters)
+                self.assertEqual(expected_task.predecessors, ordered_task.predecessors)
+                self.assertEqual(expected_task.require_predecessor_success, ordered_task.require_predecessor_success)

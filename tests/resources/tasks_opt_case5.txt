@@ -1,6 +1,6 @@
-id="11" predecessors="" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=11
-id="12" predecessors="" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=12
-id="13" predecessors="11,12" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=13
-id="21" predecessors="" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=21
-id="22" predecessors="" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=22
-id="23" predecessors="21,22" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=23
+id="11" predecessors="" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=11
+id="12" predecessors="" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=12
+id="13" predecessors="11,12" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=13
+id="21" predecessors="" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=21
+id="22" predecessors="" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=22
+id="23" predecessors="21,22" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=23
