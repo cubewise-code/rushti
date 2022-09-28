@@ -1,6 +1,7 @@
 import asyncio
 import configparser
 import datetime
+import functools
 import itertools
 import logging
 import os
@@ -10,6 +11,7 @@ import uuid
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 from logging.config import fileConfig
+from typing import List, Union, Dict
 
 try:
     import chardet
@@ -18,7 +20,7 @@ except ImportError:
 
 from TM1py import TM1Service
 
-from utils import set_current_directory, Task, OptimizedTask, ExecutionMode
+from utils import set_current_directory, Task, OptimizedTask, ExecutionMode, Wait
 
 APP_NAME = "RushTI"
 CURRENT_DIRECTORY = set_current_directory()
@@ -48,17 +50,25 @@ MSG_PROCESS_FAIL_UNEXPECTED = (
 MSG_RUSHTI_ENDS = ("{app_name} ends. {fails} fails out of {executions} executions. "
                    "Elapsed time: {time}. Ran with parameters: {parameters}")
 MSG_RUSHTI_ABORTED = "{app_name} aborted with error"
-MSG_PROCESS_ABORTED_FAILED_PREDECESSORS = (
-    "Execution aborted. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
-    "Aborted due to failed related predecessors, on instance: '{instance}'. Elapsed time : {time}.")
+MSG_PROCESS_ABORTED_FAILED_PREDECESSOR = (
+    "Execution aborted. Process: '{process}' with parameters: {parameters} is not run "
+    "due to failed predecessor {predecessor}, on instance: '{instance}'")
+MSG_PROCESS_ABORTED_UNCOMPLETE_PREDECESSOR = (
+    "Execution aborted. Process: '{process}' with parameters: {parameters} is not run "
+    "due to uncompleted predecessor {predecessor}, on instance: '{instance}'")
 
 # used to wrap blackslashes before using
 UNIQUE_STRING = uuid.uuid4().hex[:8].upper()
+
+TRUE_VALUES = ["1", "y", "yes", "true", "t"]
 
 if not os.path.isfile(LOGGING_CONFIG):
     raise ValueError("{config} does not exist".format(config=LOGGING_CONFIG))
 fileConfig(LOGGING_CONFIG)
 logger = logging.getLogger()
+
+# store execution results per line id to control predecessor dependant lines
+TASK_EXECUTION_RESULTS = dict()
 
 
 def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: ExecutionMode) -> dict:
@@ -97,11 +107,12 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
 
 def get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path):
     tm1_instances_in_tasks = set()
-    lines = get_task_lines(file_path=tasks_file_path, max_workers=max_workers, tasks_file_type=execution_mode)
-    for line in lines:
-        if line.lower().strip() == 'wait':
+    tasks = get_ordered_tasks_and_waits(file_path=tasks_file_path, max_workers=max_workers,
+                                        tasks_file_type=execution_mode)
+    for task in tasks:
+        if isinstance(task, Wait):
             continue
-        task = extract_task_from_line(line)
+
         tm1_instances_in_tasks.add(task.instance_name)
     return tm1_instances_in_tasks
 
@@ -115,11 +126,14 @@ def decrypt_password(encrypted_password: str) -> str:
     return b64decode(encrypted_password).decode("UTF-8")
 
 
-def extract_task_from_line(line: str) -> Task:
+def extract_task_or_wait_from_line(line: str) -> Union[Task, Wait]:
     """ Translate one line from txt file into arguments for execution: instance, process, parameters
     :param line: Arguments for execution. E.g. instance="tm1srv01" process="Bedrock.Server.Wait" pWaitSec=2
     :return: instance_name, process_name, parameters
     """
+    if line.strip().lower() == 'wait':
+        return Wait()
+
     line_arguments = dict()
     line = line.replace("\\", UNIQUE_STRING)
     for pair in shlex.split(line):
@@ -139,7 +153,7 @@ def extract_task_from_line(line: str) -> Task:
         parameters=line_arguments)
 
 
-def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
+def extract_task_from_line_type_opt(line: str) -> OptimizedTask:
     """ Translate one line from txt file type 'opt' into arguments for execution
     :param: line: Arguments for execution. E.g. id="5" predecessors="2,3" require_predecessor_success="1" instance="tm1srv01"
     process="Bedrock.Server.Wait" pWaitSec=5
@@ -153,8 +167,12 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
         value = value.replace(UNIQUE_STRING, "\\")
 
         # if instance or process, needs to be case insensitive
-        if argument.lower() == "process" or argument.lower() == "instance" or argument.lower() == "id" or argument.lower() == "require_predecessor_success":
+        if argument.lower() == "process" or argument.lower() == "instance" or argument.lower() == "id":
             line_arguments[argument.lower()] = value.strip('"').strip()
+
+        elif argument.lower() == "require_predecessor_success":
+            line_arguments["require_predecessor_success"] = value.strip('"').strip().lower() in TRUE_VALUES
+
         # Convert string attribute value into list
         elif argument.lower() == "predecessors":
             predecessors = value.strip('"').strip().split(",")
@@ -163,6 +181,7 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
                 line_arguments[argument] = []
             else:
                 line_arguments[argument] = predecessors
+
         # parameters (e.g. pWaitSec) are case sensitive in TM1 REST API !
         else:
             line_arguments[argument] = value.strip('"').strip()
@@ -172,12 +191,17 @@ def extract_tasks_from_line_type_opt(line: str) -> OptimizedTask:
         instance_name=line_arguments.pop("instance"),
         process_name=line_arguments.pop("process"),
         predecessors=line_arguments.pop("predecessors"),
-        require_predecessor_success=line_arguments["require_predecessor_success"],
+        require_predecessor_success=line_arguments.pop("require_predecessor_success", False),
         parameters=line_arguments)
 
 
-def extract_lines_from_file_type_opt(max_workers: int, file_path: str) -> list:
-    lines = list()
+def extract_ordered_tasks_and_waits_from_file_type_norm(file_path: str):
+    with open(file_path, encoding='utf-8') as file:
+        return [extract_task_or_wait_from_line(line) for line in file.readlines()]
+
+
+def extract_ordered_tasks_and_waits_from_file_type_opt(max_workers: int, file_path: str) -> List[Task]:
+    ordered_tasks_and_waits = list()
     tasks = extract_tasks_from_file_type_opt(file_path)
 
     # mapping of level (int) against list of tasks
@@ -187,10 +211,10 @@ def extract_lines_from_file_type_opt(max_workers: int, file_path: str) -> list:
     for level in tasks_by_level.values():
         for task_id in level:
             for task in tasks[task_id]:
-                line = task.translate_to_line()
-                lines.append(line)
-        lines.append("wait\n")
-    return lines
+                ordered_tasks_and_waits.append(task)
+
+        ordered_tasks_and_waits.append(Wait())
+    return ordered_tasks_and_waits
 
 
 def extract_tasks_from_file_type_opt(file_path: str) -> dict:
@@ -207,7 +231,7 @@ def extract_tasks_from_file_type_opt(file_path: str) -> dict:
             # skip empty lines
             if not line.strip():
                 continue
-            task = extract_tasks_from_line_type_opt(line)
+            task = extract_task_from_line_type_opt(line)
             if task.id not in tasks:
                 tasks[task.id] = [task]
             else:
@@ -321,7 +345,7 @@ def pre_process_file(file_path: str):
             file.write(text)
 
 
-def get_task_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> list:
+def get_ordered_tasks_and_waits(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> List[Task]:
     """ Extract tasks from file
     if necessary transform a file that respects type 'opt' specification into a scheduled and optimized list of tasks
     :param file_path:
@@ -337,10 +361,9 @@ def get_task_lines(file_path: str, max_workers: int, tasks_file_type: ExecutionM
         logging.info(f"Function '{pre_process_file.__name__}' skipped. Optional dependency 'chardet' not installed")
 
     if tasks_file_type == ExecutionMode.NORM:
-        with open(file_path, encoding='utf-8') as file:
-            return file.readlines()
+        return extract_ordered_tasks_and_waits_from_file_type_norm(file_path)
     else:
-        return extract_lines_from_file_type_opt(max_workers, file_path)
+        return extract_ordered_tasks_and_waits_from_file_type_opt(max_workers, file_path)
 
 
 def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
@@ -360,31 +383,56 @@ def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
             attempt += 1
 
 
-def execute_line(line, retries, tm1_services):
+def update_task_execution_results(func):
+    @functools.wraps(func)
+    def wrapper(task: Task, *args, **kwargs):
+        task_success = False
+        try:
+            task_success = func(task, *args, **kwargs)
+
+        finally:
+            # two optimized tasks can have the same id !
+            previous_task_success = TASK_EXECUTION_RESULTS.get(task.id, True)
+            TASK_EXECUTION_RESULTS[task.id] = previous_task_success and task_success
+
+            return task_success
+
+    return wrapper
+
+
+@update_task_execution_results
+def execute_task(task: Task, retries: int, tm1_services: Dict[str, TM1Service]) -> bool:
     """ Execute one line from the txt file
-    :param line:
+    :param task:
     :param retries:
     :param tm1_services: 
     :return: 
     """
-    if len(line.strip()) == 0:
-        return True
-    task = extract_task_from_line(line)
+
+    # check predecessors success
+    if isinstance(task, OptimizedTask) and task.require_predecessor_success:
+        predecessors_ok = verify_predecessors_ok(task)
+        if not predecessors_ok:
+            return False
+
     if task.instance_name not in tm1_services:
         msg = MSG_PROCESS_FAIL_INSTANCE_NOT_IN_CONFIG_FILE.format(
             process_name=task.process_name, instance_name=task.instance_name)
         logger.error(msg)
         return False
+
     tm1 = tm1_services[task.instance_name]
     # Execute it
     msg = MSG_PROCESS_EXECUTE.format(
         process_name=task.process_name, parameters=task.parameters, instance_name=task.instance_name)
     logger.info(msg)
     start_time = datetime.datetime.now()
+
     try:
         success, status, error_log_file, attempts = execute_process_with_retries(
             tm1=tm1, task=task, retries=retries)
         elapsed_time = datetime.datetime.now() - start_time
+
         if success:
             msg = MSG_PROCESS_SUCCESS
             msg = msg.format(
@@ -395,6 +443,7 @@ def execute_line(line, retries, tm1_services):
                 time=elapsed_time)
             logger.info(msg)
             return True
+
         else:
             msg = MSG_PROCESS_FAIL_WITH_ERROR_FILE.format(
                 process=task.process_name,
@@ -406,12 +455,37 @@ def execute_line(line, retries, tm1_services):
                 error_file=error_log_file)
             logger.error(msg)
             return False
+
     except Exception as e:
         elapsed_time = datetime.datetime.now() - start_time
         msg = MSG_PROCESS_FAIL_UNEXPECTED.format(
             process=task.process_name, parameters=task.parameters, error=str(e), time=elapsed_time)
         logger.error(msg)
         return False
+
+
+def verify_predecessors_ok(task: OptimizedTask) -> bool:
+    for predecessor_id in task.predecessors:
+
+        if predecessor_id not in TASK_EXECUTION_RESULTS:
+            msg = MSG_PROCESS_ABORTED_UNCOMPLETE_PREDECESSOR.format(
+                instance=task.instance_name,
+                process=task.process_name,
+                parameters=task.parameters,
+                predecessor=predecessor_id)
+            logger.error(msg)
+            return False
+
+        if not TASK_EXECUTION_RESULTS[predecessor_id]:
+            msg = MSG_PROCESS_ABORTED_FAILED_PREDECESSOR.format(
+                instance=task.instance_name,
+                process=task.process_name,
+                parameters=task.parameters,
+                predecessor=predecessor_id)
+            logger.error(msg)
+            return False
+
+    return True
 
 
 async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMode, retries: int, tm1_services: dict):
@@ -423,117 +497,30 @@ async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMo
     :param tm1_services: 
     :return: 
     """
-    lines = get_task_lines(file_path, max_workers, mode)
-    loop = asyncio.get_event_loop()
+    tasks = get_ordered_tasks_and_waits(file_path, max_workers, mode)
+
     # split lines into the blocks separated by 'wait' line
-    line_sets = [
+    task_sets = [
         list(y)
-        for x, y in itertools.groupby(lines, lambda z: z.lower().strip() == "wait")
+        for x, y in itertools.groupby(tasks, lambda z: isinstance(z, Wait))
         if not x]
 
     # True or False for every execution
     outcomes = []
-    if mode.name == "OPT":
-        await work_through_tasks_opt(line_sets, loop, max_workers, outcomes, retries, tm1_services)
 
-    else:
-        for line_set in line_sets:
-            with ThreadPoolExecutor(int(max_workers)) as executor:
-                futures = [
-                    loop.run_in_executor(executor, execute_line, line, retries, tm1_services)
-                    for line
-                    in line_set]
-                for future in futures:
-                    outcomes.append(await future)
+    loop = asyncio.get_event_loop()
+
+    for task_set in task_sets:
+        with ThreadPoolExecutor(int(max_workers)) as executor:
+            futures = [
+                loop.run_in_executor(executor, execute_task, task, retries, tm1_services)
+                for task
+                in task_set]
+
+            for future in futures:
+                outcomes.append(await future)
 
     return outcomes
-
-
-async def work_through_tasks_opt(line_sets, loop, max_workers, outcomes, retries, tm1_services):
-    index_start_outcomes, index_end_outcomes = 0, 0
-    line_set_arguments = dict()
-    for num_line_set, line_set in enumerate(line_sets):
-        updated_line_set, line_set_successes = [], []
-        line_set_arguments[num_line_set] = dict()
-        line_set_arguments[num_line_set]["lines_properties"] = dict()
-
-        # Parse the optimized list of scheduled tasks to extract the 'require_predecessor_success' value on every lines
-        for num_line, line in enumerate(line_set):
-            line_set_arguments[num_line_set]["lines_properties"][num_line] = dict()
-            line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"] = dict()
-            for pair in shlex.split(line):
-                argument, value = pair.split("=")
-                if argument.lower() == "instance":
-                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = dict()
-                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = value.strip(
-                        '"').strip()
-                elif argument.lower() == "process":
-                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = dict()
-                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = value.strip(
-                        '"').strip()
-                elif argument.lower() == "require_predecessor_success":
-                    success_argument = f'{argument}="{value}"'
-                    b_value = 1 if value.strip('"').strip() in ('True', 'true', 'TRUE', '1', 1) else 0
-                    line_set_arguments[num_line_set]["lines_properties"][num_line][argument.lower()] = b_value
-                    line_set_successes.append(b_value)
-                else:
-                    line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"][argument] = dict()
-                    line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"][
-                        argument] = value.strip('"').strip()
-
-            # Remove 'require_predecessor_success' parameter to be execution ready
-            updated_line_set.append(line.replace(f' {success_argument}', ''))
-
-        # Add some set properties and deduce a 'require_predecessor_success' argument at a set level
-        line_set_arguments[num_line_set]["line_set_properties"] = dict()
-        line_set_arguments[num_line_set]["line_set_properties"]["nb_of_tasks"] = len(line_set)
-        line_set_arguments[num_line_set]["line_set_properties"]["require_predecessor_success"] = all(line_set_successes)
-
-        with ThreadPoolExecutor(int(max_workers)) as executor:
-            # Deduce an outcome status from predecessors at a set level
-            previous_line_outcomes, previous_set_outcome = [], []
-            if num_line_set != 0:
-                nb_of_tasks_prev_set = line_set_arguments[num_line_set - 1]["line_set_properties"]["nb_of_tasks"]
-                index_end_outcomes = index_start_outcomes + nb_of_tasks_prev_set
-                for value in outcomes[index_start_outcomes:index_end_outcomes]:
-                    flag_outcome = 1 if value in ('True', 'true', 'TRUE', '1', 1) else 0
-                    previous_line_outcomes.append(flag_outcome)
-                previous_set_outcome = all(previous_line_outcomes)
-                index_start_outcomes = index_end_outcomes
-            else:
-                previous_set_outcome = True
-
-            # Update the optimized list of scheduled tasks by removing lines with failed predecessors if asked
-            temp_updated_line_set = updated_line_set.copy()
-            for num_line, line in enumerate(temp_updated_line_set):
-                flag_success = line_set_arguments[num_line_set]["lines_properties"][num_line]["require_predecessor_success"]
-                if flag_success == 1 and previous_set_outcome is False:
-                    updated_line_set.remove(line)
-                    outcomes.append(False)
-                    # Pretend the process is currently executing in the message log
-                    msg = MSG_PROCESS_EXECUTE.format(
-                        instance_name=line_set_arguments[num_line_set]["lines_properties"][num_line]["instance"],
-                        process_name=line_set_arguments[num_line_set]["lines_properties"][num_line]["process"],
-                        parameters=line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"])
-                    logger.info(msg)
-                    start_time = datetime.datetime.now()
-                    # Execution aborted due to failed predecessors in the message log
-                    msg = MSG_PROCESS_ABORTED_FAILED_PREDECESSORS.format(
-                        instance=line_set_arguments[num_line_set]["lines_properties"][num_line]["instance"],
-                        process=line_set_arguments[num_line_set]["lines_properties"][num_line]["process"],
-                        retries=0,
-                        parameters=line_set_arguments[num_line_set]["lines_properties"][num_line]["parameters"],
-                        time=datetime.datetime.now() - start_time)
-                    logger.error(msg)
-
-            # Run the execution with the optimized and updated list of scheduled tasks
-            if updated_line_set:
-                futures = [
-                    loop.run_in_executor(executor, execute_line, line, retries, tm1_services)
-                    for line
-                    in updated_line_set]
-                for future in futures:
-                    outcomes.append(await future)
 
 
 def logout(tm1_services):
