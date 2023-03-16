@@ -368,19 +368,24 @@ def get_ordered_tasks_and_waits(file_path: str, max_workers: int, tasks_file_typ
 
 def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
     attempt = 0
-    while True:
+    while attempt <= retries:
         try:
+            # tm1.processes.execute_with_return runs and returns either success = True or False
             success, status, error_log_file = tm1.processes.execute_with_return(
                 process_name=task.process_name,
                 **task.parameters)
-            if success:
-                return success, status, error_log_file, attempt
+        except Exception as e:
+            # tm1.processes.execute_with_return could not be executed
+            # If last attempt, then raise exception
             if attempt == retries:
-                return success, status, error_log_file, attempt
-        except:
-            continue
+                raise e
+        else:
+            if success:
+                break
         finally:
             attempt += 1
+
+    return success, status, error_log_file, attempt
 
 
 def update_task_execution_results(func):
