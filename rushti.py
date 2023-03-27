@@ -370,12 +370,12 @@ def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
     attempt = 0
     while attempt <= retries:
         try:
-            # tm1.processes.execute_with_return runs and returns either success = True or False
+            # process runs and returns either success = True or False
             success, status, error_log_file = tm1.processes.execute_with_return(
                 process_name=task.process_name,
                 **task.parameters)
         except Exception as e:
-            # tm1.processes.execute_with_return could not be executed
+            # process could not be executed (e.g. doesn't exist)
             # If last attempt, then raise exception
             if attempt == retries:
                 raise e
