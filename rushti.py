@@ -624,7 +624,7 @@ if __name__ == "__main__":
     # setup results variable (guarantee it's not empty in case of error)
     results = list()
     # execution
-    event_loop = asyncio.get_event_loop()
+    event_loop = asyncio.new_event_loop()
     try:
         results = event_loop.run_until_complete(
             work_through_tasks(
