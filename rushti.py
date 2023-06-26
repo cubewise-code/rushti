@@ -57,9 +57,9 @@ MSG_PROCESS_ABORTED_UNCOMPLETE_PREDECESSOR = (
     "Execution aborted. Process: '{process}' with parameters: {parameters} is not run "
     "due to uncompleted predecessor {predecessor}, on instance: '{instance}'")
 MSG_PROCESS_NOT_EXISTS = (
-    "Validation Failed. Process: '{process}' does not existon instance: '{instance}'")
+    "Task validation failed. Process: '{process}' does not exist on instance: '{instance}'")
 MSG_PROCESS_PARAMS_INCORRECT = (
-    "Validation Failed. Process: '{process}' does not have: {parameters}, "
+    "Task validation failed. Process: '{process}' does not have: {parameters}, "
     "on instance: '{instance}'")
 
 # used to wrap blackslashes before using
@@ -516,7 +516,7 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
         if current_task in validated_tasks:
             continue
 
-        # check for process exiatance
+        # check for process existence
         if not tm1.processes.exists(task.process_name):
             msg = MSG_PROCESS_NOT_EXISTS.format(
                 process=task.process_name,
@@ -557,11 +557,6 @@ async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMo
     :param tm1_services:
     :return:
     """
-    tasks = get_ordered_tasks_and_waits(file_path, max_workers, mode)
-
-    if not validate_tasks(tasks, tm1_services):
-        logout(tm1_services)
-        return [False]
 
     # split lines into the blocks separated by 'wait' line
     task_sets = [
@@ -676,15 +671,27 @@ if __name__ == "__main__":
     logger.info(MSG_RUSHTI_STARTS.format(app_name=APP_NAME, parameters=sys.argv))
     # start timer
     start = datetime.datetime.now()
+
     # read commandline arguments
     tasks_file_path, maximum_workers, execution_mode, process_execution_retries = translate_cmd_arguments(*sys.argv)
+
     # setup connections
     tm1_service_by_instance = setup_tm1_services(maximum_workers, tasks_file_path, execution_mode)
+
     # setup results variable (guarantee it's not empty in case of error)
     results = list()
-    # execution
-    event_loop = asyncio.new_event_loop()
+
+    # spawn event loop for parallelization
+    event_loop = None
+
     try:
+        # determine and validate tasks
+        tasks = get_ordered_tasks_and_waits(tasks_file_path, maximum_workers, execution_mode)
+        if not validate_tasks(tasks, tm1_service_by_instance):
+            raise ValueError("Invalid tasks provided")
+
+        # execution
+        event_loop = asyncio.new_event_loop()
         results = event_loop.run_until_complete(
             work_through_tasks(
                 tasks_file_path,
@@ -702,7 +709,8 @@ if __name__ == "__main__":
 
     finally:
         logout(tm1_service_by_instance)
-        event_loop.close()
+        if event_loop:
+            event_loop.close()
 
     # timing
     duration = datetime.datetime.now() - start
