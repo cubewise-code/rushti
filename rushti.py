@@ -1,6 +1,6 @@
 import asyncio
 import configparser
-import datetime
+import csv
 import functools
 import itertools
 import logging
@@ -10,6 +10,7 @@ import sys
 import uuid
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from logging.config import fileConfig
 from typing import List, Union, Dict
 
@@ -436,12 +437,12 @@ def execute_task(task: Task, retries: int, tm1_services: Dict[str, TM1Service]) 
     msg = MSG_PROCESS_EXECUTE.format(
         process_name=task.process_name, parameters=task.parameters, instance_name=task.instance_name)
     logger.info(msg)
-    start_time = datetime.datetime.now()
+    start_time = datetime.now()
 
     try:
         success, status, error_log_file, attempts = execute_process_with_retries(
             tm1=tm1, task=task, retries=retries)
-        elapsed_time = datetime.datetime.now() - start_time
+        elapsed_time = datetime.now() - start_time
 
         if success:
             msg = MSG_PROCESS_SUCCESS
@@ -467,7 +468,7 @@ def execute_task(task: Task, retries: int, tm1_services: Dict[str, TM1Service]) 
             return False
 
     except Exception as e:
-        elapsed_time = datetime.datetime.now() - start_time
+        elapsed_time = datetime.now() - start_time
         msg = MSG_PROCESS_FAIL_UNEXPECTED.format(
             process=task.process_name, parameters=task.parameters, error=str(e), time=elapsed_time)
         logger.error(msg)
@@ -548,11 +549,9 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
     return validation_ok
 
 
-async def work_through_tasks(file_path: str, max_workers: int, mode: ExecutionMode, retries: int, tm1_services: dict):
+async def work_through_tasks(max_workers: int, retries: int, tm1_services: dict):
     """ loop through file. Add all lines to the execution queue.
-    :param file_path:
     :param max_workers:
-    :param mode:
     :param retries:
     :param tm1_services:
     :return:
@@ -595,57 +594,93 @@ def logout(tm1_services):
 def translate_cmd_arguments(*args):
     """ Translation and Validity-checks for command line arguments.
 
+
     :param args: 
-    :return: tasks_file_path, maximum_workers, execution_mode
+    :return: tasks_file_path, maximum_workers, execution_mode, retries, result_file
     """
     # too few arguments
-    if len(args) < 3 or len(args) > 5:
+    if len(args) < 3 or len(args) > 6:
         msg = MSG_RUSHTI_WRONG_NUMBER_OF_ARGUMENTS.format(app_name=APP_NAME)
-        logger.error(msg)
-        sys.exit(msg)
-
-    # txt file doesnt exist
-    if not os.path.isfile(args[1]):
-        msg = MSG_RUSHTI_ARGUMENT1_INVALID
-        logger.error(msg)
-        sys.exit(msg)
-
-    # maximum_workers is not a number
-    if not args[2].isdigit():
-        msg = MSG_RUSHTI_ARGUMENT2_INVALID
         logger.error(msg)
         sys.exit(msg)
 
     # default values
     mode = ExecutionMode.NORM
     retries = 0
+    result_file = "rushti.csv"
 
-    if len(args) == 3:
-        return args[1], int(args[2]), mode, retries
-
-    try:
-        mode = ExecutionMode(args[3])
-    except ValueError:
-        msg = MSG_RUSHTI_ARGUMENT3_INVALID
+    # txt file doesnt exist
+    tasks_file = args[1]
+    if not os.path.isfile(tasks_file):
+        msg = MSG_RUSHTI_ARGUMENT1_INVALID
         logger.error(msg)
         sys.exit(msg)
+
+    # maximum_workers is not a number
+    max_workers = args[2]
+    if not max_workers.isdigit():
+        msg = MSG_RUSHTI_ARGUMENT2_INVALID
+        logger.error(msg)
+        sys.exit(msg)
+    else:
+        max_workers = int(max_workers)
 
     if len(args) == 4:
-        return args[1], int(args[2]), mode, retries
+        try:
+            mode = ExecutionMode(args[3])
+        except ValueError:
+            msg = MSG_RUSHTI_ARGUMENT3_INVALID
+            logger.error(msg)
+            sys.exit(msg)
 
-    if not args[4].isdigit():
-        msg = MSG_RUSHTI_ARGUMENT4_INVALID
-        logger.error(msg)
-        sys.exit(msg)
+    if len(args) == 5:
+        retries = args[4]
+        if not retries.isdigit():
+            msg = MSG_RUSHTI_ARGUMENT4_INVALID
+            logger.error(msg)
+            sys.exit(msg)
+        else:
+            retries = int(retries)
 
-    return args[1], int(args[2]), mode, int(args[4])
+    if len(args) == 6:
+        result_file = args[5]
+
+    return tasks_file, max_workers, mode, retries, result_file
 
 
-def exit_rushti(overall_success, executions, successes, elapsed_time):
+def create_results_file(
+        result_file: str,
+        overall_success: bool,
+        executions: int,
+        fails: int,
+        start_time: datetime,
+        end_time: datetime,
+        elapsed_time: timedelta):
+    header = (
+        "PID", "Process Runs", "Process Fails",
+        "Start", "End", "Runtime", "Overall Success")
+    record = (
+        os.getpid(), executions, fails,
+        start_time, end_time, elapsed_time, overall_success)
+
+    with open(result_file, "w", encoding="utf-8") as file:
+        cw = csv.writer(file, delimiter='|')
+        cw.writerows([header, record])
+
+
+def exit_rushti(
+        overall_success: bool,
+        executions: int,
+        successes: int,
+        start_time: datetime,
+        end_time: datetime,
+        elapsed_time: timedelta):
     """ Exit RushTI with exit code 0 or 1 depending on the TI execution outcomes
     :param overall_success: Exception raised during executions
     :param executions: Number of executions
     :param successes: Number of executions that succeeded
+    :param start_time:
+    :param end_time:
     :param elapsed_time:
     :return:
     """
@@ -658,6 +693,16 @@ def exit_rushti(overall_success, executions, successes, elapsed_time):
     message = MSG_RUSHTI_ENDS.format(
         app_name=APP_NAME, fails=fails, executions=executions, time=str(elapsed_time), parameters=sys.argv
     )
+
+    create_results_file(
+        result_file,
+        overall_success,
+        executions,
+        fails,
+        start_time,
+        end_time,
+        elapsed_time)
+
     if fails > 0:
         logger.error(message)
         sys.exit(message)
@@ -670,10 +715,11 @@ def exit_rushti(overall_success, executions, successes, elapsed_time):
 if __name__ == "__main__":
     logger.info(MSG_RUSHTI_STARTS.format(app_name=APP_NAME, parameters=sys.argv))
     # start timer
-    start = datetime.datetime.now()
+    start = datetime.now()
 
     # read commandline arguments
-    tasks_file_path, maximum_workers, execution_mode, process_execution_retries = translate_cmd_arguments(*sys.argv)
+    (tasks_file_path, maximum_workers, execution_mode,
+     process_execution_retries, result_file) = translate_cmd_arguments(*sys.argv)
 
     # setup connections
     tm1_service_by_instance = setup_tm1_services(maximum_workers, tasks_file_path, execution_mode)
@@ -694,9 +740,7 @@ if __name__ == "__main__":
         event_loop = asyncio.new_event_loop()
         results = event_loop.run_until_complete(
             work_through_tasks(
-                tasks_file_path,
                 maximum_workers,
-                execution_mode,
                 process_execution_retries,
                 tm1_service_by_instance
             )
@@ -713,5 +757,12 @@ if __name__ == "__main__":
             event_loop.close()
 
     # timing
-    duration = datetime.datetime.now() - start
-    exit_rushti(overall_success=success, executions=len(results), successes=sum(results), elapsed_time=duration)
+    end = datetime.now()
+    duration = end - start
+    exit_rushti(
+        overall_success=success,
+        executions=len(results),
+        successes=sum(results),
+        start_time=start,
+        end_time=end,
+        elapsed_time=duration)

@@ -7,6 +7,7 @@ Smooth parallelization of TI Processes with [TM1py](https://code.cubewise.com/tm
 ## Installing
 
 Install TM1py:
+
 ```
 pip install TM1py
 ```
@@ -20,55 +21,63 @@ Clone or download the RushTI Repository
 * Create the Tasks.txt file
 * Execute the RushTI.py script: 
 
-  Execution for classical type of tasks file with four arguments: 
-  - path to tasks.txt 
-  - number of maximum workers to run in parallel
-  - 'norm' to select the normal execution mode
-  - number of retries per process
-  
-  ```
-  python RushTI.py Tasks_type_classic.txt 16 norm 2
-  ```
+Execution for classical type of tasks file with four arguments: 
+- path to tasks.txt 
+- number of maximum workers to run in parallel
+- 'norm' to select the normal execution mode
+- number of retries per process
+- path to result file
 
-  Example of Tasks_type_classic.txt:
-  ```
-  instance="tm1srv01" process="load.actuals" pMonth=Jan
-  wait
-  instance="tm1srv01" process="load.actuals" pMonth=Feb
-  instance="tm1srv01" process="load.actuals" pMonth=Mar
-  instance="tm1srv01" process="load.actuals" pMonth=Apr
-  wait
-  instance="tm1srv01" process="load.actuals" pMonth=May
-  wait
-  instance="tm1srv01" process="load.actuals" pMonth=Jun
-  instance="tm1srv01" process="load.actuals" pMonth=Jul
-  wait
-  instance="tm1srv01" process="load.actuals" pMonth=Aug
-  ```
+```
+python RushTI.py Tasks_type_classic.txt 16 norm 2 results.csv
+```
 
-  Or
+Example of Tasks_type_classic.txt:
+```
+instance="tm1srv01" process="load.actuals" pMonth=Jan
+wait
+instance="tm1srv01" process="load.actuals" pMonth=Feb
+instance="tm1srv01" process="load.actuals" pMonth=Mar
+instance="tm1srv01" process="load.actuals" pMonth=Apr
+wait
+instance="tm1srv01" process="load.actuals" pMonth=May
+wait
+instance="tm1srv01" process="load.actuals" pMonth=Jun
+instance="tm1srv01" process="load.actuals" pMonth=Jul
+wait
+instance="tm1srv01" process="load.actuals" pMonth=Aug
+```
 
-  Execution for optimized type of tasks file with four arguments: 
-  - path to tasks.txt
-  - number of maximum workers to run in parallel
-  - 'opt' to specify the optimized execution mode
-  - number of retries per process
-  
-  ```
-  python RushTI.py Tasks_type_optimized.txt 16 opt 3
-  ```
+Or
 
-  Example of Tasks_type_optimized.txt:
-  ```
-  id="1" predecessors="" require_predecessor_success="" instance="tm1srv01" process="load.actuals" pMonth=Jan
-  id="2" predecessors="1" require_predecessor_success="1" instance="tm1srv02" process="load.actuals" pMonth=Feb
-  id="3" predecessors="1" require_predecessor_success="1" instance="tm1srv01" process="load.actuals" pMonth=Mar
-  id="4" predecessors="1" require_predecessor_success="0" instance="tm1srv02" process="load.actuals" pMonth=Apr
-  id="5" predecessors="2,3" require_predecessor_success="0" instance="tm1srv01" process="load.actuals" pMonth=May
-  id="6" predecessors="4,5" require_predecessor_success="1" instance="tm1srv02" process="load.actuals" pMonth=Jun
-  id="7" predecessors="4" require_predecessor_success="0" instance="tm1srv01" process="load.actuals" pMonth=Jul
-  id="8" predecessors="6" require_predecessor_success="0" instance="tm1srv02" process="load.actuals" pMonth=Aug
-  ```
+Execution for optimized type of tasks file with four arguments: 
+- path to tasks.txt
+- number of maximum workers to run in parallel
+- 'opt' to specify the optimized execution mode
+- number of retries per process
+
+```
+python RushTI.py Tasks_type_optimized.txt 16 opt 3 results.csv
+```
+
+Example of Tasks_type_optimized.txt:
+```
+id="1" predecessors="" require_predecessor_success="" instance="tm1srv01" process="load.actuals" pMonth=Jan
+id="2" predecessors="1" require_predecessor_success="1" instance="tm1srv02" process="load.actuals" pMonth=Feb
+id="3" predecessors="1" require_predecessor_success="1" instance="tm1srv01" process="load.actuals" pMonth=Mar
+id="4" predecessors="1" require_predecessor_success="0" instance="tm1srv02" process="load.actuals" pMonth=Apr
+id="5" predecessors="2,3" require_predecessor_success="0" instance="tm1srv01" process="load.actuals" pMonth=May
+id="6" predecessors="4,5" require_predecessor_success="1" instance="tm1srv02" process="load.actuals" pMonth=Jun
+id="7" predecessors="4" require_predecessor_success="0" instance="tm1srv01" process="load.actuals" pMonth=Jul
+id="8" predecessors="6" require_predecessor_success="0" instance="tm1srv02" process="load.actuals" pMonth=Aug
+```
+
+RushTI produces a result file with the following format. 
+If no name is provided the file be named `rushti.csv`
+
+| PID   |Process Runs|Process Fails|Start|End|Runtime|Overall Success|
+|-------|---------------------|--------------|-------------------|--------------------|--------------|---------------|
+| 10332 |8|0|2023-06-26 15:19:28.778457|2023-06-26 15:19:49.160629|0:00:20.382172|True|
 
 ## Running the tests
 
