@@ -1,7 +1,7 @@
 import os
 import sys
 from enum import Enum
-from typing import List, Dict
+from typing import List, Dict, Any
 
 
 def set_current_directory():
@@ -32,7 +32,7 @@ class Wait:
 class Task:
     id = 1
 
-    def __init__(self, instance_name, process_name, parameters):
+    def __init__(self, instance_name: str, process_name: str, parameters: Dict[str, Any] = None):
         self.id = Task.id
         self.instance_name = instance_name
         self.process_name = process_name
@@ -48,7 +48,8 @@ class Task:
 
 
 class OptimizedTask(Task):
-    def __init__(self, task_id: str, instance_name: str, process_name: str, parameters: Dict, predecessors: List,
+    def __init__(self, task_id: str, instance_name: str, process_name: str, parameters: Dict[str, Any],
+                 predecessors: List,
                  require_predecessor_success: bool):
         super().__init__(instance_name, process_name, parameters)
         self.id = task_id
@@ -64,6 +65,15 @@ class OptimizedTask(Task):
     def has_successors(self):
         return len(self.successors) > 0
 
+    def translate_to_line(self):
+        return 'id="{id}" predecessors="{predecessors}" require_predecessor_success="{require_predecessor_success}" instance="{instance}" process="{process}" {parameters}\n'.format(
+            id=self.id,
+            predecessors=self.predecessors,
+            require_predecessor_success=self.require_predecessor_success,
+            instance=self.instance_name,
+            process=self.process_name,
+            parameters=' '.join('{}="{}"'.format(parameter, value) for parameter, value in self.parameters.items()))
+
 
 class ExecutionMode(Enum):
     NORM = 1
@@ -76,3 +86,24 @@ class ExecutionMode(Enum):
                 return member
         # default
         return cls.NORM
+
+
+def flatten_to_list(object) -> list:
+    """takes an nested iterables and returns a flat list of them
+
+    Args:
+        object (_type_): object containing the iterable
+
+    Returns:
+        list: flat list of objects
+    """
+    gather = []
+    if not isinstance(object, str):
+        for item in object:
+            if isinstance(item, (list, tuple, set)):
+                gather.extend(flatten_to_list(item))
+            else:
+                gather.append(item)
+    else:
+        gather.append(object)
+    return gather
