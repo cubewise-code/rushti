@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from logging.config import fileConfig
 from typing import List, Union, Dict
+from itertools import product
 
 try:
     import chardet
@@ -21,7 +22,7 @@ except ImportError:
 
 from TM1py import TM1Service
 
-from utils import set_current_directory, Task, OptimizedTask, ExecutionMode, Wait
+from utils import set_current_directory, Task, OptimizedTask, ExecutionMode, Wait, flatten_to_list
 
 APP_NAME = "RushTI"
 CURRENT_DIRECTORY = set_current_directory()
@@ -87,6 +88,7 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
 
     tm1_instances_in_tasks = get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path)
 
+    global tm1_services
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
@@ -159,6 +161,29 @@ def extract_task_or_wait_from_line(line: str) -> Union[Task, Wait]:
         parameters=line_arguments)
 
 
+def expand_task(task: Union[Task, OptimizedTask]) -> List[Union[Task, OptimizedTask]]:
+    global tm1_services
+    tm1 = tm1_services[task.instance_name]
+    list_params = []
+    result = []
+    for param, value in task.parameters.items():
+        if param.endswith('*'):
+            elements = tm1.dimensions.hierarchies.elements.execute_set_mdx(value[1:], member_properties=['Name'],
+                                                                           parent_properties=None,
+                                                                           element_properties=None)
+            list_params.append([(param[:-1], element[0]["Name"]) for element in elements])
+        else:
+            list_params.append([(param, value)])
+    for expanded_params in [dict(combo) for combo in product(*list_params)]:
+        if isinstance(task, OptimizedTask):
+            result.append(OptimizedTask(task.id, task.instance_name, task.process_name, parameters=expanded_params,
+                                        predecessors=task.predecessors,
+                                        require_predecessor_success=task.require_predecessor_success))
+        elif isinstance(task, Task):
+            result.append(Task(task.instance_name, task.process_name, parameters=expanded_params))
+    return result
+
+
 def extract_task_from_line_type_opt(line: str) -> OptimizedTask:
     """ Translate one line from txt file type 'opt' into arguments for execution
     :param: line: Arguments for execution. E.g. id="5" predecessors="2,3" require_predecessor_success="1" instance="tm1srv01"
@@ -201,14 +226,19 @@ def extract_task_from_line_type_opt(line: str) -> OptimizedTask:
         parameters=line_arguments)
 
 
-def extract_ordered_tasks_and_waits_from_file_type_norm(file_path: str):
+def extract_ordered_tasks_and_waits_from_file_type_norm(file_path: str, expand: bool = False):
     with open(file_path, encoding='utf-8') as file:
-        return [extract_task_or_wait_from_line(line) for line in file.readlines()]
+        original_tasks = [extract_task_or_wait_from_line(line) for line in file.readlines() if not line.startswith('#')]
+        if not expand:
+            return original_tasks
+        else:
+            return flatten_to_list([expand_task(task) if isinstance(task, Task) else Wait() for task in original_tasks])
 
 
-def extract_ordered_tasks_and_waits_from_file_type_opt(max_workers: int, file_path: str) -> List[Task]:
+def extract_ordered_tasks_and_waits_from_file_type_opt(max_workers: int, file_path: str, expand: bool = False) -> List[
+    Task]:
     ordered_tasks_and_waits = list()
-    tasks = extract_tasks_from_file_type_opt(file_path)
+    tasks = extract_tasks_from_file_type_opt(file_path, expand)
 
     # mapping of level (int) against list of tasks
     tasks_by_level = deduce_levels_of_tasks(tasks)
@@ -223,7 +253,7 @@ def extract_ordered_tasks_and_waits_from_file_type_opt(max_workers: int, file_pa
     return ordered_tasks_and_waits
 
 
-def extract_tasks_from_file_type_opt(file_path: str) -> dict:
+def extract_tasks_from_file_type_opt(file_path: str, expand: bool = False) -> dict:
     """
     :param file_path:
     :return: tasks
@@ -234,14 +264,24 @@ def extract_tasks_from_file_type_opt(file_path: str) -> dict:
         lines = input_file.readlines()
         # Build tasks dictionary
         for line in lines:
-            # skip empty lines
-            if not line.strip():
-                continue
-            task = extract_task_from_line_type_opt(line)
-            if task.id not in tasks:
-                tasks[task.id] = [task]
-            else:
-                tasks[task.id].append(task)
+            # exclude comments
+            if not line.startswith('#'):
+                # skip empty lines
+                if not line.strip():
+                    continue
+                task = extract_task_from_line_type_opt(line)
+                if task.id not in tasks:
+                    tasks[task.id] = [task]
+                else:
+                    tasks[task.id].append(task)
+
+    # expand tasks
+    if expand:
+        for task_id in tasks:
+            for task in tasks[task_id]:
+                for expanded_task in expand_task(task):
+                    tasks[task.id].append(expanded_task)
+                tasks[task.id].remove(task)
 
     # Populate the successors attribute
     for task_id in tasks:
@@ -351,7 +391,8 @@ def pre_process_file(file_path: str):
             file.write(text)
 
 
-def get_ordered_tasks_and_waits(file_path: str, max_workers: int, tasks_file_type: ExecutionMode) -> List[Task]:
+def get_ordered_tasks_and_waits(file_path: str, max_workers: int, tasks_file_type: ExecutionMode,
+                                expand: bool = False) -> List[Task]:
     """ Extract tasks from file
     if necessary transform a file that respects type 'opt' specification into a scheduled and optimized list of tasks
     :param file_path:
@@ -367,9 +408,9 @@ def get_ordered_tasks_and_waits(file_path: str, max_workers: int, tasks_file_typ
         logging.info(f"Function '{pre_process_file.__name__}' skipped. Optional dependency 'chardet' not installed")
 
     if tasks_file_type == ExecutionMode.NORM:
-        return extract_ordered_tasks_and_waits_from_file_type_norm(file_path)
+        return extract_ordered_tasks_and_waits_from_file_type_norm(file_path, expand)
     else:
-        return extract_ordered_tasks_and_waits_from_file_type_opt(max_workers, file_path)
+        return extract_ordered_tasks_and_waits_from_file_type_opt(max_workers, file_path, expand)
 
 
 def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
@@ -514,7 +555,7 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
         tm1 = tm1_services[task.instance_name]
 
         # avoid repeated validations
-        if current_task in validated_tasks:
+        if current_task["process"] in validated_tasks:
             continue
 
         # check for process existence
@@ -524,7 +565,7 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
                 instance=task.instance_name
             )
             logger.error(msg)
-            validated_tasks.append(current_task)
+            validated_tasks.append(current_task["process"])
             validation_ok = False
             continue
 
@@ -595,7 +636,7 @@ def translate_cmd_arguments(*args):
     """ Translation and Validity-checks for command line arguments.
 
 
-    :param args: 
+    :param args:
     :return: tasks_file_path, maximum_workers, execution_mode, retries, result_file
     """
     # too few arguments
@@ -732,7 +773,7 @@ if __name__ == "__main__":
 
     try:
         # determine and validate tasks
-        tasks = get_ordered_tasks_and_waits(tasks_file_path, maximum_workers, execution_mode)
+        tasks = get_ordered_tasks_and_waits(tasks_file_path, maximum_workers, execution_mode, True)
         if not validate_tasks(tasks, tm1_service_by_instance):
             raise ValueError("Invalid tasks provided")
 

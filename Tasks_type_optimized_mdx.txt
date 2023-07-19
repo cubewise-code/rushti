@@ -1,0 +1,10 @@
+# testing
+id="1" predecessors="" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=5 pMDXTest1*=*"{TM1FILTERBYLEVEL(TM1SUBSETALL([Season].[Season]) , 0)}"
+id="2" predecessors="" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=10 pMDXTest1*=*"{TM1FILTERBYLEVEL(TM1SUBSETALL([Season].[Season]) , 0)}" pMDXTest2*=*"{TM1FILTERBYLEVEL(TM1SUBSETALL([Scenario].[Scenario]) , 0)}"
+# with comments
+id="3" predecessors="2" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=5
+id="4" predecessors="1" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=5
+id="5" predecessors="3" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=5
+id="6" predecessors="4,5" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=11 pMDXTest1*=*"{TM1FILTERBYLEVEL(TM1SUBSETALL([Season].[Season]) , 0)}"
+id="7" predecessors="4" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=6
+id="8" predecessors="6" require_predecessor_success="1" instance="tm1_d" process="zzz_sys_tm1_pause" pWait=6
