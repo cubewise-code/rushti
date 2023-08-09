@@ -391,7 +391,7 @@ def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
         finally:
             attempt += 1
 
-    return success, status, error_log_file, attempt
+    return success, status, error_log_file, attempt - 1
 
 
 def update_task_execution_results(func):
