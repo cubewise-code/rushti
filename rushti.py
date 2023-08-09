@@ -11,9 +11,10 @@ import uuid
 from base64 import b64decode
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from logging.config import fileConfig
-from typing import List, Union, Dict
 from itertools import product
+from logging.config import fileConfig
+from pathlib import Path
+from typing import List, Union, Dict
 
 try:
     import chardet
@@ -88,7 +89,6 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
 
     tm1_instances_in_tasks = get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path)
 
-    global tm1_services
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
@@ -115,8 +115,11 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
 
 def get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path):
     tm1_instances_in_tasks = set()
-    tasks = get_ordered_tasks_and_waits(file_path=tasks_file_path, max_workers=max_workers,
-                                        tasks_file_type=execution_mode)
+    tasks = get_ordered_tasks_and_waits(
+        file_path=tasks_file_path,
+        max_workers=max_workers,
+        tasks_file_type=execution_mode,
+        expand=False)
     for task in tasks:
         if isinstance(task, Wait):
             continue
@@ -161,16 +164,23 @@ def extract_task_or_wait_from_line(line: str) -> Union[Task, Wait]:
         parameters=line_arguments)
 
 
-def expand_task(task: Union[Task, OptimizedTask]) -> List[Union[Task, OptimizedTask]]:
-    global tm1_services
+def expand_task(
+        tm1_services: Dict[str, TM1Service],
+        task: Union[Task, OptimizedTask]) -> List[Union[Task, OptimizedTask]]:
     tm1 = tm1_services[task.instance_name]
     list_params = []
     result = []
     for param, value in task.parameters.items():
         if param.endswith('*'):
-            elements = tm1.dimensions.hierarchies.elements.execute_set_mdx(value[1:], member_properties=['Name'],
-                                                                           parent_properties=None,
-                                                                           element_properties=None)
+            mdx = value[1:]
+            try:
+                elements = tm1.dimensions.hierarchies.elements.execute_set_mdx(
+                    mdx,
+                    member_properties=['Name'],
+                    parent_properties=None,
+                    element_properties=None)
+            except:
+                raise RuntimeError(f"Failed to execute MDX '{mdx}'")
             list_params.append([(param[:-1], element[0]["Name"]) for element in elements])
         else:
             list_params.append([(param, value)])
@@ -226,19 +236,29 @@ def extract_task_from_line_type_opt(line: str) -> OptimizedTask:
         parameters=line_arguments)
 
 
-def extract_ordered_tasks_and_waits_from_file_type_norm(file_path: str, expand: bool = False):
+def extract_ordered_tasks_and_waits_from_file_type_norm(
+        file_path: str,
+        expand: bool = False,
+        tm1_services: Dict[str, TM1Service] = None):
+
     with open(file_path, encoding='utf-8') as file:
         original_tasks = [extract_task_or_wait_from_line(line) for line in file.readlines() if not line.startswith('#')]
         if not expand:
             return original_tasks
-        else:
-            return flatten_to_list([expand_task(task) if isinstance(task, Task) else Wait() for task in original_tasks])
+
+        return flatten_to_list([
+            expand_task(tm1_services, task) if isinstance(task, Task) else Wait()
+            for task
+            in original_tasks])
 
 
-def extract_ordered_tasks_and_waits_from_file_type_opt(max_workers: int, file_path: str, expand: bool = False) -> List[
-    Task]:
+def extract_ordered_tasks_and_waits_from_file_type_opt(
+        max_workers: int,
+        file_path: str,
+        expand: bool = False,
+        tm1_services: Dict[str, TM1Service] = None) -> List[Task]:
     ordered_tasks_and_waits = list()
-    tasks = extract_tasks_from_file_type_opt(file_path, expand)
+    tasks = extract_tasks_from_file_type_opt(file_path, expand, tm1_services)
 
     # mapping of level (int) against list of tasks
     tasks_by_level = deduce_levels_of_tasks(tasks)
@@ -253,9 +273,14 @@ def extract_ordered_tasks_and_waits_from_file_type_opt(max_workers: int, file_pa
     return ordered_tasks_and_waits
 
 
-def extract_tasks_from_file_type_opt(file_path: str, expand: bool = False) -> dict:
+def extract_tasks_from_file_type_opt(
+        file_path: str,
+        expand: bool = False,
+        tm1_services: Dict[str, TM1Service] = None) -> Dict:
     """
     :param file_path:
+    :param expand:
+    :param tm1_services:
     :return: tasks
     """
     # Mapping of id against task
@@ -279,7 +304,7 @@ def extract_tasks_from_file_type_opt(file_path: str, expand: bool = False) -> di
     if expand:
         for task_id in tasks:
             for task in tasks[task_id]:
-                for expanded_task in expand_task(task):
+                for expanded_task in expand_task(tm1_services, task):
                     tasks[task.id].append(expanded_task)
                 tasks[task.id].remove(task)
 
@@ -391,13 +416,19 @@ def pre_process_file(file_path: str):
             file.write(text)
 
 
-def get_ordered_tasks_and_waits(file_path: str, max_workers: int, tasks_file_type: ExecutionMode,
-                                expand: bool = False) -> List[Task]:
+def get_ordered_tasks_and_waits(
+        file_path: str,
+        max_workers: int,
+        tasks_file_type: ExecutionMode,
+        expand: bool = False,
+        tm1_services: Dict[str, TM1Service] = None) -> List[Task]:
     """ Extract tasks from file
     if necessary transform a file that respects type 'opt' specification into a scheduled and optimized list of tasks
     :param file_path:
     :param max_workers:
     :param tasks_file_type:
+    :param expand
+    :param tm1_services:
     :return:
     """
     try:
@@ -408,9 +439,16 @@ def get_ordered_tasks_and_waits(file_path: str, max_workers: int, tasks_file_typ
         logging.info(f"Function '{pre_process_file.__name__}' skipped. Optional dependency 'chardet' not installed")
 
     if tasks_file_type == ExecutionMode.NORM:
-        return extract_ordered_tasks_and_waits_from_file_type_norm(file_path, expand)
+        return extract_ordered_tasks_and_waits_from_file_type_norm(
+            file_path,
+            expand,
+            tm1_services)
     else:
-        return extract_ordered_tasks_and_waits_from_file_type_opt(max_workers, file_path, expand)
+        return extract_ordered_tasks_and_waits_from_file_type_opt(
+            max_workers,
+            file_path,
+            expand,
+            tm1_services)
 
 
 def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
@@ -666,7 +704,7 @@ def translate_cmd_arguments(*args):
     else:
         max_workers = int(max_workers)
 
-    if len(args) == 4:
+    if len(args) >= 4:
         try:
             mode = ExecutionMode(args[3])
         except ValueError:
@@ -674,7 +712,7 @@ def translate_cmd_arguments(*args):
             logger.error(msg)
             sys.exit(msg)
 
-    if len(args) == 5:
+    if len(args) >= 5:
         retries = args[4]
         if not retries.isdigit():
             msg = MSG_RUSHTI_ARGUMENT4_INVALID
@@ -683,7 +721,7 @@ def translate_cmd_arguments(*args):
         else:
             retries = int(retries)
 
-    if len(args) == 6:
+    if len(args) >= 6:
         result_file = args[5]
 
     return tasks_file, max_workers, mode, retries, result_file
@@ -704,8 +742,9 @@ def create_results_file(
         os.getpid(), executions, fails,
         start_time, end_time, elapsed_time, overall_success)
 
+    Path(result_file).parent.mkdir(parents=True, exist_ok=True)
     with open(result_file, "w", encoding="utf-8") as file:
-        cw = csv.writer(file, delimiter='|')
+        cw = csv.writer(file, delimiter='|', lineterminator='\n')
         cw.writerows([header, record])
 
 
@@ -772,8 +811,13 @@ if __name__ == "__main__":
     event_loop = None
 
     try:
-        # determine and validate tasks
-        tasks = get_ordered_tasks_and_waits(tasks_file_path, maximum_workers, execution_mode, True)
+        # determine and validate tasks. Expand if expand operator (*=*) is used
+        tasks = get_ordered_tasks_and_waits(
+            tasks_file_path,
+            maximum_workers,
+            execution_mode,
+            expand=True,
+            tm1_services=tm1_service_by_instance)
         if not validate_tasks(tasks, tm1_service_by_instance):
             raise ValueError("Invalid tasks provided")
 
