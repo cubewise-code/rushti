@@ -1,0 +1,10 @@
+# testing
+id="1" predecessors="" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec*=*"{TM1SUBSETALL([Counter].[Counter])}"
+id="2" predecessors="1" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=0 pWaitSec*=*"{[Counter].[9],[Counter].[9]}"
+# with comments
+id="3" predecessors="2" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=7 pLogOutput*=*"{[Counter].[0],[Counter].[1]}"
+id="4" predecessors="3" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5
+id="5" predecessors="3" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5
+id="6" predecessors="4,5" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=11
+id="7" predecessors="4" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=6
+id="8" predecessors="6" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=6

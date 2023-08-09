@@ -1,0 +1,7 @@
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec=6
+wait
+# comments
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec*=*"{[Counter].[5], [Counter].[5], [Counter].[9]}"
+wait
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec*=*"{[Counter].[4], [Counter].[4], [Counter].[4]}"
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec=6
