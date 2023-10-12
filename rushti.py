@@ -3,6 +3,7 @@ import configparser
 import csv
 import functools
 import itertools
+import keyring
 import logging
 import os
 import shlex
@@ -101,6 +102,13 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
         # handle default values from configparser
         if tm1_server_name != config.default_section:
             try:
+                use_keyring = config.getboolean(
+                    tm1_server_name, "use_keyring", fallback=False
+                )
+                if use_keyring:
+                    password = keyring.get_password(tm1_server_name, params.get("user"))
+                    params["password"] = password
+
                 tm1_services[tm1_server_name] = TM1Service(
                     **params,
                     session_context=APP_NAME,
