@@ -353,21 +353,19 @@ def deduce_levels_of_tasks(tasks: dict) -> dict:
                 # Create next level if necessary and add successors to this new level
                 if task.has_successors:
                     if not next_level_created:
-                        precedent_level = level
                         level += 1
                         levels[level] = list()
                         next_level_created = True
 
                     for successor in task.successors:
-                        # test if task exists in current level
-                        if not (successor in levels[level]):
-                            # avoid duplicates
-                            if successor not in levels[level]:
-                                levels[level].append(successor)
+                        # avoid duplicates
+                        if successor not in levels[level]:
+                            levels[level].append(successor)
 
-                        # Delete successor in precedent level
-                        if successor in levels[precedent_level]:
-                            levels[precedent_level].remove(successor)
+                        # Delete successor from all previous levels
+                        for pre_level in range(level):
+                            if successor in levels[pre_level]:
+                                levels[pre_level].remove(successor)
 
     return levels
 
