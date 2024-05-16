@@ -3,7 +3,6 @@ import configparser
 import csv
 import functools
 import itertools
-import keyring
 import logging
 import os
 import shlex
@@ -16,6 +15,8 @@ from itertools import product
 from logging.config import fileConfig
 from pathlib import Path
 from typing import List, Union, Dict
+
+import keyring
 
 try:
     import chardet
@@ -109,10 +110,28 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
                     password = keyring.get_password(tm1_server_name, params.get("user"))
                     params["password"] = password
 
-                tm1_services[tm1_server_name] = TM1Service(
-                    **params,
-                    session_context=APP_NAME,
-                    connection_pool_size=max_workers)
+                connection_file = config.get(
+                    tm1_server_name, "connection_file", fallback=None
+                )
+
+                # restore connection from file. In practice faster than creating a new one
+                if connection_file:
+                    try:
+                        connection_file_path = Path(__file__).parent / connection_file
+                        tm1_services[tm1_server_name] = TM1Service.restore_from_file(file_name=connection_file_path)
+                    except Exception as e:
+                         logger.warning("Failed to restore connection from file. Error: {error}".format(error=str(e)))
+
+                # case no connection file provided or connection file expired
+                if tm1_server_name not in tm1_services:
+                    tm1_services[tm1_server_name] = TM1Service(
+                        **params,
+                        session_context=APP_NAME,
+                        connection_pool_size=max_workers)
+
+                if connection_file:
+                    tm1_services[tm1_server_name].save_to_file(file_name=Path(__file__).parent / connection_file)
+
             # Instance not running, Firewall or wrong connection parameters
             except Exception as e:
                 logger.error(
@@ -248,7 +267,6 @@ def extract_ordered_tasks_and_waits_from_file_type_norm(
         file_path: str,
         expand: bool = False,
         tm1_services: Dict[str, TM1Service] = None):
-
     with open(file_path, encoding='utf-8') as file:
         original_tasks = [extract_task_or_wait_from_line(line) for line in file.readlines() if not line.startswith('#')]
         if not expand:
