@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from itertools import product
 from logging.config import fileConfig
 from pathlib import Path
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Tuple
 
 import keyring
 
@@ -81,7 +81,7 @@ logger = logging.getLogger()
 TASK_EXECUTION_RESULTS = dict()
 
 
-def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: ExecutionMode) -> dict:
+def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: ExecutionMode) -> Tuple[dict, dict]:
     """ Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
 
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
@@ -90,7 +90,7 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
         raise ValueError("{config} does not exist".format(config=CONFIG))
 
     tm1_instances_in_tasks = get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path)
-
+    tm1_preserve_connections = dict()
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
@@ -116,11 +116,12 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
 
                 # restore connection from file. In practice faster than creating a new one
                 if connection_file:
+                    tm1_preserve_connections[tm1_server_name] = True
                     try:
                         connection_file_path = Path(__file__).parent / connection_file
                         tm1_services[tm1_server_name] = TM1Service.restore_from_file(file_name=connection_file_path)
                     except Exception as e:
-                         logger.warning("Failed to restore connection from file. Error: {error}".format(error=str(e)))
+                        logger.warning("Failed to restore connection from file. Error: {error}".format(error=str(e)))
 
                 # case no connection file provided or connection file expired
                 if tm1_server_name not in tm1_services:
@@ -137,7 +138,8 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
                 logger.error(
                     "TM1 instance {} not accessible. Error: {}".format(
                         tm1_server_name, str(e)))
-    return tm1_services
+
+    return tm1_services, tm1_preserve_connections
 
 
 def get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path):
@@ -684,14 +686,18 @@ async def work_through_tasks(max_workers: int, retries: int, tm1_services: dict)
     return outcomes
 
 
-def logout(tm1_services):
-    """ logout from all instances
+def logout(tm1_services: Dict, tm1_preserve_connections: Dict):
+    """ logout from all instances, except the ones to be preserved
 
+    :param tm1_preserve_connections:
     :param tm1_services:
     :return:
     """
-    for tm1 in tm1_services.values():
-        tm1.logout()
+    for connection in tm1_services:
+        if tm1_preserve_connections.get(connection, False) is True:
+            continue
+
+        tm1_services[connection].logout()
 
 
 def translate_cmd_arguments(*args):
@@ -826,7 +832,10 @@ if __name__ == "__main__":
      process_execution_retries, result_file) = translate_cmd_arguments(*sys.argv)
 
     # setup connections
-    tm1_service_by_instance = setup_tm1_services(maximum_workers, tasks_file_path, execution_mode)
+    tm1_service_by_instance, preserve_connections = setup_tm1_services(
+        maximum_workers,
+        tasks_file_path,
+        execution_mode)
 
     # setup results variable (guarantee it's not empty in case of error)
     results = list()
@@ -861,7 +870,7 @@ if __name__ == "__main__":
         success = False
 
     finally:
-        logout(tm1_service_by_instance)
+        logout(tm1_service_by_instance, preserve_connections)
         if event_loop:
             event_loop.close()
 
