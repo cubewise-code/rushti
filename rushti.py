@@ -120,6 +120,7 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
                     try:
                         connection_file_path = Path(__file__).parent / connection_file
                         tm1_services[tm1_server_name] = TM1Service.restore_from_file(file_name=connection_file_path)
+
                     except Exception as e:
                         logger.warning("Failed to restore connection from file. Error: {error}".format(error=str(e)))
 
@@ -131,6 +132,8 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
                         connection_pool_size=max_workers)
 
                 if connection_file:
+                    # implicitly re-connects if session is timed out
+                    tm1_services[tm1_server_name].server.get_product_version()
                     tm1_services[tm1_server_name].save_to_file(file_name=Path(__file__).parent / connection_file)
 
             # Instance not running, Firewall or wrong connection parameters
