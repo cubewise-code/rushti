@@ -1,7 +1,7 @@
 import unittest
 
 from rushti import deduce_levels_of_tasks, extract_tasks_from_file_type_opt, \
-    extract_ordered_tasks_and_waits_from_file_type_opt
+    extract_ordered_tasks_and_waits_from_file_type_opt, parse_line_arguments
 from utils import OptimizedTask, Wait
 
 
@@ -128,3 +128,64 @@ class TestDataMethods(unittest.TestCase):
                 self.assertEqual(expected_task.parameters, ordered_task.parameters)
                 self.assertEqual(expected_task.predecessors, ordered_task.predecessors)
                 self.assertEqual(expected_task.require_predecessor_success, ordered_task.require_predecessor_success)
+
+
+class TestParseLineArguments(unittest.TestCase):
+
+    def test_basic_arguments(self):
+        line = 'instance=tm1 process=process1 param1="value1" param2="value 2"'
+        result = parse_line_arguments(line)
+        expected = {
+            'instance': 'tm1',
+            'process': 'process1',
+            'param1': 'value1',
+            'param2': 'value 2'
+        }
+        self.assertEqual(result, expected)
+
+    def test_nested_double_quotes(self):
+        line = 'instance=tm1 process=process1 param1="value with \\"quotes\\"" param2="simple"'
+        result = parse_line_arguments(line)
+        expected = {
+            'instance': 'tm1',
+            'process': 'process1',
+            'param1': 'value with "quotes"',
+            'param2': 'simple'
+        }
+        self.assertEqual(result, expected)
+
+    def test_backslashes(self):
+        line = r'instance=tm1 process=process1 param1="value\\with\\backslashes" param2="normal"'
+        result = parse_line_arguments(line)
+        expected = {
+            'instance': 'tm1',
+            'process': 'process1',
+            'param1': r'value\with\backslashes',
+            'param2': 'normal'
+        }
+        self.assertEqual(result, expected)
+
+    def test_complex_nested_quotes(self):
+        line = 'instance=tm1 process=process1 param1="outer \\"inner \\\\"deepest\\\\" inner\\" outer"'
+        result = parse_line_arguments(line)
+        expected = {
+            'instance': 'tm1',
+            'process': 'process1',
+            'param1': 'outer "inner \\"deepest\\" inner" outer'
+        }
+        self.assertEqual(result, expected)
+
+    def test_predecessors_and_require_predecessor_success(self):
+        line = 'id=1 instance=tm1 process=process1 predecessors="2,3,4" require_predecessor_success="true"'
+        result = parse_line_arguments(line)
+        expected = {
+            'id': '1',
+            'instance': 'tm1',
+            'process': 'process1',
+            'predecessors': ['2', '3', '4'],
+            'require_predecessor_success': True
+        }
+        self.assertEqual(result, expected)
+
+if __name__ == '__main__':
+    unittest.main()
