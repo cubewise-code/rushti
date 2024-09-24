@@ -151,7 +151,12 @@ The log file is helpful for troubleshooting issues and understanding past execut
 
 ## Need a .exe version of RushTI?
 
-Download RushTI and Use PyInstaller to create the .exe file
+The latest executable build is available as an artifact in the GitHub Actions workflow runs. To download it:
+
+1. Go to the [Actions tab](https://github.com/cubewise-code/rushti/actions) of the repository.
+2. Click on the most recent workflow run titled **Build Executable**.
+3. In the workflow summary, look for the **Artifacts** section.
+4. Download the **rushti-winOS** artifact.
 
 ## Built With
 
