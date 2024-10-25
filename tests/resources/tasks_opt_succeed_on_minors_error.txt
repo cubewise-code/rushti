@@ -1,0 +1,3 @@
+id="1" predecessors="" require_predecessor_success="1" succeed_on_minor_errors="0" instance="DEVOPS_DEV" process="rushti.process.return" pReturnCode=0
+id="2" predecessors="1" require_predecessor_success="1" succeed_on_minor_errors="1" instance="DEVOPS_DEV" process="rushti.process.return" pReturnCode=1
+id="3" predecessors="2" require_predecessor_success="1" instance="DEVOPS_DEV" process="rushti.process.return" pReturnCode=0
