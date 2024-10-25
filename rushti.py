@@ -185,6 +185,7 @@ def extract_task_from_line(line: str, task_class: Union[Type[Task], Type[Optimiz
         task_id = line_arguments.pop("id")
         predecessors = line_arguments.pop("predecessors", [])
         require_predecessor_success = line_arguments.pop("require_predecessor_success", False)
+        succeed_on_minor_errors = line_arguments.pop("succeed_on_minor_errors", False)
         
         return OptimizedTask(
             task_id=task_id,
@@ -192,6 +193,7 @@ def extract_task_from_line(line: str, task_class: Union[Type[Task], Type[Optimiz
             process_name=line_arguments.pop("process"),
             predecessors=predecessors,
             require_predecessor_success=require_predecessor_success,
+            succeed_on_minor_errors=succeed_on_minor_errors,
             parameters=line_arguments)
     else:
         return Task(
@@ -201,32 +203,30 @@ def extract_task_from_line(line: str, task_class: Union[Type[Task], Type[Optimiz
 
 def parse_line_arguments(line: str) -> Dict[str, Any]:
     line_arguments = {}
-    line = line.replace("\\", UNIQUE_STRING)
     
-    parts = shlex.split(line, posix=False)
+    # Use shlex to split the line with posix=True for proper escaping
+    parts = shlex.split(line, posix=True)
     
     for part in parts:
         if '=' not in part:
             continue
+        
+        # Split on the first '=' to get argument and value
         argument, value = part.split('=', 1)
-        argument = argument.replace(UNIQUE_STRING, "\\")
-        value = value.replace(UNIQUE_STRING, "\\")
-
-        if argument.lower() in ["process", "instance", "id"]:
-            line_arguments[argument.lower()] = value.strip('"')
-        elif argument.lower() == "require_predecessor_success":
-            line_arguments[argument] = value.strip('"').lower() in TRUE_VALUES
-        elif argument.lower() == "predecessors":
-            predecessors = value.strip('"').split(",")
+        
+        # Handle specific keys with logic
+        key_lower = argument.lower()
+        if key_lower in ["process", "instance", "id"]:
+            line_arguments[key_lower] = value
+        elif key_lower == "require_predecessor_success":
+            line_arguments[argument] = value.lower() in TRUE_VALUES
+        elif key_lower == "predecessors":
+            predecessors = value.split(",")
             line_arguments[argument] = [] if predecessors[0] in ["", "0", 0] else predecessors
+        elif key_lower == "succeed_on_minor_errors":
+            line_arguments[argument] = value.lower() in TRUE_VALUES
         else:
-            # Remove surrounding double quotes if present
-            if value.startswith('"') and value.endswith('"'):
-                value = value[1:-1]
-            # Unescape quotes within the value
-            value = value.replace('\\"', '"')
-            # Replace double backslashes with single backslashes
-            value = value.replace("\\\\", "\\")
+            # Store the argument-value pair as is
             line_arguments[argument] = value
 
     return line_arguments
@@ -255,7 +255,8 @@ def expand_task(
         if isinstance(task, OptimizedTask):
             result.append(OptimizedTask(task.id, task.instance_name, task.process_name, parameters=expanded_params,
                                         predecessors=task.predecessors,
-                                        require_predecessor_success=task.require_predecessor_success))
+                                        require_predecessor_success=task.require_predecessor_success,
+                                        succeed_on_minor_errors = task.succeed_on_minor_errors))
         elif isinstance(task, Task):
             result.append(Task(task.instance_name, task.process_name, parameters=expanded_params))
     return result
@@ -474,25 +475,28 @@ def get_ordered_tasks_and_waits(
 
 
 def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
-    attempt = 0
-    while attempt <= retries:
+    for attempt in range(retries + 1):
         try:
-            # process runs and returns either success = True or False
+            # Execute the process and unpack results
             success, status, error_log_file = tm1.processes.execute_with_return(
-                process_name=task.process_name,
+                process_name=task.process_name, 
                 **task.parameters)
-        except Exception as e:
-            # process could not be executed (e.g. doesn't exist)
-            # If last attempt, then raise exception
-            if attempt == retries:
-                raise e
-        else:
-            if success:
-                break
-        finally:
-            attempt += 1
 
-    return success, status, error_log_file, attempt - 1
+            # Handle minor errors for OptimizedTask
+            if isinstance(task, OptimizedTask) and not success and task.succeed_on_minor_errors and status == 'HasMinorErrors':
+                success = True
+                logging.debug(f"{task.id} returned {status} but has succeed_on_minor_errors={task.succeed_on_minor_errors}")
+
+            if success:
+                return success, status, error_log_file, attempt
+
+        except Exception as e:
+            if attempt == retries:
+                # Raise exception on the final attempt
+                raise e
+
+    # If all retries fail
+    return False, status, error_log_file, retries
 
 
 def update_task_execution_results(func):

@@ -50,11 +50,13 @@ class Task:
 class OptimizedTask(Task):
     def __init__(self, task_id: str, instance_name: str, process_name: str, parameters: Dict[str, Any],
                  predecessors: List,
-                 require_predecessor_success: bool):
+                 require_predecessor_success: bool,
+                 succeed_on_minor_errors: bool = False):
         super().__init__(instance_name, process_name, parameters)
         self.id = task_id
         self.predecessors = predecessors
         self.require_predecessor_success = require_predecessor_success
+        self.succeed_on_minor_errors = succeed_on_minor_errors
         self.successors = list()
 
     @property
@@ -65,11 +67,13 @@ class OptimizedTask(Task):
     def has_successors(self):
         return len(self.successors) > 0
 
+    
     def translate_to_line(self):
-        return 'id="{id}" predecessors="{predecessors}" require_predecessor_success="{require_predecessor_success}" instance="{instance}" process="{process}" {parameters}\n'.format(
+        return 'id="{id}" predecessors="{predecessors}" require_predecessor_success="{require_predecessor_success}" succeed_on_minor_errors="{succeed_on_minor_errors}" instance="{instance}" process="{process}" {parameters}\n'.format(
             id=self.id,
-            predecessors=self.predecessors,
+            predecessors=",".join(map(str, self.predecessors)),
             require_predecessor_success=self.require_predecessor_success,
+            succeed_on_minor_errors=self.succeed_on_minor_errors,
             instance=self.instance_name,
             process=self.process_name,
             parameters=' '.join('{}="{}"'.format(parameter, value) for parameter, value in self.parameters.items()))

@@ -166,7 +166,7 @@ class TestParseLineArguments(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_complex_nested_quotes(self):
-        line = 'instance=tm1 process=process1 param1="outer \\"inner \\\\"deepest\\\\" inner\\" outer"'
+        line = r'instance=tm1 process=process1 param1="outer \"inner \\\"deepest\\\" inner\" outer"'
         result = parse_line_arguments(line)
         expected = {
             'instance': 'tm1',
@@ -186,6 +186,57 @@ class TestParseLineArguments(unittest.TestCase):
             'require_predecessor_success': True
         }
         self.assertEqual(result, expected)
+
+
+class TestSucceedOnMinorErrors(unittest.TestCase):
+    def test_default_value(self):
+        line = 'id=1 instance=tm1 process=process1 predecessors="2,3,4" require_predecessor_success="1"'
+        result = parse_line_arguments(line)
+        expected = {
+            'id': '1',
+            'instance': 'tm1',
+            'process': 'process1',
+            'predecessors': ['2', '3', '4'],
+            'require_predecessor_success': True
+        }
+        self.assertEqual(result, expected)
+
+    def test_explicit_false_value(self):
+        line = 'id=1 instance=tm1 process=process1 predecessors="2,3,4" require_predecessor_success="1" succeed_on_minor_errors="0"'
+        result = parse_line_arguments(line)
+        expected = {
+            'id': '1',
+            'instance': 'tm1',
+            'process': 'process1',
+            'predecessors': ['2', '3', '4'],
+            'require_predecessor_success': True,
+            'succeed_on_minor_errors': False
+        }
+        self.assertEqual(result, expected)
+
+    def test_explicit_true_value(self):
+        line = 'id=1 instance=tm1 process=process1 predecessors="" require_predecessor_success="" succeed_on_minor_errors="1"'
+        result = parse_line_arguments(line)
+        expected = {
+            'id': '1',
+            'instance': 'tm1',
+            'process': 'process1',
+            'predecessors': [],
+            'require_predecessor_success': False,
+            'succeed_on_minor_errors': True
+        }
+        self.assertEqual(result, expected)
+
+    def test_line_translation_with_succeed_on_minor_errors(self):
+        task = OptimizedTask("1", "tm1srv01", "process1", {"param1": "value1"}, [], False, succeed_on_minor_errors=True)
+        expected_line = 'id="1" predecessors="" require_predecessor_success="False" succeed_on_minor_errors="True" instance="tm1srv01" process="process1" param1="value1"\n'
+        self.assertEqual(task.translate_to_line(), expected_line)
+
+    def test_line_translation_without_succeed_on_minor_errors(self):
+        task = OptimizedTask("1", "tm1srv01", "process1", {"param1": "value1"}, [2,3,4], False)
+        expected_line = 'id="1" predecessors="2,3,4" require_predecessor_success="False" succeed_on_minor_errors="False" instance="tm1srv01" process="process1" param1="value1"\n'
+        self.assertEqual(task.translate_to_line(), expected_line)
+
 
 if __name__ == '__main__':
     unittest.main()
