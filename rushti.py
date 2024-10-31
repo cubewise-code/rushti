@@ -226,7 +226,7 @@ def parse_line_arguments(line: str) -> Dict[str, Any]:
         elif key_lower == "succeed_on_minor_errors":
             line_arguments[argument] = value.lower() in TRUE_VALUES
         else:
-            # Store the argument-value pair as is
+            # Directly assign the value without stripping quotes
             line_arguments[argument] = value
 
     return line_arguments
@@ -880,7 +880,5 @@ if __name__ == "__main__":
     exit_rushti(
         overall_success=success,
         executions=len(results),
-        successes=sum(results),
-        start_time=start,
         end_time=end,
         elapsed_time=duration)
