@@ -186,6 +186,22 @@ class TestParseLineArguments(unittest.TestCase):
             'require_predecessor_success': True
         }
         self.assertEqual(result, expected)
+    
+    def test_sql_query_parsing(self):
+        self.maxDiff = None
+        line = 'id="1" predecessors="" require_predecessor_success="" instance="tm1srv01" process="}bedrock.server.query" pQuery="SELECT Id,IsDeleted FROM Account WHERE date=\\"20241031092120\\"" pParam2="" pParam3="testing\\"2\\""'
+        result = parse_line_arguments(line)
+        expected = {
+            'id': '1',
+            'predecessors': [],
+            'require_predecessor_success': False,
+            'instance': 'tm1srv01',
+            'process': '}bedrock.server.query',
+            'pQuery': 'SELECT Id,IsDeleted FROM Account WHERE date="20241031092120"',
+            'pParam2': '',
+            'pParam3': 'testing"2"'
+        }
+        self.assertEqual(result, expected)
 
 
 class TestSucceedOnMinorErrors(unittest.TestCase):
