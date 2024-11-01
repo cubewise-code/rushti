@@ -32,18 +32,20 @@ class Wait:
 class Task:
     id = 1
 
-    def __init__(self, instance_name: str, process_name: str, parameters: Dict[str, Any] = None):
+    def __init__(self, instance_name: str, process_name: str, parameters: Dict[str, Any] = None, succeed_on_minor_errors: bool = False):
         self.id = Task.id
         self.instance_name = instance_name
         self.process_name = process_name
         self.parameters = parameters
+        self.succeed_on_minor_errors = succeed_on_minor_errors
 
         Task.id = Task.id + 1
 
     def translate_to_line(self):
-        return 'instance="{instance}" process="{process}" {parameters}\n'.format(
+        return 'instance="{instance}" process="{process}" succeed_on_minor_errors="{succeed_on_minor_errors}" {parameters}\n'.format(
             instance=self.instance_name,
             process=self.process_name,
+            succeed_on_minor_errors=self.succeed_on_minor_errors,
             parameters=' '.join('{}="{}"'.format(parameter, value) for parameter, value in self.parameters.items()))
 
 
@@ -52,11 +54,10 @@ class OptimizedTask(Task):
                  predecessors: List,
                  require_predecessor_success: bool,
                  succeed_on_minor_errors: bool = False):
-        super().__init__(instance_name, process_name, parameters)
+        super().__init__(instance_name, process_name, parameters, succeed_on_minor_errors)
         self.id = task_id
         self.predecessors = predecessors
         self.require_predecessor_success = require_predecessor_success
-        self.succeed_on_minor_errors = succeed_on_minor_errors
         self.successors = list()
 
     @property

@@ -49,6 +49,9 @@ MSG_PROCESS_FAIL_INSTANCE_NOT_IN_CONFIG_FILE = (
 MSG_PROCESS_FAIL_WITH_ERROR_FILE = (
     "Execution failed. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
     "{status}, on instance: '{instance}'. Elapsed time : {time}. Error file: {error_file}")
+MSG_PROCESS_HAS_MINOR_ERRORS = (
+    "Execution ended with minor errors but it was forced to succeed. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
+    "{status}, on instance: '{instance}'. Error file: {error_file}")
 MSG_PROCESS_FAIL_UNEXPECTED = (
     "Execution failed. Process: '{process}' with parameters: {parameters}. "
     "Elapsed time: {time}. Error: {error}.")
@@ -198,6 +201,7 @@ def extract_task_from_line(line: str, task_class: Union[Type[Task], Type[Optimiz
     else:
         return Task(
             instance_name=line_arguments.pop("instance"),
+            succeed_on_minor_errors=line_arguments.pop("succeed_on_minor_errors", False),
             process_name=line_arguments.pop("process"),
             parameters=line_arguments)
 
@@ -258,7 +262,7 @@ def expand_task(
                                         require_predecessor_success=task.require_predecessor_success,
                                         succeed_on_minor_errors = task.succeed_on_minor_errors))
         elif isinstance(task, Task):
-            result.append(Task(task.instance_name, task.process_name, parameters=expanded_params))
+            result.append(Task(task.instance_name, task.process_name, parameters=expanded_params, succeed_on_minor_errors=task.succeed_on_minor_errors))
     return result
 
 
@@ -482,11 +486,18 @@ def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
                 process_name=task.process_name, 
                 **task.parameters)
 
-            # Handle minor errors for OptimizedTask
-            if isinstance(task, OptimizedTask) and not success and task.succeed_on_minor_errors and status == 'HasMinorErrors':
+            # Handle minor errors
+            if not success and task.succeed_on_minor_errors and status == 'HasMinorErrors':
                 success = True
-                logging.debug(f"{task.id} returned {status} but has succeed_on_minor_errors={task.succeed_on_minor_errors}")
-
+                msg = MSG_PROCESS_HAS_MINOR_ERRORS.format(
+                process=task.process_name,
+                parameters=task.parameters,
+                status=status,
+                retries=retries,
+                instance=task.instance_name,
+                error_file=error_log_file)
+                logging.warning(msg)
+                
             if success:
                 return success, status, error_log_file, attempt
 
@@ -880,5 +891,8 @@ if __name__ == "__main__":
     exit_rushti(
         overall_success=success,
         executions=len(results),
+        successes=sum(results),
+        start_time=start,
         end_time=end,
         elapsed_time=duration)
+    
