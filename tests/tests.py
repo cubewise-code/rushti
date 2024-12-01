@@ -107,7 +107,8 @@ class TestDataMethods(unittest.TestCase):
     def test_extract_lines_from_file_type_opt_multi_task_per_id(self):
         ordered_tasks = extract_ordered_tasks_and_waits_from_file_type_opt(
             5,
-            r"tests/resources/tasks_opt_multi_task_per_id.txt")
+            r"tests/resources/tasks_opt_multi_task_per_id.txt",
+            True)
 
         expected_tasks = [
             OptimizedTask("1", "tm1srv01", "}bedrock.server.wait", {"pWaitSec": "1"}, [], True),

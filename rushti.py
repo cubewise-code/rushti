@@ -238,6 +238,11 @@ def parse_line_arguments(line: str) -> Dict[str, Any]:
 def expand_task(
         tm1_services: Dict[str, TM1Service],
         task: Union[Task, OptimizedTask]) -> List[Union[Task, OptimizedTask]]:
+    
+    if "*" not in ",".join(task.parameters.keys()):
+        result = [task]
+        return result
+    
     tm1 = tm1_services[task.instance_name]
     list_params = []
     result = []
@@ -330,12 +335,16 @@ def extract_tasks_from_file_type_opt(
                     tasks[task.id].append(task)
 
     # expand tasks
+    expanded_tasks = dict()
     if expand:
         for task_id in tasks:
             for task in tasks[task_id]:
                 for expanded_task in expand_task(tm1_services, task):
-                    tasks[task.id].append(expanded_task)
-                tasks[task.id].remove(task)
+                    if task.id not in expanded_tasks:
+                        expanded_tasks[task.id] = [expanded_task]
+                    else:
+                        expanded_tasks[task.id].append(expanded_task)
+        tasks = expanded_tasks
 
     # Populate the successors attribute
     for task_id in tasks:
