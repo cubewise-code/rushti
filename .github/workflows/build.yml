@@ -37,4 +37,4 @@ jobs:
         with:
           name: rushti-winOS
           path: dist/rushti.exe
-          retention-days: 90
+          retention-days: 365
