@@ -34,6 +34,8 @@ from utils import (
     flatten_to_list,
 )
 
+__version__ = "1.5.0"
+
 APP_NAME = "RushTI"
 CURRENT_DIRECTORY = set_current_directory()
 LOGFILE = os.path.join(CURRENT_DIRECTORY, APP_NAME + ".log")
@@ -956,6 +958,11 @@ def exit_rushti(
 
 # receives three arguments: 1) tasks_file_path, 2) maximum_workers, 3) execution_mode, 4) retries
 if __name__ == "__main__":
+    # handle --version flag
+    if len(sys.argv) == 2 and sys.argv[1] in ("--version", "-v"):
+        print(f"{APP_NAME} {__version__}")
+        sys.exit(0)
+
     logger.info(MSG_RUSHTI_STARTS.format(app_name=APP_NAME, parameters=sys.argv))
     # start timer
     start = datetime.now()
