@@ -149,14 +149,59 @@ The log file is helpful for troubleshooting issues and understanding past execut
 2023-08-09 14:06:00,700 - 3036 - INFO - RushTI ends. 0 fails out of 8 executions. Elapsed time: 0:00:34.191408. Ran with parameters: ['C:\\RushTI\\RushTI.py', 'tasks.txt', '2']
 ```
 
-## Need a .exe version of RushTI?
+## Using the Executable (No Python Required)
 
-The latest executable build is available as an artifact in the GitHub Actions workflow runs. To download it:
+If you don't have Python installed, you can use the pre-built Windows executable.
 
-1. Go to the [Actions tab](https://github.com/cubewise-code/rushti/actions) of the repository.
-2. Click on the most recent workflow run titled **Build Executable**.
-3. In the workflow summary, look for the **Artifacts** section.
-4. Download the **rushti-winOS** artifact.
+### Download
+
+Download `rushti.exe` from the [GitHub Releases](https://github.com/cubewise-code/rushti/releases) page.
+
+### Setup
+
+The executable requires these configuration files in the **same directory** as `rushti.exe`:
+
+```
+your-folder/
+├── rushti.exe
+├── config.ini          # TM1 server connection settings (required)
+├── logging_config.ini  # Logging configuration (required)
+└── tasks.txt           # Your task file
+```
+
+1. Copy `config.ini` and `logging_config.ini` from this repository to your executable's folder
+2. Edit `config.ini` to match your TM1 environment
+3. Create your `tasks.txt` file
+
+### Running
+
+```cmd
+rushti.exe tasks.txt 4 norm
+```
+
+Check the version:
+```cmd
+rushti.exe --version
+```
+
+### Building Your Own Executable
+
+To build the executable yourself:
+
+1. **Clone the repository and install dependencies**
+   ```bash
+   git clone https://github.com/cubewise-code/rushti.git
+   cd rushti
+   pip install -r requirements.txt
+   pip install pyinstaller
+   ```
+
+2. **Build using the spec file**
+   ```bash
+   pyinstaller rushti.spec
+   ```
+
+3. **Find the executable** in the `dist/` folder
 
 ## Built With
 
