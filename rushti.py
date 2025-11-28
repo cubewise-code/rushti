@@ -760,7 +760,7 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
                 logger.error(msg)
                 validation_ok = False
 
-        validated_tasks.append(current_task)
+        validated_tasks.append(current_task["process"])
 
     return validation_ok
 
