@@ -34,7 +34,7 @@ from utils import (
     flatten_to_list,
 )
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 APP_NAME = "RushTI"
 CURRENT_DIRECTORY = set_current_directory()
