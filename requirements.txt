@@ -1,4 +1,4 @@
 TM1py>=1.8
 configparser~=5.0.2
 chardet~=5.2.0
-keyring~=23.2.1
+keyring~=25.7.0
