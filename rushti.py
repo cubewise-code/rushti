@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import configparser
 import csv
@@ -873,6 +874,137 @@ def translate_cmd_arguments(*args):
     return tasks_file, max_workers, mode, retries, result_file
 
 
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser for named arguments.
+
+    :return: Configured ArgumentParser instance
+    """
+    parser = argparse.ArgumentParser(
+        prog=APP_NAME,
+        description="Execute TM1 processes in parallel with dependency management.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --tasks tasks.txt --workers 4
+  %(prog)s -t tasks.txt -w 4 -m opt -r 2 -o results.csv
+  %(prog)s --tasks tasks.txt --workers 8 --mode opt --retries 3
+        """,
+    )
+
+    parser.add_argument(
+        "--version",
+        "-v",
+        action="version",
+        version=f"{APP_NAME} {__version__}",
+    )
+
+    parser.add_argument(
+        "--tasks",
+        "-t",
+        dest="tasks_file_path",
+        required=True,
+        metavar="FILE",
+        help="Path to the tasks file (required)",
+    )
+
+    parser.add_argument(
+        "--workers",
+        "-w",
+        dest="maximum_workers",
+        type=int,
+        required=True,
+        metavar="N",
+        help="Maximum number of parallel workers (required)",
+    )
+
+    parser.add_argument(
+        "--mode",
+        "-m",
+        dest="execution_mode",
+        choices=["norm", "opt"],
+        default="norm",
+        help="Execution mode: 'norm' (normal) or 'opt' (optimized). Default: norm",
+    )
+
+    parser.add_argument(
+        "--retries",
+        "-r",
+        dest="retries",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of retries for failed process executions. Default: 0",
+    )
+
+    parser.add_argument(
+        "--result",
+        "-o",
+        dest="result_file",
+        default="rushti.csv",
+        metavar="FILE",
+        help="Output file path for execution results. Default: rushti.csv",
+    )
+
+    return parser
+
+
+def parse_named_arguments(argv: list):
+    """Parse command line arguments using argparse (named argument style).
+
+    :param argv: Command line arguments (sys.argv)
+    :return: tasks_file_path, maximum_workers, execution_mode, retries, result_file
+    """
+    parser = create_argument_parser()
+    args = parser.parse_args(argv[1:])  # Skip program name
+
+    # Validate tasks file exists
+    if not os.path.isfile(args.tasks_file_path):
+        msg = MSG_RUSHTI_ARGUMENT1_INVALID
+        logger.error(msg)
+        sys.exit(msg)
+
+    # Convert execution mode string to ExecutionMode enum
+    execution_mode = ExecutionMode(args.execution_mode)
+
+    return (
+        args.tasks_file_path,
+        args.maximum_workers,
+        execution_mode,
+        args.retries,
+        args.result_file,
+    )
+
+
+def uses_named_arguments(argv: list) -> bool:
+    """Detect if the command line uses named argument style.
+
+    Named argument style is detected when any argument starts with '-'
+    (excluding --version and -v which are handled separately).
+
+    :param argv: Command line arguments (sys.argv)
+    :return: True if named arguments are detected, False otherwise
+    """
+    for arg in argv[1:]:  # Skip program name
+        if arg.startswith("-") and arg not in ("--version", "-v"):
+            return True
+    return False
+
+
+def parse_arguments(argv: list):
+    """Parse command line arguments using either named or positional style.
+
+    This function provides backwards compatibility by detecting which style
+    is being used and delegating to the appropriate parser.
+
+    :param argv: Command line arguments (sys.argv)
+    :return: tasks_file_path, maximum_workers, execution_mode, retries, result_file
+    """
+    if uses_named_arguments(argv):
+        return parse_named_arguments(argv)
+    else:
+        return translate_cmd_arguments(*argv)
+
+
 def create_results_file(
     result_file: str,
     overall_success: bool,
@@ -956,9 +1088,11 @@ def exit_rushti(
     sys.exit(0)
 
 
-# receives three arguments: 1) tasks_file_path, 2) maximum_workers, 3) execution_mode, 4) retries
+# Supports both positional and named argument styles:
+#   Positional: rushti.py tasks.txt 4 opt 2 results.csv
+#   Named:      rushti.py --tasks tasks.txt --workers 4 --mode opt --retries 2 --result results.csv
 if __name__ == "__main__":
-    # handle --version flag
+    # Handle --version flag for positional style (named style handles it via argparse)
     if len(sys.argv) == 2 and sys.argv[1] in ("--version", "-v"):
         print(f"{APP_NAME} {__version__}")
         sys.exit(0)
@@ -967,14 +1101,14 @@ if __name__ == "__main__":
     # start timer
     start = datetime.now()
 
-    # read commandline arguments
+    # read commandline arguments (supports both positional and named styles)
     (
         tasks_file_path,
         maximum_workers,
         execution_mode,
         process_execution_retries,
         result_file,
-    ) = translate_cmd_arguments(*sys.argv)
+    ) = parse_arguments(sys.argv)
 
     # setup connections
     tm1_service_by_instance, preserve_connections = setup_tm1_services(

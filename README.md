@@ -21,25 +21,54 @@ Clone or download the RushTI Repository
 
 * Create the `tasks.txt` file
 
-* Execute the `RushTI.py` script: with 2 to 5 arguments, e.g.:
+* Execute the `RushTI.py` script using either **named arguments** or **positional arguments**:
 
-  -`python RushTI.py tasks.txt 2 ` 
-*Executes rushti in normal mode based on tasks.txt with 2 threads*
+### Named Arguments (Recommended)
 
-  -`python RushTI.py tasks.txt 16 OPT`
-*Executes rushti in optimized mode based on tasks.txt with 16 threads*
+Use `--help` to see all available options:
+```
+python RushTI.py --help
+```
 
-  -`python RushTI.py tasks.txt 4 NORM 3`
-*Executes rushti in normal mode based on tasks.txt with 4 threads. Allow 3 retries per task*
+| Argument | Short | Required | Default | Description |
+|----------|-------|----------|---------|-------------|
+| `--tasks` | `-t` | Yes | - | Path to the tasks file |
+| `--workers` | `-w` | Yes | - | Maximum number of parallel workers |
+| `--mode` | `-m` | No | `norm` | Execution mode: `norm` or `opt` |
+| `--retries` | `-r` | No | `0` | Number of retries for failed processes |
+| `--result` | `-o` | No | `rushti.csv` | Output file for execution results |
 
-  -`python RushTI.py tasks.txt 8 opt 2 result.csv`
-*Executes rushti in normal mode based on tasks.txt with 8 threads. Allow 2 retries per task. Write result file to result.csv*
+**Examples:**
+```bash
+python RushTI.py --tasks tasks.txt --workers 4
+python RushTI.py -t tasks.txt -w 16 -m opt
+python RushTI.py --tasks tasks.txt --workers 4 --mode norm --retries 3
+python RushTI.py -t tasks.txt -w 8 -m opt -r 2 -o result.csv
+```
+
+### Positional Arguments (Legacy)
+
+For backwards compatibility, positional arguments are still supported:
+
+```
+python RushTI.py <tasks_file> <workers> [mode] [retries] [result_file]
+```
+
+**Examples:**
+```bash
+python RushTI.py tasks.txt 2                        # Normal mode, 2 workers
+python RushTI.py tasks.txt 16 opt                   # Optimized mode, 16 workers
+python RushTI.py tasks.txt 4 norm 3                 # Normal mode, 3 retries
+python RushTI.py tasks.txt 8 opt 2 result.csv       # Optimized mode, 2 retries, custom result file
+```
 
 ### The Normal Mode
 
 Parallelizes the TI process execution with n max workers while allowing for execution groups through the `wait` key word
 
-```
+```bash
+python RushTI.py -t tasks.txt -w 16 -m norm -r 2 -o results.csv
+# or using positional arguments:
 python RushTI.py tasks.txt 16 norm 2 results.csv
 ```
 
@@ -68,8 +97,9 @@ Parallelizes the TI process execution with n max workers and allows to define in
 
 Each task is assigned an id. On all tasks you can define predecessors that must have completed before it can run.
 
-
-```
+```bash
+python RushTI.py -t tasks.txt -w 16 -m opt -r 3 -o results.csv
+# or using positional arguments:
 python RushTI.py tasks.txt 16 opt 3 results.csv
 ```
 
@@ -175,13 +205,21 @@ your-folder/
 
 ### Running
 
+Using named arguments:
+```cmd
+rushti.exe --tasks tasks.txt --workers 4 --mode norm
+rushti.exe -t tasks.txt -w 4 -m norm
+```
+
+Using positional arguments:
 ```cmd
 rushti.exe tasks.txt 4 norm
 ```
 
-Check the version:
+Check the version or get help:
 ```cmd
 rushti.exe --version
+rushti.exe --help
 ```
 
 ### Building Your Own Executable
