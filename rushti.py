@@ -103,6 +103,7 @@ MSG_PROCESS_PARAMS_INCORRECT = (
 UNIQUE_STRING = uuid.uuid4().hex[:8].upper()
 
 TRUE_VALUES = ["1", "y", "yes", "true", "t"]
+TIMEOUT_PARAMS = ["timeout", "cancel_at_timeout"]
 
 if not os.path.isfile(LOGGING_CONFIG):
     raise ValueError("{config} does not exist".format(config=LOGGING_CONFIG))
@@ -259,6 +260,7 @@ def extract_task_from_line(
             process_name=line_arguments.pop("process"),
             parameters=line_arguments,
         )
+
 
 
 def parse_line_arguments(line: str) -> Dict[str, Any]:
@@ -560,9 +562,24 @@ def get_ordered_tasks_and_waits(
         )
 
 
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in TRUE_VALUES
+    return False
+
+
 def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
     for attempt in range(retries + 1):
         try:
+            # timeout must be passed as numeric
+            timeout = task.parameters.get("timeout", None)
+            if timeout:
+                cancel_at_timeout = task.parameters.get("cancel_at_timeout", False)
+                task.parameters["timeout"]  = int(timeout)
+                task.parameters["cancel_at_timeout"] = str_to_bool(cancel_at_timeout)
+
             # Execute the process and unpack results
             success, status, error_log_file = tm1.processes.execute_with_return(
                 process_name=task.process_name, **task.parameters
@@ -752,7 +769,10 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
 
             # check for missing parameter names
             missing_params = [
-                param for param in task_params if param not in process_params
+                param
+                for param
+                in task_params
+                if param not in process_params and param not in TIMEOUT_PARAMS
             ]
             if len(missing_params) > 0:
                 msg = MSG_PROCESS_PARAMS_INCORRECT.format(
@@ -1163,4 +1183,3 @@ if __name__ == "__main__":
         start_time=start,
         end_time=end,
         elapsed_time=duration)
-    
