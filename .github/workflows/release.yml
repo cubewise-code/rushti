@@ -1,0 +1,160 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+
+jobs:
+  check-release:
+    name: Check if release needed
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      bump_type: ${{ steps.check.outputs.bump_type }}
+      new_version: ${{ steps.check.outputs.new_version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get merged PR labels
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the commit SHA from the workflow run
+          COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "Checking commit: $COMMIT_SHA"
+
+          # Find the PR associated with this commit
+          PR_DATA=$(gh api repos/${{ github.repository }}/commits/$COMMIT_SHA/pulls --jq '.[0]')
+
+          if [ -z "$PR_DATA" ] || [ "$PR_DATA" = "null" ]; then
+            echo "No PR found for commit, skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number')
+          echo "Found PR #$PR_NUMBER"
+
+          # Get PR labels
+          LABELS=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.labels[].name')
+          echo "Labels: $LABELS"
+
+          # Determine bump type based on labels
+          BUMP_TYPE=""
+          if echo "$LABELS" | grep -q "release:major"; then
+            BUMP_TYPE="major"
+          elif echo "$LABELS" | grep -q "release:minor"; then
+            BUMP_TYPE="minor"
+          elif echo "$LABELS" | grep -q "release:patch"; then
+            BUMP_TYPE="patch"
+          fi
+
+          if [ -z "$BUMP_TYPE" ]; then
+            echo "No release label found, skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Bump type: $BUMP_TYPE"
+
+          # Get current version from latest tag
+          CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+          # Remove 'v' prefix if present
+          CURRENT_VERSION=${CURRENT_VERSION#v}
+          echo "Current version: $CURRENT_VERSION"
+
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+
+          # Calculate new version
+          case $BUMP_TYPE in
+            major)
+              NEW_VERSION="$((MAJOR + 1)).0.0"
+              ;;
+            minor)
+              NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+              ;;
+            patch)
+              NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+              ;;
+          esac
+
+          echo "New version: $NEW_VERSION"
+
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+  release:
+    name: Create Release
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update version in code
+        shell: pwsh
+        run: |
+          $newVersion = "${{ needs.check-release.outputs.new_version }}"
+          $content = Get-Content rushti.py -Raw
+          $content = $content -replace '__version__\s*=\s*"[^"]+"', "__version__ = `"$newVersion`""
+          Set-Content rushti.py -Value $content -NoNewline
+
+      - name: Commit version bump
+        run: |
+          git add rushti.py
+          git commit -m "Bump version to ${{ needs.check-release.outputs.new_version }}"
+          git push
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Build executable
+        run: |
+          pyinstaller rushti.spec
+
+      - name: Create tag
+        run: |
+          git tag "${{ needs.check-release.outputs.new_version }}"
+          git push origin "${{ needs.check-release.outputs.new_version }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ needs.check-release.outputs.new_version }}" `
+            --title "RushTI ${{ needs.check-release.outputs.new_version }}" `
+            --generate-notes `
+            "dist/rushti.exe#rushti-windows.exe"

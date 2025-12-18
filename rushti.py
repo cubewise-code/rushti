@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import configparser
 import csv
@@ -25,50 +26,78 @@ except ImportError:
 
 from TM1py import TM1Service
 
-from utils import set_current_directory, Task, OptimizedTask, ExecutionMode, Wait, flatten_to_list
+from utils import (
+    set_current_directory,
+    Task,
+    OptimizedTask,
+    ExecutionMode,
+    Wait,
+    flatten_to_list,
+)
+
+__version__ = "1.6.0"
 
 APP_NAME = "RushTI"
 CURRENT_DIRECTORY = set_current_directory()
 LOGFILE = os.path.join(CURRENT_DIRECTORY, APP_NAME + ".log")
 CONFIG = os.path.join(CURRENT_DIRECTORY, "config.ini")
-LOGGING_CONFIG = os.path.join(CURRENT_DIRECTORY, 'logging_config.ini')
+LOGGING_CONFIG = os.path.join(CURRENT_DIRECTORY, "logging_config.ini")
 
 MSG_RUSHTI_STARTS = "{app_name} starts. Parameters: {parameters}."
-MSG_RUSHTI_WRONG_NUMBER_OF_ARGUMENTS = "{app_name} needs to be executed with two to four arguments."
-MSG_RUSHTI_ARGUMENT1_INVALID = "Argument 1 (path to tasks file) invalid. File needs to exist."
-MSG_RUSHTI_ARGUMENT2_INVALID = "Argument 2 (maximum workers) invalid. Argument must be an integer number."
-MSG_RUSHTI_ARGUMENT3_INVALID = "Argument 3 (tasks file type) invalid. Argument can be 'opt' or 'norm'."
-MSG_RUSHTI_ARGUMENT4_INVALID = "Argument 4 (retries) invalid. Argument must be an integer number."
+MSG_RUSHTI_WRONG_NUMBER_OF_ARGUMENTS = (
+    "{app_name} needs to be executed with two to four arguments."
+)
+MSG_RUSHTI_ARGUMENT1_INVALID = (
+    "Argument 1 (path to tasks file) invalid. File needs to exist."
+)
+MSG_RUSHTI_ARGUMENT2_INVALID = (
+    "Argument 2 (maximum workers) invalid. Argument must be an integer number."
+)
+MSG_RUSHTI_ARGUMENT3_INVALID = (
+    "Argument 3 (tasks file type) invalid. Argument can be 'opt' or 'norm'."
+)
+MSG_RUSHTI_ARGUMENT4_INVALID = (
+    "Argument 4 (retries) invalid. Argument must be an integer number."
+)
 MSG_PROCESS_EXECUTE = "Executing process: '{process_name}' with parameters: {parameters} on instance: '{instance_name}'"
 MSG_PROCESS_SUCCESS = (
     "Execution successful: Process '{process}' with parameters: {parameters} with {retries} retries on instance: "
-    "{instance}. Elapsed time: {time}")
+    "{instance}. Elapsed time: {time}"
+)
 MSG_PROCESS_FAIL_INSTANCE_NOT_IN_CONFIG_FILE = (
     "Process '{process_name}' not executed on '{instance_name}'. "
-    "'{instance_name}' not defined in provided config file. Check for typos and miscapitalization.")
+    "'{instance_name}' not defined in provided config file. Check for typos and miscapitalization."
+)
 MSG_PROCESS_FAIL_WITH_ERROR_FILE = (
     "Execution failed. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
-    "{status}, on instance: '{instance}'. Elapsed time : {time}. Error file: {error_file}")
+    "{status}, on instance: '{instance}'. Elapsed time : {time}. Error file: {error_file}"
+)
 MSG_PROCESS_HAS_MINOR_ERRORS = (
     "Execution ended with minor errors but it was forced to succeed. Process: '{process}' with parameters: {parameters} with {retries} retries and status: "
-    "{status}, on instance: '{instance}'. Error file: {error_file}")
+    "{status}, on instance: '{instance}'. Error file: {error_file}"
+)
 MSG_PROCESS_FAIL_UNEXPECTED = (
     "Execution failed. Process: '{process}' with parameters: {parameters}. "
-    "Elapsed time: {time}. Error: {error}.")
-MSG_RUSHTI_ENDS = ("{app_name} ends. {fails} fails out of {executions} executions. "
-                   "Elapsed time: {time}. Ran with parameters: {parameters}")
+    "Elapsed time: {time}. Error: {error}."
+)
+MSG_RUSHTI_ENDS = (
+    "{app_name} ends. {fails} fails out of {executions} executions. "
+    "Elapsed time: {time}. Ran with parameters: {parameters}"
+)
 MSG_RUSHTI_ABORTED = "{app_name} aborted with error"
 MSG_PROCESS_ABORTED_FAILED_PREDECESSOR = (
     "Execution aborted. Process: '{process}' with parameters: {parameters} is not run "
-    "due to failed predecessor {predecessor}, on instance: '{instance}'")
+    "due to failed predecessor {predecessor}, on instance: '{instance}'"
+)
 MSG_PROCESS_ABORTED_UNCOMPLETE_PREDECESSOR = (
     "Execution aborted. Process: '{process}' with parameters: {parameters} is not run "
-    "due to uncompleted predecessor {predecessor}, on instance: '{instance}'")
-MSG_PROCESS_NOT_EXISTS = (
-    "Task validation failed. Process: '{process}' does not exist on instance: '{instance}'")
+    "due to uncompleted predecessor {predecessor}, on instance: '{instance}'"
+)
+MSG_PROCESS_NOT_EXISTS = "Task validation failed. Process: '{process}' does not exist on instance: '{instance}'"
 MSG_PROCESS_PARAMS_INCORRECT = (
     "Task validation failed. Process: '{process}' does not have: {parameters}, "
-    "on instance: '{instance}'")
+    "on instance: '{instance}'"
+)
 
 # used to wrap blackslashes before using
 UNIQUE_STRING = uuid.uuid4().hex[:8].upper()
@@ -85,20 +114,24 @@ logger = logging.getLogger()
 TASK_EXECUTION_RESULTS = dict()
 
 
-def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: ExecutionMode) -> Tuple[dict, dict]:
-    """ Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
+def setup_tm1_services(
+    max_workers: int, tasks_file_path: str, execution_mode: ExecutionMode
+) -> Tuple[dict, dict]:
+    """Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
 
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
     """
     if not os.path.isfile(CONFIG):
         raise ValueError("{config} does not exist".format(config=CONFIG))
 
-    tm1_instances_in_tasks = get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path)
+    tm1_instances_in_tasks = get_instances_from_tasks_file(
+        execution_mode, max_workers, tasks_file_path
+    )
     tm1_preserve_connections = dict()
     tm1_services = dict()
     # parse .ini
     config = configparser.ConfigParser()
-    config.read(CONFIG, encoding='utf-8')
+    config.read(CONFIG, encoding="utf-8")
     # build tm1_services dictionary
     for tm1_server_name, params in config.items():
         if tm1_server_name not in tm1_instances_in_tasks:
@@ -123,28 +156,39 @@ def setup_tm1_services(max_workers: int, tasks_file_path: str, execution_mode: E
                     tm1_preserve_connections[tm1_server_name] = True
                     try:
                         connection_file_path = Path(__file__).parent / connection_file
-                        tm1_services[tm1_server_name] = TM1Service.restore_from_file(file_name=connection_file_path)
+                        tm1_services[tm1_server_name] = TM1Service.restore_from_file(
+                            file_name=connection_file_path
+                        )
 
                     except Exception as e:
-                        logger.warning("Failed to restore connection from file. Error: {error}".format(error=str(e)))
+                        logger.warning(
+                            "Failed to restore connection from file. Error: {error}".format(
+                                error=str(e)
+                            )
+                        )
 
                 # case no connection file provided or connection file expired
                 if tm1_server_name not in tm1_services:
                     tm1_services[tm1_server_name] = TM1Service(
                         **params,
                         session_context=APP_NAME,
-                        connection_pool_size=max_workers)
+                        connection_pool_size=max_workers,
+                    )
 
                 if connection_file:
                     # implicitly re-connects if session is timed out
                     tm1_services[tm1_server_name].server.get_product_version()
-                    tm1_services[tm1_server_name].save_to_file(file_name=Path(__file__).parent / connection_file)
+                    tm1_services[tm1_server_name].save_to_file(
+                        file_name=Path(__file__).parent / connection_file
+                    )
 
             # Instance not running, Firewall or wrong connection parameters
             except Exception as e:
                 logger.error(
                     "TM1 instance {} not accessible. Error: {}".format(
-                        tm1_server_name, str(e)))
+                        tm1_server_name, str(e)
+                    )
+                )
 
     return tm1_services, tm1_preserve_connections
 
@@ -155,7 +199,8 @@ def get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path):
         file_path=tasks_file_path,
         max_workers=max_workers,
         tasks_file_type=execution_mode,
-        expand=False)
+        expand=False,
+    )
     for task in tasks:
         if isinstance(task, Wait):
             continue
@@ -165,7 +210,7 @@ def get_instances_from_tasks_file(execution_mode, max_workers, tasks_file_path):
 
 
 def decrypt_password(encrypted_password: str) -> str:
-    """ b64 decoding
+    """b64 decoding
 
     :param encrypted_password: encrypted password with b64
     :return: password in plain text
@@ -174,7 +219,7 @@ def decrypt_password(encrypted_password: str) -> str:
 
 
 def extract_task_or_wait_from_line(line: str) -> Union[Task, Wait]:
-    if line.strip().lower() == 'wait':
+    if line.strip().lower() == "wait":
         return Wait()
 
     return extract_task_from_line(line, task_class=Task)
@@ -184,13 +229,17 @@ def extract_task_from_line_type_opt(line: str) -> OptimizedTask:
     return extract_task_from_line(line, task_class=OptimizedTask)
 
 
-def extract_task_from_line(line: str, task_class: Union[Type[Task], Type[OptimizedTask]]) -> Union[Task, OptimizedTask]:
+def extract_task_from_line(
+    line: str, task_class: Union[Type[Task], Type[OptimizedTask]]
+) -> Union[Task, OptimizedTask]:
     line_arguments = parse_line_arguments(line)
 
     if task_class == OptimizedTask:
         task_id = line_arguments.pop("id")
         predecessors = line_arguments.pop("predecessors", [])
-        require_predecessor_success = line_arguments.pop("require_predecessor_success", False)
+        require_predecessor_success = line_arguments.pop(
+            "require_predecessor_success", False
+        )
         succeed_on_minor_errors = line_arguments.pop("succeed_on_minor_errors", False)
 
         return OptimizedTask(
@@ -200,13 +249,18 @@ def extract_task_from_line(line: str, task_class: Union[Type[Task], Type[Optimiz
             predecessors=predecessors,
             require_predecessor_success=require_predecessor_success,
             succeed_on_minor_errors=succeed_on_minor_errors,
-            parameters=line_arguments)
+            parameters=line_arguments,
+        )
     else:
         return Task(
             instance_name=line_arguments.pop("instance"),
-            succeed_on_minor_errors=line_arguments.pop("succeed_on_minor_errors", False),
+            succeed_on_minor_errors=line_arguments.pop(
+                "succeed_on_minor_errors", False
+            ),
             process_name=line_arguments.pop("process"),
-            parameters=line_arguments)
+            parameters=line_arguments,
+        )
+
 
 
 def parse_line_arguments(line: str) -> Dict[str, Any]:
@@ -216,11 +270,11 @@ def parse_line_arguments(line: str) -> Dict[str, Any]:
     parts = shlex.split(line, posix=True)
 
     for part in parts:
-        if '=' not in part:
+        if "=" not in part:
             continue
 
         # Split on the first '=' to get argument and value
-        argument, value = part.split('=', 1)
+        argument, value = part.split("=", 1)
 
         # Handle specific keys with logic
         key_lower = argument.lower()
@@ -230,7 +284,9 @@ def parse_line_arguments(line: str) -> Dict[str, Any]:
             line_arguments[argument] = value.lower() in TRUE_VALUES
         elif key_lower == "predecessors":
             predecessors = value.split(",")
-            line_arguments[argument] = [] if predecessors[0] in ["", "0", 0] else predecessors
+            line_arguments[argument] = (
+                [] if predecessors[0] in ["", "0", 0] else predecessors
+            )
         elif key_lower == "succeed_on_minor_errors":
             line_arguments[argument] = value.lower() in TRUE_VALUES
         else:
@@ -241,57 +297,79 @@ def parse_line_arguments(line: str) -> Dict[str, Any]:
 
 
 def expand_task(
-        tm1_services: Dict[str, TM1Service],
-        task: Union[Task, OptimizedTask]) -> List[Union[Task, OptimizedTask]]:
+    tm1_services: Dict[str, TM1Service], task: Union[Task, OptimizedTask]
+) -> List[Union[Task, OptimizedTask]]:
     tm1 = tm1_services[task.instance_name]
     list_params = []
     result = []
     for param, value in task.parameters.items():
-        if param.endswith('*'):
+        if param.endswith("*"):
             mdx = value[1:]
             try:
                 elements = tm1.dimensions.hierarchies.elements.execute_set_mdx(
                     mdx,
-                    member_properties=['Name'],
+                    member_properties=["Name"],
                     parent_properties=None,
-                    element_properties=None)
+                    element_properties=None,
+                )
             except Exception as e:
                 raise RuntimeError(f"Failed to execute MDX '{mdx}': {str(e)}")
-            list_params.append([(param[:-1], element[0]["Name"]) for element in elements])
+            list_params.append(
+                [(param[:-1], element[0]["Name"]) for element in elements]
+            )
         else:
             list_params.append([(param, value)])
     for expanded_params in [dict(combo) for combo in product(*list_params)]:
         if isinstance(task, OptimizedTask):
-            result.append(OptimizedTask(task.id, task.instance_name, task.process_name, parameters=expanded_params,
-                                        predecessors=task.predecessors,
-                                        require_predecessor_success=task.require_predecessor_success,
-                                        succeed_on_minor_errors=task.succeed_on_minor_errors))
+            result.append(
+                OptimizedTask(
+                    task.id,
+                    task.instance_name,
+                    task.process_name,
+                    parameters=expanded_params,
+                    predecessors=task.predecessors,
+                    require_predecessor_success=task.require_predecessor_success,
+                    succeed_on_minor_errors=task.succeed_on_minor_errors,
+                )
+            )
         elif isinstance(task, Task):
-            result.append(Task(task.instance_name, task.process_name, parameters=expanded_params,
-                               succeed_on_minor_errors=task.succeed_on_minor_errors))
+            result.append(
+                Task(
+                    task.instance_name,
+                    task.process_name,
+                    parameters=expanded_params,
+                    succeed_on_minor_errors=task.succeed_on_minor_errors,
+                )
+            )
     return result
 
 
 def extract_ordered_tasks_and_waits_from_file_type_norm(
-        file_path: str,
-        expand: bool = False,
-        tm1_services: Dict[str, TM1Service] = None):
-    with open(file_path, encoding='utf-8') as file:
-        original_tasks = [extract_task_or_wait_from_line(line) for line in file.readlines() if not line.startswith('#')]
+    file_path: str, expand: bool = False, tm1_services: Dict[str, TM1Service] = None
+):
+    with open(file_path, encoding="utf-8") as file:
+        original_tasks = [
+            extract_task_or_wait_from_line(line)
+            for line in file.readlines()
+            if not line.startswith("#")
+        ]
         if not expand:
             return original_tasks
 
-        return flatten_to_list([
-            expand_task(tm1_services, task) if isinstance(task, Task) else Wait()
-            for task
-            in original_tasks])
+        return flatten_to_list(
+            [
+                expand_task(tm1_services, task) if isinstance(task, Task) else Wait()
+                for task in original_tasks
+            ]
+        )
 
 
 def extract_ordered_tasks_and_waits_from_file_type_opt(
-        max_workers: int,
-        file_path: str,
-        expand: bool = False,
-        tm1_services: Dict[str, TM1Service] = None) -> List[Task]:
+    max_workers: int,
+    file_path: str,
+    expand: bool = False,
+    tm1_services: Dict[str, TM1Service] = None,
+) -> List[Task]:
     ordered_tasks_and_waits = list()
     tasks = extract_tasks_from_file_type_opt(file_path, expand, tm1_services)
 
@@ -309,9 +387,8 @@ def extract_ordered_tasks_and_waits_from_file_type_opt(
 
 
 def extract_tasks_from_file_type_opt(
-        file_path: str,
-        expand: bool = False,
-        tm1_services: Dict[str, TM1Service] = None) -> Dict:
+    file_path: str, expand: bool = False, tm1_services: Dict[str, TM1Service] = None
+) -> Dict:
     """
     :param file_path:
     :param expand:
@@ -320,12 +397,12 @@ def extract_tasks_from_file_type_opt(
     """
     # Mapping of id against task
     tasks = dict()
-    with open(file_path, encoding='utf-8') as input_file:
+    with open(file_path, encoding="utf-8") as input_file:
         lines = input_file.readlines()
         # Build tasks dictionary
         for line in lines:
             # exclude comments
-            if not line.startswith('#'):
+            if not line.startswith("#"):
                 # skip empty lines
                 if not line.strip():
                     continue
@@ -354,7 +431,7 @@ def extract_tasks_from_file_type_opt(
 
 
 def deduce_levels_of_tasks(tasks: dict) -> dict:
-    """ Deduce the level of each task.
+    """Deduce the level of each task.
     Tasks at the same level have no relationship (successor / predecessor) between them
     :param tasks: mapping of id against Task
     :return: levels
@@ -431,31 +508,32 @@ def balance_tasks_among_levels(max_workers: int, tasks: dict, levels: dict):
 
 
 def pre_process_file(file_path: str):
-    """ Preprocess file for Python to change encoding from 'utf-8-sig' to 'utf-8'
+    """Preprocess file for Python to change encoding from 'utf-8-sig' to 'utf-8'
 
     Background: Under certain circumstances TM1 / Turbo Integrator generates files with utf-8-sig
 
     :param file_path:
     :return:
     """
-    with open(file_path, 'rb') as file:
+    with open(file_path, "rb") as file:
         raw = file.read(32)  # at most 32 bytes are returned
-        encoding = chardet.detect(raw)['encoding']
+        encoding = chardet.detect(raw)["encoding"]
 
-    if encoding.upper() == 'UTF-8-SIG':
-        with open(file_path, mode='r', encoding='utf-8-sig') as file:
+    if encoding.upper() == "UTF-8-SIG":
+        with open(file_path, mode="r", encoding="utf-8-sig") as file:
             text = file.read()
-        with open(file_path, mode='w', encoding='utf-8') as file:
+        with open(file_path, mode="w", encoding="utf-8") as file:
             file.write(text)
 
 
 def get_ordered_tasks_and_waits(
-        file_path: str,
-        max_workers: int,
-        tasks_file_type: ExecutionMode,
-        expand: bool = False,
-        tm1_services: Dict[str, TM1Service] = None) -> List[Task]:
-    """ Extract tasks from file
+    file_path: str,
+    max_workers: int,
+    tasks_file_type: ExecutionMode,
+    expand: bool = False,
+    tm1_services: Dict[str, TM1Service] = None,
+) -> List[Task]:
+    """Extract tasks from file
     if necessary transform a file that respects type 'opt' specification into a scheduled and optimized list of tasks
     :param file_path:
     :param max_workers:
@@ -466,22 +544,22 @@ def get_ordered_tasks_and_waits(
     """
     try:
         import chardet
+
         pre_process_file(file_path)
 
     except ImportError:
-        logging.info(f"Function '{pre_process_file.__name__}' skipped. Optional dependency 'chardet' not installed")
+        logging.info(
+            f"Function '{pre_process_file.__name__}' skipped. Optional dependency 'chardet' not installed"
+        )
 
     if tasks_file_type == ExecutionMode.NORM:
         return extract_ordered_tasks_and_waits_from_file_type_norm(
-            file_path,
-            expand,
-            tm1_services)
+            file_path, expand, tm1_services
+        )
     else:
         return extract_ordered_tasks_and_waits_from_file_type_opt(
-            max_workers,
-            file_path,
-            expand,
-            tm1_services)
+            max_workers, file_path, expand, tm1_services
+        )
 
 
 def str_to_bool(value):
@@ -504,11 +582,15 @@ def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
 
             # Execute the process and unpack results
             success, status, error_log_file = tm1.processes.execute_with_return(
-                process_name=task.process_name,
-                **task.parameters)
+                process_name=task.process_name, **task.parameters
+            )
 
             # Handle minor errors
-            if not success and task.succeed_on_minor_errors and status == 'HasMinorErrors':
+            if (
+                not success
+                and task.succeed_on_minor_errors
+                and status == "HasMinorErrors"
+            ):
                 success = True
                 msg = MSG_PROCESS_HAS_MINOR_ERRORS.format(
                     process=task.process_name,
@@ -516,7 +598,8 @@ def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
                     status=status,
                     retries=retries,
                     instance=task.instance_name,
-                    error_file=error_log_file)
+                    error_file=error_log_file,
+                )
                 logging.warning(msg)
 
             if success:
@@ -550,7 +633,7 @@ def update_task_execution_results(func):
 
 @update_task_execution_results
 def execute_task(task: Task, retries: int, tm1_services: Dict[str, TM1Service]) -> bool:
-    """ Execute one line from the txt file
+    """Execute one line from the txt file
     :param task:
     :param retries:
     :param tm1_services:
@@ -565,20 +648,25 @@ def execute_task(task: Task, retries: int, tm1_services: Dict[str, TM1Service]) 
 
     if task.instance_name not in tm1_services:
         msg = MSG_PROCESS_FAIL_INSTANCE_NOT_IN_CONFIG_FILE.format(
-            process_name=task.process_name, instance_name=task.instance_name)
+            process_name=task.process_name, instance_name=task.instance_name
+        )
         logger.error(msg)
         return False
 
     tm1 = tm1_services[task.instance_name]
     # Execute it
     msg = MSG_PROCESS_EXECUTE.format(
-        process_name=task.process_name, parameters=task.parameters, instance_name=task.instance_name)
+        process_name=task.process_name,
+        parameters=task.parameters,
+        instance_name=task.instance_name,
+    )
     logger.info(msg)
     start_time = datetime.now()
 
     try:
         success, status, error_log_file, attempts = execute_process_with_retries(
-            tm1=tm1, task=task, retries=retries)
+            tm1=tm1, task=task, retries=retries
+        )
         elapsed_time = datetime.now() - start_time
 
         if success:
@@ -588,7 +676,8 @@ def execute_task(task: Task, retries: int, tm1_services: Dict[str, TM1Service]) 
                 parameters=task.parameters,
                 instance=task.instance_name,
                 retries=attempts,
-                time=elapsed_time)
+                time=elapsed_time,
+            )
             logger.info(msg)
             return True
 
@@ -600,27 +689,32 @@ def execute_task(task: Task, retries: int, tm1_services: Dict[str, TM1Service]) 
                 instance=task.instance_name,
                 retries=attempts,
                 time=elapsed_time,
-                error_file=error_log_file)
+                error_file=error_log_file,
+            )
             logger.error(msg)
             return False
 
     except Exception as e:
         elapsed_time = datetime.now() - start_time
         msg = MSG_PROCESS_FAIL_UNEXPECTED.format(
-            process=task.process_name, parameters=task.parameters, error=str(e), time=elapsed_time)
+            process=task.process_name,
+            parameters=task.parameters,
+            error=str(e),
+            time=elapsed_time,
+        )
         logger.error(msg)
         return False
 
 
 def verify_predecessors_ok(task: OptimizedTask) -> bool:
     for predecessor_id in task.predecessors:
-
         if predecessor_id not in TASK_EXECUTION_RESULTS:
             msg = MSG_PROCESS_ABORTED_UNCOMPLETE_PREDECESSOR.format(
                 instance=task.instance_name,
                 process=task.process_name,
                 parameters=task.parameters,
-                predecessor=predecessor_id)
+                predecessor=predecessor_id,
+            )
             logger.error(msg)
             return False
 
@@ -629,7 +723,8 @@ def verify_predecessors_ok(task: OptimizedTask) -> bool:
                 instance=task.instance_name,
                 process=task.process_name,
                 parameters=task.parameters,
-                predecessor=predecessor_id)
+                predecessor=predecessor_id,
+            )
             logger.error(msg)
             return False
 
@@ -643,9 +738,9 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
     tasks = [task for task in tasks if isinstance(task, Task)]  # --> ignore Wait(s)
     for task in tasks:
         current_task = {
-            'instance': task.instance_name,
-            'process': task.process_name,
-            'parameters': task.parameters.keys()
+            "instance": task.instance_name,
+            "process": task.process_name,
+            "parameters": task.parameters.keys(),
         }
 
         tm1 = tm1_services[task.instance_name]
@@ -657,8 +752,7 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
         # check for process existence
         if not tm1.processes.exists(task.process_name):
             msg = MSG_PROCESS_NOT_EXISTS.format(
-                process=task.process_name,
-                instance=task.instance_name
+                process=task.process_name, instance=task.instance_name
             )
             logger.error(msg)
             validated_tasks.append(current_task["process"])
@@ -668,7 +762,10 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
         # check for parameters
         task_params = task.parameters.keys()
         if task_params:
-            process_params = [param['Name'] for param in tm1.processes.get(task.process_name).parameters]
+            process_params = [
+                param["Name"]
+                for param in tm1.processes.get(task.process_name).parameters
+            ]
 
             # check for missing parameter names
             missing_params = [
@@ -681,18 +778,18 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
                 msg = MSG_PROCESS_PARAMS_INCORRECT.format(
                     process=task.process_name,
                     parameters=missing_params,
-                    instance=task.instance_name
+                    instance=task.instance_name,
                 )
                 logger.error(msg)
                 validation_ok = False
 
-        validated_tasks.append(current_task)
+        validated_tasks.append(current_task["process"])
 
     return validation_ok
 
 
 async def work_through_tasks(max_workers: int, retries: int, tm1_services: dict):
-    """ loop through file. Add all lines to the execution queue.
+    """loop through file. Add all lines to the execution queue.
     :param max_workers:
     :param retries:
     :param tm1_services:
@@ -703,7 +800,8 @@ async def work_through_tasks(max_workers: int, retries: int, tm1_services: dict)
     task_sets = [
         list(y)
         for x, y in itertools.groupby(tasks, lambda z: isinstance(z, Wait))
-        if not x]
+        if not x
+    ]
 
     # True or False for every execution
     outcomes = []
@@ -713,9 +811,11 @@ async def work_through_tasks(max_workers: int, retries: int, tm1_services: dict)
     for task_set in task_sets:
         with ThreadPoolExecutor(int(max_workers)) as executor:
             futures = [
-                loop.run_in_executor(executor, execute_task, task, retries, tm1_services)
-                for task
-                in task_set]
+                loop.run_in_executor(
+                    executor, execute_task, task, retries, tm1_services
+                )
+                for task in task_set
+            ]
 
             for future in futures:
                 outcomes.append(await future)
@@ -724,7 +824,7 @@ async def work_through_tasks(max_workers: int, retries: int, tm1_services: dict)
 
 
 def logout(tm1_services: Dict, tm1_preserve_connections: Dict):
-    """ logout from all instances, except the ones to be preserved
+    """logout from all instances, except the ones to be preserved
 
     :param tm1_preserve_connections:
     :param tm1_services:
@@ -738,7 +838,7 @@ def logout(tm1_services: Dict, tm1_preserve_connections: Dict):
 
 
 def translate_cmd_arguments(*args):
-    """ Translation and Validity-checks for command line arguments.
+    """Translation and Validity-checks for command line arguments.
 
 
     :param args:
@@ -794,35 +894,180 @@ def translate_cmd_arguments(*args):
     return tasks_file, max_workers, mode, retries, result_file
 
 
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser for named arguments.
+
+    :return: Configured ArgumentParser instance
+    """
+    parser = argparse.ArgumentParser(
+        prog=APP_NAME,
+        description="Execute TM1 processes in parallel with dependency management.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --tasks tasks.txt --workers 4
+  %(prog)s -t tasks.txt -w 4 -m opt -r 2 -o results.csv
+  %(prog)s --tasks tasks.txt --workers 8 --mode opt --retries 3
+        """,
+    )
+
+    parser.add_argument(
+        "--version",
+        "-v",
+        action="version",
+        version=f"{APP_NAME} {__version__}",
+    )
+
+    parser.add_argument(
+        "--tasks",
+        "-t",
+        dest="tasks_file_path",
+        required=True,
+        metavar="FILE",
+        help="Path to the tasks file (required)",
+    )
+
+    parser.add_argument(
+        "--workers",
+        "-w",
+        dest="maximum_workers",
+        type=int,
+        required=True,
+        metavar="N",
+        help="Maximum number of parallel workers (required)",
+    )
+
+    parser.add_argument(
+        "--mode",
+        "-m",
+        dest="execution_mode",
+        choices=["norm", "opt"],
+        default="norm",
+        help="Execution mode: 'norm' (normal) or 'opt' (optimized). Default: norm",
+    )
+
+    parser.add_argument(
+        "--retries",
+        "-r",
+        dest="retries",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of retries for failed process executions. Default: 0",
+    )
+
+    parser.add_argument(
+        "--result",
+        "-o",
+        dest="result_file",
+        default="rushti.csv",
+        metavar="FILE",
+        help="Output file path for execution results. Default: rushti.csv",
+    )
+
+    return parser
+
+
+def parse_named_arguments(argv: list):
+    """Parse command line arguments using argparse (named argument style).
+
+    :param argv: Command line arguments (sys.argv)
+    :return: tasks_file_path, maximum_workers, execution_mode, retries, result_file
+    """
+    parser = create_argument_parser()
+    args = parser.parse_args(argv[1:])  # Skip program name
+
+    # Validate tasks file exists
+    if not os.path.isfile(args.tasks_file_path):
+        msg = MSG_RUSHTI_ARGUMENT1_INVALID
+        logger.error(msg)
+        sys.exit(msg)
+
+    # Convert execution mode string to ExecutionMode enum
+    execution_mode = ExecutionMode(args.execution_mode)
+
+    return (
+        args.tasks_file_path,
+        args.maximum_workers,
+        execution_mode,
+        args.retries,
+        args.result_file,
+    )
+
+
+def uses_named_arguments(argv: list) -> bool:
+    """Detect if the command line uses named argument style.
+
+    Named argument style is detected when any argument starts with '-'
+    (excluding --version and -v which are handled separately).
+
+    :param argv: Command line arguments (sys.argv)
+    :return: True if named arguments are detected, False otherwise
+    """
+    for arg in argv[1:]:  # Skip program name
+        if arg.startswith("-") and arg not in ("--version", "-v"):
+            return True
+    return False
+
+
+def parse_arguments(argv: list):
+    """Parse command line arguments using either named or positional style.
+
+    This function provides backwards compatibility by detecting which style
+    is being used and delegating to the appropriate parser.
+
+    :param argv: Command line arguments (sys.argv)
+    :return: tasks_file_path, maximum_workers, execution_mode, retries, result_file
+    """
+    if uses_named_arguments(argv):
+        return parse_named_arguments(argv)
+    else:
+        return translate_cmd_arguments(*argv)
+
+
 def create_results_file(
-        result_file: str,
-        overall_success: bool,
-        executions: int,
-        fails: int,
-        start_time: datetime,
-        end_time: datetime,
-        elapsed_time: timedelta):
+    result_file: str,
+    overall_success: bool,
+    executions: int,
+    fails: int,
+    start_time: datetime,
+    end_time: datetime,
+    elapsed_time: timedelta,
+):
     header = (
-        "PID", "Process Runs", "Process Fails",
-        "Start", "End", "Runtime", "Overall Success")
+        "PID",
+        "Process Runs",
+        "Process Fails",
+        "Start",
+        "End",
+        "Runtime",
+        "Overall Success",
+    )
     record = (
-        os.getpid(), executions, fails,
-        start_time, end_time, elapsed_time, overall_success)
+        os.getpid(),
+        executions,
+        fails,
+        start_time,
+        end_time,
+        elapsed_time,
+        overall_success,
+    )
 
     Path(result_file).parent.mkdir(parents=True, exist_ok=True)
     with open(result_file, "w", encoding="utf-8") as file:
-        cw = csv.writer(file, delimiter='|', lineterminator='\n')
+        cw = csv.writer(file, delimiter="|", lineterminator="\n")
         cw.writerows([header, record])
 
 
 def exit_rushti(
-        overall_success: bool,
-        executions: int,
-        successes: int,
-        start_time: datetime,
-        end_time: datetime,
-        elapsed_time: timedelta):
-    """ Exit RushTI with exit code 0 or 1 depending on the TI execution outcomes
+    overall_success: bool,
+    executions: int,
+    successes: int,
+    start_time: datetime,
+    end_time: datetime,
+    elapsed_time: timedelta,
+):
+    """Exit RushTI with exit code 0 or 1 depending on the TI execution outcomes
     :param overall_success: Exception raised during executions
     :param executions: Number of executions
     :param successes: Number of executions that succeeded
@@ -838,7 +1083,11 @@ def exit_rushti(
 
     fails = executions - successes
     message = MSG_RUSHTI_ENDS.format(
-        app_name=APP_NAME, fails=fails, executions=executions, time=str(elapsed_time), parameters=sys.argv
+        app_name=APP_NAME,
+        fails=fails,
+        executions=executions,
+        time=str(elapsed_time),
+        parameters=sys.argv,
     )
 
     create_results_file(
@@ -848,7 +1097,8 @@ def exit_rushti(
         fails,
         start_time,
         end_time,
-        elapsed_time)
+        elapsed_time,
+    )
 
     if fails > 0:
         logger.error(message)
@@ -858,21 +1108,32 @@ def exit_rushti(
     sys.exit(0)
 
 
-# receives three arguments: 1) tasks_file_path, 2) maximum_workers, 3) execution_mode, 4) retries
+# Supports both positional and named argument styles:
+#   Positional: rushti.py tasks.txt 4 opt 2 results.csv
+#   Named:      rushti.py --tasks tasks.txt --workers 4 --mode opt --retries 2 --result results.csv
 if __name__ == "__main__":
+    # Handle --version flag for positional style (named style handles it via argparse)
+    if len(sys.argv) == 2 and sys.argv[1] in ("--version", "-v"):
+        print(f"{APP_NAME} {__version__}")
+        sys.exit(0)
+
     logger.info(MSG_RUSHTI_STARTS.format(app_name=APP_NAME, parameters=sys.argv))
     # start timer
     start = datetime.now()
 
-    # read commandline arguments
-    (tasks_file_path, maximum_workers, execution_mode,
-     process_execution_retries, result_file) = translate_cmd_arguments(*sys.argv)
+    # read commandline arguments (supports both positional and named styles)
+    (
+        tasks_file_path,
+        maximum_workers,
+        execution_mode,
+        process_execution_retries,
+        result_file,
+    ) = parse_arguments(sys.argv)
 
     # setup connections
     tm1_service_by_instance, preserve_connections = setup_tm1_services(
-        maximum_workers,
-        tasks_file_path,
-        execution_mode)
+        maximum_workers, tasks_file_path, execution_mode
+    )
 
     # setup results variable (guarantee it's not empty in case of error)
     results = list()
@@ -887,7 +1148,8 @@ if __name__ == "__main__":
             maximum_workers,
             execution_mode,
             expand=True,
-            tm1_services=tm1_service_by_instance)
+            tm1_services=tm1_service_by_instance,
+        )
         if not validate_tasks(tasks, tm1_service_by_instance):
             raise ValueError("Invalid tasks provided")
 

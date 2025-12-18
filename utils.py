@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 
 def set_current_directory():
     # determine if application is a script file or frozen exe
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, "frozen", False):
         application_path = os.path.abspath(sys.executable)
     elif __file__:
         application_path = os.path.abspath(__file__)
@@ -32,7 +32,13 @@ class Wait:
 class Task:
     id = 1
 
-    def __init__(self, instance_name: str, process_name: str, parameters: Dict[str, Any] = None, succeed_on_minor_errors: bool = False):
+    def __init__(
+        self,
+        instance_name: str,
+        process_name: str,
+        parameters: Dict[str, Any] = None,
+        succeed_on_minor_errors: bool = False,
+    ):
         self.id = Task.id
         self.instance_name = instance_name
         self.process_name = process_name
@@ -46,15 +52,27 @@ class Task:
             instance=self.instance_name,
             process=self.process_name,
             succeed_on_minor_errors=self.succeed_on_minor_errors,
-            parameters=' '.join('{}="{}"'.format(parameter, value) for parameter, value in self.parameters.items()))
+            parameters=" ".join(
+                '{}="{}"'.format(parameter, value)
+                for parameter, value in self.parameters.items()
+            ),
+        )
 
 
 class OptimizedTask(Task):
-    def __init__(self, task_id: str, instance_name: str, process_name: str, parameters: Dict[str, Any],
-                 predecessors: List,
-                 require_predecessor_success: bool,
-                 succeed_on_minor_errors: bool = False):
-        super().__init__(instance_name, process_name, parameters, succeed_on_minor_errors)
+    def __init__(
+        self,
+        task_id: str,
+        instance_name: str,
+        process_name: str,
+        parameters: Dict[str, Any],
+        predecessors: List,
+        require_predecessor_success: bool,
+        succeed_on_minor_errors: bool = False,
+    ):
+        super().__init__(
+            instance_name, process_name, parameters, succeed_on_minor_errors
+        )
         self.id = task_id
         self.predecessors = predecessors
         self.require_predecessor_success = require_predecessor_success
@@ -68,7 +86,6 @@ class OptimizedTask(Task):
     def has_successors(self):
         return len(self.successors) > 0
 
-    
     def translate_to_line(self):
         return 'id="{id}" predecessors="{predecessors}" require_predecessor_success="{require_predecessor_success}" succeed_on_minor_errors="{succeed_on_minor_errors}" instance="{instance}" process="{process}" {parameters}\n'.format(
             id=self.id,
@@ -77,7 +94,11 @@ class OptimizedTask(Task):
             succeed_on_minor_errors=self.succeed_on_minor_errors,
             instance=self.instance_name,
             process=self.process_name,
-            parameters=' '.join('{}="{}"'.format(parameter, value) for parameter, value in self.parameters.items()))
+            parameters=" ".join(
+                '{}="{}"'.format(parameter, value)
+                for parameter, value in self.parameters.items()
+            ),
+        )
 
 
 class ExecutionMode(Enum):

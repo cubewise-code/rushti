@@ -21,25 +21,54 @@ Clone or download the RushTI Repository
 
 * Create the `tasks.txt` file
 
-* Execute the `RushTI.py` script: with 2 to 5 arguments, e.g.:
+* Execute the `RushTI.py` script using either **named arguments** or **positional arguments**:
 
-  -`python RushTI.py tasks.txt 2 ` 
-*Executes rushti in normal mode based on tasks.txt with 2 threads*
+### Named Arguments (Recommended)
 
-  -`python RushTI.py tasks.txt 16 OPT`
-*Executes rushti in optimized mode based on tasks.txt with 16 threads*
+Use `--help` to see all available options:
+```
+python RushTI.py --help
+```
 
-  -`python RushTI.py tasks.txt 4 NORM 3`
-*Executes rushti in normal mode based on tasks.txt with 4 threads. Allow 3 retries per task*
+| Argument | Short | Required | Default | Description |
+|----------|-------|----------|---------|-------------|
+| `--tasks` | `-t` | Yes | - | Path to the tasks file |
+| `--workers` | `-w` | Yes | - | Maximum number of parallel workers |
+| `--mode` | `-m` | No | `norm` | Execution mode: `norm` or `opt` |
+| `--retries` | `-r` | No | `0` | Number of retries for failed processes |
+| `--result` | `-o` | No | `rushti.csv` | Output file for execution results |
 
-  -`python RushTI.py tasks.txt 8 opt 2 result.csv`
-*Executes rushti in normal mode based on tasks.txt with 8 threads. Allow 2 retries per task. Write result file to result.csv*
+**Examples:**
+```bash
+python RushTI.py --tasks tasks.txt --workers 4
+python RushTI.py -t tasks.txt -w 16 -m opt
+python RushTI.py --tasks tasks.txt --workers 4 --mode norm --retries 3
+python RushTI.py -t tasks.txt -w 8 -m opt -r 2 -o result.csv
+```
+
+### Positional Arguments (Legacy)
+
+For backwards compatibility, positional arguments are still supported:
+
+```
+python RushTI.py <tasks_file> <workers> [mode] [retries] [result_file]
+```
+
+**Examples:**
+```bash
+python RushTI.py tasks.txt 2                        # Normal mode, 2 workers
+python RushTI.py tasks.txt 16 opt                   # Optimized mode, 16 workers
+python RushTI.py tasks.txt 4 norm 3                 # Normal mode, 3 retries
+python RushTI.py tasks.txt 8 opt 2 result.csv       # Optimized mode, 2 retries, custom result file
+```
 
 ### The Normal Mode
 
 Parallelizes the TI process execution with n max workers while allowing for execution groups through the `wait` key word
 
-```
+```bash
+python RushTI.py -t tasks.txt -w 16 -m norm -r 2 -o results.csv
+# or using positional arguments:
 python RushTI.py tasks.txt 16 norm 2 results.csv
 ```
 
@@ -68,8 +97,9 @@ Parallelizes the TI process execution with n max workers and allows to define in
 
 Each task is assigned an id. On all tasks you can define predecessors that must have completed before it can run.
 
-
-```
+```bash
+python RushTI.py -t tasks.txt -w 16 -m opt -r 3 -o results.csv
+# or using positional arguments:
 python RushTI.py tasks.txt 16 opt 3 results.csv
 ```
 
@@ -149,14 +179,67 @@ The log file is helpful for troubleshooting issues and understanding past execut
 2023-08-09 14:06:00,700 - 3036 - INFO - RushTI ends. 0 fails out of 8 executions. Elapsed time: 0:00:34.191408. Ran with parameters: ['C:\\RushTI\\RushTI.py', 'tasks.txt', '2']
 ```
 
-## Need a .exe version of RushTI?
+## Using the Executable (No Python Required)
 
-The latest executable build is available as an artifact in the GitHub Actions workflow runs. To download it:
+If you don't have Python installed, you can use the pre-built Windows executable.
 
-1. Go to the [Actions tab](https://github.com/cubewise-code/rushti/actions) of the repository.
-2. Click on the most recent workflow run titled **Build Executable**.
-3. In the workflow summary, look for the **Artifacts** section.
-4. Download the **rushti-winOS** artifact.
+### Download
+
+Download `rushti.exe` from the [GitHub Releases](https://github.com/cubewise-code/rushti/releases) page.
+
+### Setup
+
+The executable requires these configuration files in the **same directory** as `rushti.exe`:
+
+```
+your-folder/
+├── rushti.exe
+├── config.ini          # TM1 server connection settings (required)
+├── logging_config.ini  # Logging configuration (required)
+└── tasks.txt           # Your task file
+```
+
+1. Copy `config.ini` and `logging_config.ini` from this repository to your executable's folder
+2. Edit `config.ini` to match your TM1 environment
+3. Create your `tasks.txt` file
+
+### Running
+
+Using named arguments:
+```cmd
+rushti.exe --tasks tasks.txt --workers 4 --mode norm
+rushti.exe -t tasks.txt -w 4 -m norm
+```
+
+Using positional arguments:
+```cmd
+rushti.exe tasks.txt 4 norm
+```
+
+Check the version or get help:
+```cmd
+rushti.exe --version
+rushti.exe --help
+```
+
+### Building Your Own Executable
+
+To build the executable yourself:
+
+1. **Clone the repository and install dependencies**
+   ```bash
+   git clone https://github.com/cubewise-code/rushti.git
+   cd rushti
+   pip install -r requirements.txt
+   pip install pyinstaller
+   ```
+
+2. **Build using the spec file**
+   ```bash
+   pyinstaller rushti.spec
+   ```
+
+3. **Find the executable** in the `dist/` folder
 
 ## Built With
 
