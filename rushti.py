@@ -786,7 +786,7 @@ async def work_through_tasks(max_workers: int, retries: int, tm1_services: dict)
     # True or False for every execution
     outcomes = []
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     for task_set in task_sets:
         with ThreadPoolExecutor(int(max_workers)) as executor:
