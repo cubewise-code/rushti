@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rushti"
-version = "2.0.0b10"
+version = "2.0.0b11"
 description = "RushTI - Parallel TM1 TurboIntegrator Process Execution"
 readme = "README.md"
 license = "MIT"
