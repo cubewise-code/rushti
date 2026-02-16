@@ -1,56 +1,58 @@
 import { useScrollAnimation } from '../hooks/useScrollAnimation'
-import { GitBranch, Zap, ArrowRight, Clock, Server, CheckCircle2 } from 'lucide-react'
+import { GitBranch, Zap, ArrowRight, Clock, Server, CheckCircle2, Mail } from 'lucide-react'
+
+// Color palette for task categories
+const colorMap = {
+  sky: { gradient: 'from-sky-500 to-sky-400' },
+  amber: { gradient: 'from-amber-500 to-amber-400' },
+  emerald: { gradient: 'from-emerald-500 to-emerald-400' },
+  violet: { gradient: 'from-violet-500 to-violet-400' },
+  rose: { gradient: 'from-rose-500 to-rose-400' },
+  slate: { gradient: 'from-slate-400 to-slate-300' },
+}
+
+// Small task bar used in both diagrams
+function TaskBar({ name, duration, color, style, className = '' }) {
+  const colors = colorMap[color]
+  return (
+    <div className={`relative ${className}`} style={style}>
+      <div className={`h-8 bg-gradient-to-r ${colors.gradient} rounded-md flex items-center px-2.5 justify-between min-w-0`}>
+        <span className="text-[10px] font-medium text-white truncate">{name}</span>
+        <span className="text-[9px] text-white/80 font-mono flex-shrink-0 ml-1.5">{duration}</span>
+      </div>
+    </div>
+  )
+}
+
+// Wait marker for sequential diagram
+function WaitMarker({ style }) {
+  return (
+    <div className="flex items-center gap-3" style={style}>
+      <div className="w-3" />
+      <div className="flex-1 border-t-2 border-dashed border-slate-200 relative">
+        <span className="absolute left-1/2 -translate-x-1/2 -top-2.5 text-[9px] text-slate-400 bg-white px-2 font-medium">wait</span>
+      </div>
+    </div>
+  )
+}
 
 // Animated flow diagram showing sequential → parallel transformation
 function TransformationDiagram({ isVisible }) {
+  // Sequential: each task runs one after another
   const sequentialTasks = [
-    { name: 'Load FX Rates', duration: '2s', color: 'sky' },
-    { name: 'Load GL Data', duration: '3s', color: 'sky' },
-    { name: 'Load Actuals', duration: '7s', color: 'sky' },
-    { name: 'Calc Variance', duration: '5s', color: 'emerald' },
-    { name: 'Build Reports', duration: '2s', color: 'violet' },
+    { name: 'products.load', duration: '2s', color: 'sky' },
+    { name: 'customers.load', duration: '2s', color: 'sky' },
+    { type: 'wait' },
+    { name: 'actuals.clear', duration: '1s', color: 'amber' },
+    { type: 'wait' },
+    { name: 'actuals.load.month pMonth=Jan', duration: '2s', color: 'emerald' },
+    { name: 'actuals.load.month pMonth=Feb', duration: '2s', color: 'emerald' },
+    { name: 'actuals.load.month pMonth=Mar', duration: '2s', color: 'emerald' },
+    { name: '...8 more months', duration: '16s', color: 'slate' },
+    { name: 'actuals.load.month pMonth=Dec', duration: '2s', color: 'emerald' },
+    { type: 'wait' },
+    { name: 'actuals.reconcile.and.mail', duration: '3s', color: 'violet' },
   ]
-
-  const parallelLanes = [
-    // Lane 1
-    [
-      { name: 'Load FX Rates', duration: '2s', color: 'sky', width: '28%' },
-      { name: 'Calc Variance', duration: '5s', color: 'emerald', width: '72%' },
-    ],
-    // Lane 2
-    [
-      { name: 'Load GL Data', duration: '3s', color: 'sky', width: '43%' },
-      { name: 'Build Reports', duration: '2s', color: 'violet', width: '28%' },
-    ],
-    // Lane 3
-    [
-      { name: 'Load Actuals', duration: '7s', color: 'sky', width: '100%' },
-    ],
-  ]
-
-  const colorMap = {
-    sky: {
-      bg: 'bg-sky-500',
-      light: 'bg-sky-50',
-      border: 'border-sky-200',
-      text: 'text-sky-700',
-      gradient: 'from-sky-500 to-sky-400',
-    },
-    emerald: {
-      bg: 'bg-emerald-500',
-      light: 'bg-emerald-50',
-      border: 'border-emerald-200',
-      text: 'text-emerald-700',
-      gradient: 'from-emerald-500 to-emerald-400',
-    },
-    violet: {
-      bg: 'bg-violet-500',
-      light: 'bg-violet-50',
-      border: 'border-violet-200',
-      text: 'text-violet-700',
-      gradient: 'from-violet-500 to-violet-400',
-    },
-  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-11 gap-6 lg:gap-4 items-center">
@@ -59,47 +61,42 @@ function TransformationDiagram({ isVisible }) {
         className={`lg:col-span-5 transition-all duration-700 ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-8'}`}
         style={{ transitionDelay: '300ms' }}
       >
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-amber-400" />
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Sequential</span>
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 rounded-full border border-red-100">
               <Clock className="w-3 h-3 text-red-500" />
-              <span className="text-xs font-bold text-red-600">19s total</span>
+              <span className="text-xs font-bold text-red-600">32s total</span>
             </div>
           </div>
 
-          {/* Sequential task bars stacked vertically */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {sequentialTasks.map((task, i) => {
-              const colors = colorMap[task.color]
+              const animStyle = {
+                opacity: isVisible ? 1 : 0,
+                transform: isVisible ? 'translateX(0)' : 'translateX(-20px)',
+                transition: 'all 0.4s ease-out',
+                transitionDelay: `${400 + i * 60}ms`,
+              }
+
+              if (task.type === 'wait') {
+                return <WaitMarker key={`wait-${i}`} style={animStyle} />
+              }
+
               return (
-                <div
-                  key={task.name}
-                  className="flex items-center gap-3"
-                  style={{
-                    opacity: isVisible ? 1 : 0,
-                    transform: isVisible ? 'translateX(0)' : 'translateX(-20px)',
-                    transition: 'all 0.5s ease-out',
-                    transitionDelay: `${400 + i * 100}ms`,
-                  }}
-                >
-                  <div className="w-2 text-[10px] text-slate-400 text-right">{i + 1}</div>
-                  <div className="flex-1 relative">
-                    <div className={`h-9 bg-gradient-to-r ${colors.gradient} rounded-lg flex items-center px-3 justify-between`}>
-                      <span className="text-[11px] font-medium text-white truncate">{task.name}</span>
-                      <span className="text-[10px] text-white/80 font-mono flex-shrink-0 ml-2">{task.duration}</span>
-                    </div>
-                  </div>
+                <div key={`${task.name}-${i}`} className="flex items-center gap-3" style={animStyle}>
+                  <div className="w-3 text-[9px] text-slate-400 text-right">{i + 1 - sequentialTasks.slice(0, i).filter(t => t.type === 'wait').length}</div>
+                  <TaskBar name={task.name} duration={task.duration} color={task.color} className="flex-1" />
                 </div>
               )
             })}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-            <span className="text-xs text-slate-400">Each task waits for the previous one to complete</span>
+          <div className="mt-3 pt-2.5 border-t border-slate-100 text-center">
+            <span className="text-[11px] text-slate-400">Each task waits for the previous one to complete</span>
           </div>
         </div>
       </div>
@@ -122,57 +119,157 @@ function TransformationDiagram({ isVisible }) {
         className={`lg:col-span-5 transition-all duration-700 ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8'}`}
         style={{ transitionDelay: '500ms' }}
       >
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm relative overflow-hidden">
-          {/* Subtle glow */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm relative overflow-hidden">
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-emerald-400/10 rounded-full blur-3xl" />
 
           <div className="relative">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" />
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Parallel DAG</span>
               </div>
               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 rounded-full border border-emerald-100">
                 <Zap className="w-3 h-3 text-emerald-500" />
-                <span className="text-xs font-bold text-emerald-600">7s total</span>
+                <span className="text-xs font-bold text-emerald-600">8s total</span>
               </div>
             </div>
 
-            {/* Parallel lanes */}
-            <div className="space-y-2">
-              {parallelLanes.map((lane, laneIdx) => (
-                <div key={laneIdx} className="flex items-center gap-3">
-                  <div className="w-2 text-[10px] text-slate-400 text-right">W{laneIdx + 1}</div>
-                  <div className="flex-1 flex gap-1">
-                    {lane.map((task, taskIdx) => {
-                      const colors = colorMap[task.color]
-                      return (
-                        <div
-                          key={task.name}
-                          className="relative"
-                          style={{
-                            width: task.width,
-                            opacity: isVisible ? 1 : 0,
-                            transform: isVisible ? 'scaleX(1)' : 'scaleX(0)',
-                            transformOrigin: 'left',
-                            transition: 'all 0.6s ease-out',
-                            transitionDelay: `${700 + laneIdx * 100 + taskIdx * 150}ms`,
-                          }}
-                        >
-                          <div className={`h-9 bg-gradient-to-r ${colors.gradient} rounded-lg flex items-center px-3 justify-between`}>
-                            <span className="text-[11px] font-medium text-white truncate">{task.name}</span>
-                            <span className="text-[10px] text-white/80 font-mono flex-shrink-0 ml-1">{task.duration}</span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+            {/* DAG stages */}
+            <div className="space-y-3">
+              {/* Stage 1: Metadata loads in parallel */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Stage 1</div>
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <div className="text-[9px] text-slate-400 font-mono">2s</div>
                 </div>
-              ))}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {['products.load', 'customers.load'].map((name, i) => (
+                    <TaskBar
+                      key={name}
+                      name={name}
+                      duration="2s"
+                      color="sky"
+                      style={{
+                        opacity: isVisible ? 1 : 0,
+                        transform: isVisible ? 'scaleX(1)' : 'scaleX(0)',
+                        transformOrigin: 'left',
+                        transition: 'all 0.5s ease-out',
+                        transitionDelay: `${700 + i * 100}ms`,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Dependency arrow */}
+              <div className="flex justify-center">
+                <div className="flex flex-col items-center">
+                  <div className="w-px h-2 bg-slate-300" />
+                  <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] border-t-slate-300" />
+                </div>
+              </div>
+
+              {/* Stage 2: Clear data */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Stage 2</div>
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <div className="text-[9px] text-slate-400 font-mono">1s</div>
+                </div>
+                <TaskBar
+                  name="actuals.clear pYear=2025"
+                  duration="1s"
+                  color="amber"
+                  style={{
+                    opacity: isVisible ? 1 : 0,
+                    transform: isVisible ? 'scaleX(1)' : 'scaleX(0)',
+                    transformOrigin: 'left',
+                    transition: 'all 0.5s ease-out',
+                    transitionDelay: '900ms',
+                  }}
+                />
+              </div>
+
+              {/* Dependency arrow */}
+              <div className="flex justify-center">
+                <div className="flex flex-col items-center">
+                  <div className="w-px h-2 bg-slate-300" />
+                  <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] border-t-slate-300" />
+                </div>
+              </div>
+
+              {/* Stage 3: Load all months in parallel */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Stage 3</div>
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <div className="text-[9px] text-slate-400 font-mono">2s</div>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month, i) => (
+                    <div
+                      key={month}
+                      className={`h-7 bg-gradient-to-r ${colorMap.emerald.gradient} rounded-md flex items-center justify-center`}
+                      style={{
+                        opacity: isVisible ? 1 : 0,
+                        transform: isVisible ? 'scale(1)' : 'scale(0.5)',
+                        transition: 'all 0.3s ease-out',
+                        transitionDelay: `${1000 + i * 40}ms`,
+                      }}
+                    >
+                      <span className="text-[9px] font-medium text-white">{month}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-center mt-1">
+                  <span className="text-[9px] text-slate-400">12× actuals.load.month running in parallel</span>
+                </div>
+              </div>
+
+              {/* Dependency arrow */}
+              <div className="flex justify-center">
+                <div className="flex flex-col items-center">
+                  <div className="w-px h-2 bg-slate-300" />
+                  <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] border-t-slate-300" />
+                </div>
+              </div>
+
+              {/* Stage 4: Reconcile & mail */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Stage 4</div>
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <div className="text-[9px] text-slate-400 font-mono">3s</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <TaskBar
+                    name="actuals.reconcile.and.mail"
+                    duration="3s"
+                    color="violet"
+                    className="flex-1"
+                    style={{
+                      opacity: isVisible ? 1 : 0,
+                      transform: isVisible ? 'scaleX(1)' : 'scaleX(0)',
+                      transformOrigin: 'left',
+                      transition: 'all 0.5s ease-out',
+                      transitionDelay: '1500ms',
+                    }}
+                  />
+                  <Mail
+                    className="w-4 h-4 text-violet-400 flex-shrink-0"
+                    style={{
+                      opacity: isVisible ? 1 : 0,
+                      transition: 'opacity 0.5s ease-out',
+                      transitionDelay: '1700ms',
+                    }}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-              <span className="text-xs text-slate-400">Independent tasks run simultaneously across workers</span>
+            <div className="mt-3 pt-2.5 border-t border-slate-100 text-center">
+              <span className="text-[11px] text-slate-400">Dependencies respected — independent tasks run in parallel</span>
             </div>
           </div>
         </div>
