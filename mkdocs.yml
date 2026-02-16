@@ -17,8 +17,8 @@ copyright: |
 theme:
   name: material
   language: en
-  logo: assets/images/rushti/RushTI2026_bluesqr.svg
-  favicon: assets/images/rushti/RushTI2026_bluesqr.svg
+  logo: assets/images/rushti/RushTi2026_bluesqr.svg
+  favicon: assets/images/rushti/RushTi2026_bluesqr.svg
   palette:
     # Light mode
     - scheme: default
