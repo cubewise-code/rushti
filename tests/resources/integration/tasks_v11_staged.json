@@ -1,0 +1,39 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "test-v11-staged",
+    "description": "Staged pipeline for TM1 v11 integration tests"
+  },
+  "tasks": [
+    {
+      "id": "extract-1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "stage": "Extract"
+    },
+    {
+      "id": "extract-2",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "stage": "Extract"
+    },
+    {
+      "id": "transform-1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "predecessors": ["extract-1", "extract-2"],
+      "stage": "Transform"
+    },
+    {
+      "id": "load-1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "predecessors": ["transform-1"],
+      "stage": "Load"
+    }
+  ]
+}

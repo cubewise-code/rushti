@@ -1,0 +1,39 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "test-cross-instance-staged",
+    "description": "Cross-instance staged pipeline spanning TM1 v11 and v12"
+  },
+  "tasks": [
+    {
+      "id": "extract-v11",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "stage": "Extract"
+    },
+    {
+      "id": "extract-v12",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "stage": "Extract"
+    },
+    {
+      "id": "transform-v11",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "predecessors": ["extract-v11", "extract-v12"],
+      "stage": "Transform"
+    },
+    {
+      "id": "load-v12",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "1"},
+      "predecessors": ["transform-v11"],
+      "stage": "Load"
+    }
+  ]
+}

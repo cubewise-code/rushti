@@ -1,0 +1,52 @@
+# RushTI Test Configuration
+# =========================
+#
+# Copy this file to tests/config.ini and fill in your TM1 server details.
+# This file is used for running integration tests locally.
+#
+# DO NOT commit tests/config.ini to version control - it contains credentials.
+#
+# Configuration Lookup Order:
+#   1. RUSHTI_TEST_CONFIG environment variable (path to a config.ini file)
+#   2. tests/config.ini (this file, when copied and filled in)
+#
+# For CI/CD (GitHub Actions), set the RUSHTI_TEST_TM1_CONFIG secret to the
+# full content of a config.ini file. The CI workflow writes it to tests/config.ini.
+#
+# Multi-Instance Testing:
+#   You can define multiple TM1 instances. Tests that require a specific version
+#   or multiple instances will discover them automatically from the section names.
+#   Tests that need only one instance use the first available section.
+
+# --------------------------------------------------------------------------
+# TM1 v11 Instance (IBM Cloud with LDAP auth)
+# --------------------------------------------------------------------------
+[tm1srv01]
+base_url = https://your-tm1-v11-server/tm1/api/tm1
+user = your-user
+password = your-password
+namespace = LDAP
+ssl = true
+verify = false
+async_requests_mode = true
+session_context = RushTI
+
+# --------------------------------------------------------------------------
+# TM1 v12 Instance (IBM SaaS with API key auth)
+# --------------------------------------------------------------------------
+[tm1srv02]
+base_url = https://your-tm1-v12-server/api/xxx/v0/tm1/your-env
+api_key = your-api-key
+ssl = true
+verify = false
+async_requests_mode = true
+session_context = RushTI
+
+# --------------------------------------------------------------------------
+# Notes:
+#   - Section names ([tm1srv01], [tm1srv02]) are used as instance names in tests
+#   - All parameters are passed directly to TM1py's TM1Service
+#   - Supported auth methods: user/password, user/password/namespace (CAM/LDAP),
+#     api_key (v12 SaaS), and any other TM1py-supported auth
+#   - session_context is used for exclusive mode session identification
+# --------------------------------------------------------------------------

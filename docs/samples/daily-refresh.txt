@@ -1,0 +1,8 @@
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=2
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3
+wait
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=4
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=2
+wait
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3

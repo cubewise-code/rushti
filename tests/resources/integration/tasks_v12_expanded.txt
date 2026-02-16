@@ -1,0 +1,1 @@
+instance="tm1srv02" process="}bedrock.server.wait" pWaitSec*=*"{HEAD({TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}, 3)}"

@@ -1,0 +1,47 @@
+# Extract data for each region from Snowflake using Atmoshere
+id="1" predecessors="" instance="WEC" process="atmosphere.run.snowflake.to.tm1.file" pMonth=01 stage="extract"
+id="2" predecessors="" instance="JAPAC" process="atmosphere.run.snowflake.to.tm1.file" pMonth=01 stage="extract"
+id="3" predecessors="" instance="LATAM" process="atmosphere.run.snowflake.to.tm1.file" pMonth=01 stage="extract"
+id="4" predecessors="" instance="NA" process="atmosphere.run.snowflake.to.tm1.file" pMonth=01 stage="extract"
+
+# Load Snowflake data per month into each region
+id="5" predecessors="1" instance="WEC" process="import_actuals_to_staging" pMonth=01 stage="load"
+id="6" predecessors="2" instance="JAPAC" process="import_actuals_to_staging" pMonth=01 stage="load"
+id="7" predecessors="3" instance="LATAM" process="import_actuals_to_staging" pMonth=01 stage="load"
+id="8" predecessors="4" instance="NA" process="import_actuals_to_staging" pMonth=01 stage="load"
+
+# Transfer from Staging to Input
+id="9" predecessors="5" instance="WEC" process="load_staging_to_input" pMonth=01 stage="input"
+id="10" predecessors="6" instance="JAPAC" process="load_staging_to_input" pMonth=01 stage="input"
+id="11" predecessors="7" instance="LATAM" process="load_staging_to_input" pMonth=01 stage="input"
+id="12" predecessors="8" instance="NA" process="load_staging_to_input" pMonth=01 stage="input"
+
+# Transfer from Staging to Analysis
+id="13" predecessors="5" instance="WEC" process="load_staging_to_analysis" pMonth=01 stage="analysis" 
+id="14" predecessors="6" instance="JAPAC" process="load_staging_to_analysis" pMonth=01 stage="analysis"
+id="15" predecessors="7" instance="LATAM" process="load_staging_to_analysis" pMonth=01 stage="analysis"
+id="16" predecessors="8" instance="NA" process="load_staging_to_analysis" pMonth=01 stage="analysis"
+
+# Transfer from Input cube to Analysis
+id="17" predecessors="9" instance="WEC" process="calculate_input_to_analysis" pMonth=01 stage="analysis"
+id="18" predecessors="10" instance="JAPAC" process="calculate_input_to_analysis" pMonth=01 stage="analysis"
+id="19" predecessors="11" instance="LATAM" process="calculate_input_to_analysis" pMonth=01 stage="analysis"
+id="20" predecessors="12" instance="NA" process="calculate_input_to_analysis" pMonth=01 stage="analysis"
+
+# Export region reports to Corporate instance
+id="21" predecessors="17" instance="WEC" process="export_analysys_to_corp" pMonth=01 stage="export"
+id="22" predecessors="18" instance="JAPAC" process="export_analysys_to_corp" pMonth=01 stage="export"
+id="23" predecessors="19" instance="LATAM" process="export_analysys_to_corp" pMonth=01 stage="export"
+id="24" predecessors="20" instance="NA" process="export_analysys_to_corp" pMonth=01 stage="export"
+
+# Import from Regions
+id="25" predecessors="21" instance="CORP" process="import_to_staging_from_region" pMonth=01 pRegion="WEC" stage="import"
+id="26" predecessors="22" instance="CORP" process="import_to_staging_from_region" pMonth=01 pRegion="JAPAC" stage="import"
+id="27" predecessors="23" instance="CORP" process="import_to_staging_from_region" pMonth=01 pRegion="LATAM" stage="import"
+id="28" predecessors="24" instance="CORP" process="import_to_staging_from_region" pMonth=01 pRegion="NA" stage="import"
+
+# Transfer to Global Reporting cube
+id="29" predecessors="25" instance="CORP" process="transfer_to_reporting_cube" pMonth=01 pRegion="WEC" stage="reporting"
+id="30" predecessors="26" instance="CORP" process="transfer_to_reporting_cube" pMonth=01 pRegion="JAPAC" stage="reporting"
+id="31" predecessors="27" instance="CORP" process="transfer_to_reporting_cube" pMonth=01 pRegion="LATAM" stage="reporting"
+id="32" predecessors="28" instance="CORP" process="transfer_to_reporting_cube" pMonth=01 pRegion="NA" stage="reporting"

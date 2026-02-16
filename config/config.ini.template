@@ -1,0 +1,52 @@
+# TM1 Server Connection Configuration
+# =====================================
+# Each section defines a TM1 server instance that RushTI can connect to.
+# The section name (e.g., [tm1srv01]) is used as the instance identifier
+# in task files and command-line arguments.
+#
+# Copy this file to config.ini and update with your actual TM1 server details.
+# IMPORTANT: config.ini contains credentials and should NOT be committed to git.
+
+[tm1srv01]
+# TM1 server hostname or IP address
+address=your-tm1-server.example.com
+
+# REST API port (check your tm1s.cfg HTTPPortNumber setting)
+port=8001
+
+# TM1 username
+user=admin
+
+# Password - can be plain text or base64 encoded
+password=your-password-here
+
+# Set to True if password is base64 encoded
+decode_b64=False
+
+# Set to True if TM1 server uses HTTPS (check UseSSL in tm1s.cfg)
+ssl=True
+
+
+# Additional TM1 instances can be added as separate sections:
+#
+# [tm1srv02]
+# address=another-server.example.com
+# port=8002
+# user=admin
+# password=another-password
+# decode_b64=False
+# ssl=True
+#
+# Authentication options:
+# -----------------------
+# Option 1: Plain text password
+#   password=mypassword
+#   decode_b64=False
+#
+# Option 2: Base64 encoded password (slightly more secure in config files)
+#   password=bXlwYXNzd29yZA==
+#   decode_b64=True
+#
+# Option 3: Keyring integration (most secure - password stored in OS keyring)
+#   Leave password empty and store in keyring:
+#   python -c "import keyring; keyring.set_password('TM1py', 'tm1srv01', 'mypassword')"

@@ -1,0 +1,49 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "checkpoint-resume-test",
+    "name": "Checkpoint Resume Test",
+    "description": "A simple 5-task sequential pipeline for testing checkpoint and resume functionality. Each task waits 3 seconds."
+  },
+  "tasks": [
+    {
+      "id": "task-1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "3"},
+      "safe_retry": true
+    },
+    {
+      "id": "task-2",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "3"},
+      "predecessors": ["task-1"],
+      "safe_retry": true
+    },
+    {
+      "id": "task-3",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "3"},
+      "predecessors": ["task-2"],
+      "safe_retry": false
+    },
+    {
+      "id": "task-4",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "3"},
+      "predecessors": ["task-3"],
+      "safe_retry": true
+    },
+    {
+      "id": "task-5",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "3"},
+      "predecessors": ["task-4"],
+      "safe_retry": true
+    }
+  ]
+}

@@ -31,7 +31,21 @@ Thumbs.db
 *.log
 RushTI.log
 
-# Local configuration (keep config.ini template, ignore local overrides)
+# Data directory (SQLite stats database)
+data/
+
+# Configuration files with credentials (both legacy root and new config/ locations)
+# Templates (*.template) are tracked, actual config files are ignored
+config.ini
+config/config.ini
+settings.ini
+config/settings.ini
+
+# Test configuration (contains TM1 credentials and local settings)
+tests/config.ini
+tests/settings.ini
+
+# Keep legacy naming if used
 config.local.ini
 
 # Test artifacts
@@ -57,3 +71,50 @@ pyrightconfig.json
 .codeium/
 .tabnine/
 .continue/
+
+# Auto Claude data directory
+.auto-claude/
+
+# Auto Claude generated files
+.auto-claude-security.json
+.auto-claude-status
+.claude_settings.json
+.worktrees/
+.security-key
+logs/security/
+
+# MkDocs documentation build output
+mkdocs_site/
+.cache/
+
+# MkDocs backup files
+mkdocs.yml.backup
+
+# Local development and temporary files
+.local/
+local/
+
+# Website build artifacts
+_site/
+site/homepage/node_modules/
+site/homepage/dist/
+
+# CSV exports and analysis files
+*.csv
+analysis.json
+
+# PyInstaller artifacts
+/build/
+/dist/
+/dist/rushti/
+
+# Runtime generated files
+rushti_stats.db
+archive/
+checkpoints/
+dashboard.html
+dashboard/
+visualizations/
+
+# Serena config
+.serena/

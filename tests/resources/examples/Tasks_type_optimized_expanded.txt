@@ -1,0 +1,10 @@
+# testing
+id="1" predecessors="" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec*=*"{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}"
+id="2" predecessors="1" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=0 pWaitSec*=*"{[rushti.dimension.counter].[9],[rushti.dimension.counter].[9]}"
+id="3" predecessors="2" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=7 pLogOutput*=*"{[rushti.dimension.counter].[0],[rushti.dimension.counter].[1]}"
+id="4" predecessors="3" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5
+id="5" predecessors="3" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5
+# with comments
+id="6" predecessors="4,5" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=11
+id="7" predecessors="4" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=6
+id="8" predecessors="6" require_predecessor_success="1" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=6

@@ -120,13 +120,13 @@ jobs:
         shell: pwsh
         run: |
           $newVersion = "${{ needs.check-release.outputs.new_version }}"
-          $content = Get-Content rushti.py -Raw
+          $content = Get-Content src/rushti/__init__.py -Raw
           $content = $content -replace '__version__\s*=\s*"[^"]+"', "__version__ = `"$newVersion`""
-          Set-Content rushti.py -Value $content -NoNewline
+          Set-Content src/rushti/__init__.py -Value $content -NoNewline
 
       - name: Commit version bump
         run: |
-          git add rushti.py
+          git add src/rushti/__init__.py
           git commit -m "Bump version to ${{ needs.check-release.outputs.new_version }}"
           git push
 
@@ -138,8 +138,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -e .
           pip install pyinstaller
-          pip install -r requirements.txt
 
       - name: Build executable
         run: |

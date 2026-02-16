@@ -1,0 +1,7 @@
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec=6
+wait
+# comments
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec*=*"{[rushti.dimension.counter].[5], [rushti.dimension.counter].[5], [rushti.dimension.counter].[9]}"
+wait
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec*=*"{[rushti.dimension.counter].[4], [rushti.dimension.counter].[4], [rushti.dimension.counter].[4]}"
+instance="tm1srv01" process="}bedrock.server.wait" pLogOutput=1 pWaitSec=6

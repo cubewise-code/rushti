@@ -1,0 +1,4 @@
+instance="tm1srv01" timeout="5" cancel_at_timeout=True process="}bedrock.server.wait" pWaitSec=10
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=2
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3
+instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3
