@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/images/rushti/RushTi2026_blue.svg" alt="RushTI" width="400" />
+  <img src="https://raw.githubusercontent.com/cubewise-code/rushti/rushti2dot0/docs/assets/images/rushti/RushTi2026_blue.svg" alt="RushTI" width="400" />
 </p>
 
 <p align="center">
