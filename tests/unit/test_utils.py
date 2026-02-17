@@ -189,9 +189,10 @@ class TestSharedPermissions(unittest.TestCase):
         with tempfile.NamedTemporaryFile(delete=False) as f:
             path = f.name
         try:
-            original_mode = os.stat(path).st_mode
+            mode_before = os.stat(path).st_mode
             ensure_shared_file(path)
             # On the mock, the function returns early, so mode is unchanged
+            self.assertEqual(os.stat(path).st_mode, mode_before)
         finally:
             os.unlink(path)
 
