@@ -697,13 +697,14 @@ def archive_taskfile(taskfile: Taskfile, workflow: str, run_id: str) -> str:
     :param run_id: Run identifier (used as filename)
     :return: Absolute path to the archived JSON file
     """
-    from rushti.utils import resolve_app_path
+    from rushti.utils import ensure_shared_file, makedirs_shared, resolve_app_path
 
     archive_dir = Path(resolve_app_path("archive")) / workflow
-    archive_dir.mkdir(parents=True, exist_ok=True)
+    makedirs_shared(str(archive_dir))
 
     archive_path = archive_dir / f"{run_id}.json"
     taskfile.save(archive_path)
+    ensure_shared_file(str(archive_path))
 
     logger.info(f"Archived taskfile to {archive_path}")
     return str(archive_path)
