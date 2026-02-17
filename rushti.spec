@@ -50,8 +50,13 @@ print(f"Building RushTI version {version}")
 # Package directory - use absolute path
 src_dir = Path("src").resolve()
 
-# Collect data files (no external assets needed — all TM1 objects are in tm1_objects.py)
-datas = []
+# Collect data files
+# Templates directory contains HTML templates for DAG visualization
+import os
+templates_dir = str(src_dir / "rushti" / "templates")
+datas = [
+    (templates_dir, os.path.join("rushti", "templates")),
+]
 
 # Collect all rushti submodules
 rushti_imports = collect_submodules('rushti')

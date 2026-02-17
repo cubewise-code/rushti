@@ -3,8 +3,12 @@
 Stateless helpers for path resolution and data manipulation.
 """
 
+import logging
 import os
+import stat
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 def set_current_directory():
@@ -71,6 +75,74 @@ def resolve_app_path(relative_path):
     # Join with app directory and normalize to remove any ./ or ../ components
     resolved = os.path.join(get_application_directory(), relative_path)
     return os.path.normpath(resolved)
+
+
+def ensure_shared_file(path):
+    """Set file permissions so any user can read and write.
+
+    RushTI may be run by different OS users (developers via terminal,
+    service accounts via TM1 or Control-M). Files created by one user
+    must remain writable by others.
+
+    Sets permissions to rw-rw-rw- (0o666) on POSIX systems.
+    On Windows this is a no-op (ACLs govern access, not POSIX bits).
+
+    :param path: Path to file
+    """
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
+    except OSError as e:
+        logger.debug(f"Could not set shared permissions on {path}: {e}")
+
+
+def ensure_shared_dir(path):
+    """Set directory permissions so any user can read, write, and traverse.
+
+    Sets permissions to rwxrwxrwx (0o777) on POSIX systems.
+    On Windows this is a no-op.
+
+    :param path: Path to directory
+    """
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+    except OSError as e:
+        logger.debug(f"Could not set shared permissions on {path}: {e}")
+
+
+def makedirs_shared(path, exist_ok=True):
+    """Create directories with shared (world-writable) permissions.
+
+    Each newly created directory in the hierarchy is made accessible
+    to all users so that different accounts running RushTI can write
+    to the same data/log/checkpoint directories.
+
+    :param path: Directory path to create
+    :param exist_ok: If True, don't raise if directory already exists
+    """
+    path = os.path.normpath(path)
+    if os.path.isdir(path):
+        # Directory exists — still ensure permissions are open
+        ensure_shared_dir(path)
+        return
+
+    # Walk up to find the first existing ancestor, then create downwards
+    to_create = []
+    current = path
+    while not os.path.isdir(current):
+        to_create.append(current)
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+
+    # Create from top-most missing directory downwards
+    for d in reversed(to_create):
+        os.makedirs(d, exist_ok=True)
+        ensure_shared_dir(d)
 
 
 def flatten_to_list(items) -> list:

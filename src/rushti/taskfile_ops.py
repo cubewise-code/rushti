@@ -580,8 +580,18 @@ def _visualize_dag_html(
         )
 
     # Load HTML template and substitute variables
-    template_ref = importlib.resources.files("rushti.templates").joinpath("visualization.html")
-    template_text = template_ref.read_text(encoding="utf-8")
+    try:
+        template_ref = importlib.resources.files("rushti.templates").joinpath("visualization.html")
+        template_text = template_ref.read_text(encoding="utf-8")
+    except (FileNotFoundError, TypeError, ModuleNotFoundError):
+        # Fallback for PyInstaller: look relative to this file's location
+        import sys
+
+        if getattr(sys, "frozen", False):
+            base = Path(sys._MEIPASS) / "rushti" / "templates" / "visualization.html"
+        else:
+            base = Path(__file__).parent / "templates" / "visualization.html"
+        template_text = base.read_text(encoding="utf-8")
     html_content = Template(template_text).safe_substitute(
         title=title,
         dashboard_link_html=dashboard_link_html,

@@ -165,7 +165,7 @@ if os.path.isfile(LOGGING_CONFIG):
     # When fileConfig() parses the logging config, relative paths like 'rushti.log' are resolved
     # against the current working directory (where the command was invoked from), not the
     # application directory. We need to close the handler and reopen it at the correct path.
-    from rushti.utils import resolve_app_path
+    from rushti.utils import ensure_shared_file, makedirs_shared, resolve_app_path
 
     log_file_path = os.path.normpath(os.path.abspath(resolve_app_path("logs/rushti.log")))
 
@@ -185,9 +185,13 @@ if os.path.isfile(LOGGING_CONFIG):
                     pass  # Ignore errors - file might be in use or permissions issue
 
                 # Update to correct path and reopen
-                os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+                makedirs_shared(os.path.dirname(log_file_path))
                 handler.baseFilename = log_file_path
                 handler.stream = handler._open()
+
+            # Ensure log file and directory are writable by all users
+            makedirs_shared(os.path.dirname(log_file_path))
+            ensure_shared_file(log_file_path)
 
 logger = logging.getLogger()
 
@@ -602,10 +606,13 @@ def create_results_file(
         overall_success,
     )
 
-    Path(result_file).parent.mkdir(parents=True, exist_ok=True)
+    from rushti.utils import ensure_shared_file, makedirs_shared
+
+    makedirs_shared(str(Path(result_file).parent))
     with open(result_file, "w", encoding="utf-8") as file:
         cw = csv.writer(file, delimiter="|", lineterminator="\n")
         cw.writerows([header, record])
+    ensure_shared_file(result_file)
 
 
 def exit_rushti(

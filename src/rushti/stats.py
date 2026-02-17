@@ -20,7 +20,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from rushti.utils import resolve_app_path
+from rushti.utils import ensure_shared_file, makedirs_shared, resolve_app_path
 
 logger = logging.getLogger(__name__)
 
@@ -82,18 +82,27 @@ class StatsDatabase:
 
     def _initialize_database(self) -> None:
         """Create database file and tables if they don't exist."""
-        # Create directory if needed
+        # Create directory if needed (shared permissions for multi-user access)
         db_dir = os.path.dirname(self.db_path)
         if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
+            makedirs_shared(db_dir)
             logger.info(f"Created stats directory: {db_dir}")
 
         # Connect and create tables
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
 
+        # Ensure DB file is writable by all users
+        ensure_shared_file(self.db_path)
+
         # Enable WAL mode for better concurrency
         self._conn.execute("PRAGMA journal_mode=WAL")
+
+        # Ensure WAL and SHM files are also shared (created by WAL mode)
+        for suffix in ("-wal", "-shm"):
+            wal_path = self.db_path + suffix
+            if os.path.exists(wal_path):
+                ensure_shared_file(wal_path)
 
         # Create tables
         self._create_tables()

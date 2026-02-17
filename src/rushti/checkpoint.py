@@ -382,10 +382,12 @@ def save_checkpoint(checkpoint: Checkpoint, file_path: str) -> None:
     :param checkpoint: Checkpoint to save
     :param file_path: Target file path
     """
+    from rushti.utils import ensure_shared_file, makedirs_shared
+
     file_path = Path(file_path)
 
-    # Ensure directory exists
-    file_path.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure directory exists (shared permissions for multi-user access)
+    makedirs_shared(str(file_path.parent))
 
     # Write to temporary file first
     fd, temp_path = tempfile.mkstemp(
@@ -404,6 +406,7 @@ def save_checkpoint(checkpoint: Checkpoint, file_path: str) -> None:
             file_path.unlink()
 
         os.rename(temp_path, file_path)
+        ensure_shared_file(str(file_path))
         logger.debug(f"Checkpoint saved to {file_path}")
 
     except Exception as e:

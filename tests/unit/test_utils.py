@@ -1,12 +1,16 @@
 """
 Unit tests for utility functions.
-Covers TaskAnalysis, AnalysisReport, and analyze_runs function.
+Covers TaskAnalysis, AnalysisReport, analyze_runs, and shared permission helpers.
 """
 
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from rushti.utils import ensure_shared_file, ensure_shared_dir, makedirs_shared
 from rushti.taskfile_ops import (
     TaskAnalysis,
     AnalysisReport,
@@ -116,6 +120,80 @@ class TestAnalyzeRuns(unittest.TestCase):
                 stats_db=stats_db,
             )
         self.assertIn("Stats database must be enabled", str(ctx.exception))
+
+
+class TestSharedPermissions(unittest.TestCase):
+    """Tests for shared file/directory permission helpers."""
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions not applicable on Windows")
+    def test_ensure_shared_file_sets_rw_for_all(self):
+        """Test that ensure_shared_file sets rw-rw-rw- permissions."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"test")
+            path = f.name
+
+        try:
+            # Start with restrictive permissions
+            os.chmod(path, 0o600)
+            ensure_shared_file(path)
+            mode = os.stat(path).st_mode
+            self.assertTrue(mode & stat.S_IRUSR)
+            self.assertTrue(mode & stat.S_IWUSR)
+            self.assertTrue(mode & stat.S_IRGRP)
+            self.assertTrue(mode & stat.S_IWGRP)
+            self.assertTrue(mode & stat.S_IROTH)
+            self.assertTrue(mode & stat.S_IWOTH)
+        finally:
+            os.unlink(path)
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions not applicable on Windows")
+    def test_ensure_shared_dir_sets_rwx_for_all(self):
+        """Test that ensure_shared_dir sets rwxrwxrwx permissions."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = os.path.join(tmpdir, "shared")
+            os.makedirs(test_dir)
+            os.chmod(test_dir, 0o700)
+            ensure_shared_dir(test_dir)
+            mode = os.stat(test_dir).st_mode
+            self.assertTrue(mode & stat.S_IRWXU)
+            self.assertTrue(mode & stat.S_IRWXG)
+            self.assertTrue(mode & stat.S_IRWXO)
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions not applicable on Windows")
+    def test_makedirs_shared_creates_with_open_permissions(self):
+        """Test that makedirs_shared creates all directories with open permissions."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            nested = os.path.join(tmpdir, "a", "b", "c")
+            makedirs_shared(nested)
+
+            for d in [
+                os.path.join(tmpdir, "a"),
+                os.path.join(tmpdir, "a", "b"),
+                nested,
+            ]:
+                self.assertTrue(os.path.isdir(d))
+                mode = os.stat(d).st_mode
+                self.assertTrue(mode & stat.S_IRWXG)
+                self.assertTrue(mode & stat.S_IRWXO)
+
+    def test_makedirs_shared_existing_dir(self):
+        """Test that makedirs_shared handles existing directories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Should not raise
+            makedirs_shared(tmpdir)
+            self.assertTrue(os.path.isdir(tmpdir))
+
+    @patch("rushti.utils.os.name", "nt")
+    def test_ensure_shared_file_noop_on_windows(self):
+        """Test that ensure_shared_file is a no-op on Windows."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            path = f.name
+        try:
+            original_mode = os.stat(path).st_mode
+            ensure_shared_file(path)
+            # On the mock, the function returns early, so mode is unchanged
+        finally:
+            os.unlink(path)
 
 
 if __name__ == "__main__":
