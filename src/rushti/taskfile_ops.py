@@ -545,8 +545,10 @@ def _visualize_dag_html(
 
     # Generate HTML with embedded vis.js
     import json
-    import importlib.resources
     from string import Template
+
+    from rushti.dashboard import _LOGO_SVG
+    from rushti.visualization_template import VISUALIZATION_TEMPLATE
 
     nodes_json = json.dumps(nodes)
     edges_json = json.dumps(edges)
@@ -564,8 +566,6 @@ def _visualize_dag_html(
     legend_html = "".join(legend_items)
 
     # Build conditional dashboard link HTML
-    from rushti.dashboard import _LOGO_SVG
-
     dashboard_link_html = ""
     if dashboard_url:
         dashboard_link_html = (
@@ -579,20 +579,8 @@ def _visualize_dag_html(
             f"&#8592; Performance Dashboard</a>"
         )
 
-    # Load HTML template and substitute variables
-    try:
-        template_ref = importlib.resources.files("rushti.templates").joinpath("visualization.html")
-        template_text = template_ref.read_text(encoding="utf-8")
-    except (FileNotFoundError, TypeError, ModuleNotFoundError):
-        # Fallback for PyInstaller: look relative to this file's location
-        import sys
-
-        if getattr(sys, "frozen", False):
-            base = Path(sys._MEIPASS) / "rushti" / "templates" / "visualization.html"
-        else:
-            base = Path(__file__).parent / "templates" / "visualization.html"
-        template_text = base.read_text(encoding="utf-8")
-    html_content = Template(template_text).safe_substitute(
+    # Substitute variables into embedded template (no external file dependency)
+    html_content = Template(VISUALIZATION_TEMPLATE).safe_substitute(
         title=title,
         dashboard_link_html=dashboard_link_html,
         legend_html=legend_html,

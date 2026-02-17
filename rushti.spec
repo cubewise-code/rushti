@@ -50,13 +50,9 @@ print(f"Building RushTI version {version}")
 # Package directory - use absolute path
 src_dir = Path("src").resolve()
 
-# Collect data files
-# Templates directory contains HTML templates for DAG visualization
-import os
-templates_dir = str(src_dir / "rushti" / "templates")
-datas = [
-    (templates_dir, os.path.join("rushti", "templates")),
-]
+# No external data files needed — all templates are embedded as Python constants
+# (visualization_template.py for DAG, dashboard.py for dashboard)
+datas = []
 
 # Collect all rushti submodules
 rushti_imports = collect_submodules('rushti')
