@@ -133,8 +133,23 @@ class ExecutionRun:
         return sum(1 for log in self.task_logs if log.status == "Fail")
 
     @property
-    def total_duration_seconds(self) -> float:
-        """Total duration of all task executions."""
+    def wall_clock_seconds(self) -> float:
+        """Wall-clock duration of the run (end_time - start_time).
+
+        This is the actual elapsed time. Returns 0.0 if the run has not
+        been completed yet (end_time is None).
+        """
+        if self.end_time is None:
+            return 0.0
+        return (self.end_time - self.start_time).total_seconds()
+
+    @property
+    def cumulative_duration_seconds(self) -> float:
+        """Cumulative duration of all individual task executions.
+
+        When tasks run in parallel this will exceed wall-clock time.
+        Useful for understanding total CPU/server work performed.
+        """
         return sum(log.duration_seconds for log in self.task_logs)
 
 
@@ -202,12 +217,15 @@ class FileLogDestination(LogDestination):
                     )
                 self.exec_logger.log(log_level, msg)
 
-            # Write run summary
-            total_duration = run.total_duration_seconds
+            # Write run summary with wall-clock time (actual elapsed)
+            # and cumulative time (sum of all individual task durations)
+            wall_clock = run.wall_clock_seconds
+            cumulative = run.cumulative_duration_seconds
             self.exec_logger.info(
                 f"Run {run.run_id} complete: "
                 f"{run.success_count} succeeded, {run.failure_count} failed, "
-                f"total duration {total_duration:.3f}s"
+                f"total duration {wall_clock:.3f}s "
+                f"(cumulative task time {cumulative:.3f}s)"
             )
             return True
         except Exception as e:

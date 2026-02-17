@@ -196,7 +196,51 @@ class TestExecutionRun(unittest.TestCase):
 
         self.assertEqual(run.success_count, 1)
         self.assertEqual(run.failure_count, 1)
-        self.assertEqual(run.total_duration_seconds, 15.0)
+        self.assertEqual(run.cumulative_duration_seconds, 15.0)
+
+    def test_wall_clock_seconds(self):
+        """Test wall-clock duration uses start/end time, not task sum"""
+        from datetime import timedelta
+
+        start = datetime(2026, 1, 15, 10, 0, 0)
+        run = ExecutionRun(
+            run_id="20260115_100000",
+            workflow="daily-etl",
+            start_time=start,
+        )
+
+        # Add two tasks that each took 100s (simulating parallel execution)
+        for task_id in ("t1", "t2"):
+            run.add_log(
+                TaskExecutionLog(
+                    workflow="daily-etl",
+                    task_id=task_id,
+                    instance="tm1",
+                    process="p1",
+                    parameters="{}",
+                    status="Success",
+                    start_time=start,
+                    end_time=start + timedelta(seconds=100),
+                    duration_seconds=100.0,
+                )
+            )
+
+        # Complete the run after 120s wall-clock
+        run.complete(end_time=start + timedelta(seconds=120))
+
+        # Wall-clock should be 120s (actual elapsed)
+        self.assertEqual(run.wall_clock_seconds, 120.0)
+        # Cumulative should be 200s (sum of all task durations)
+        self.assertEqual(run.cumulative_duration_seconds, 200.0)
+
+    def test_wall_clock_seconds_before_complete(self):
+        """Test wall-clock returns 0 when run not yet completed"""
+        run = ExecutionRun(
+            run_id="20260115_100000",
+            workflow="daily-etl",
+            start_time=datetime.now(),
+        )
+        self.assertEqual(run.wall_clock_seconds, 0.0)
 
 
 class TestExecutionLogger(unittest.TestCase):
