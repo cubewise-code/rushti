@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from rushti.utils import resolve_app_path
+from rushti.utils import get_application_directory, resolve_app_path
 
 logger = logging.getLogger(__name__)
 
@@ -313,10 +313,12 @@ def load_settings(settings_path: Optional[str] = None) -> Settings:
                     f"'settings.ini' was not found in '{rushti_dir}/config/'"
                 )
 
-        # 2. Fall back to directory-based discovery
+        # 2. Fall back to application directory-based discovery
+        # Use get_application_directory() (exe dir for frozen, project root for dev)
+        # instead of CWD, which may differ when launched from TM1 or other processes
         if settings_path is None:
-            cwd = Path.cwd()
-            settings_path, is_legacy = resolve_settings_path(cwd)
+            app_dir = Path(get_application_directory())
+            settings_path, is_legacy = resolve_settings_path(app_dir)
             if is_legacy:
                 logger.warning(
                     "DEPRECATION: 'settings.ini' found in root directory. "
