@@ -730,8 +730,7 @@ def main() -> int:
     # Handle --help with no subcommand (top-level overview)
     if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
         print_banner()
-        print(
-            f"""\
+        print(f"""\
 {APP_NAME} {__version__} - Parallel TI Process Execution
 
 Usage:
@@ -751,8 +750,7 @@ Quick Start:
   {APP_NAME} run --tm1-instance tm1srv01 --workflow DailyETL --max-workers 4
 
 Use '{APP_NAME} <command> --help' for command-specific options and examples.
-"""
-        )
+""")
         return 0
 
     # Default behavior: execute task file (run mode)
