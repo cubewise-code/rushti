@@ -261,7 +261,7 @@ def translate_cmd_arguments(*args):
     # default values
     mode = ExecutionMode.NORM
     retries = 0
-    result_file = ""
+    result_file = None
 
     # txt file doesnt exist
     tasks_file = args[1]
@@ -568,7 +568,7 @@ def parse_arguments(argv: list):
             "max_workers": max_workers,
             "execution_mode": mode,
             "retries": retries,
-            "result_file": result_file,
+            "output_file": result_file,
             "settings_file": None,
             "force": False,
             "exclusive": None,
@@ -730,7 +730,8 @@ def main() -> int:
     # Handle --help with no subcommand (top-level overview)
     if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
         print_banner()
-        print(f"""\
+        print(
+            f"""\
 {APP_NAME} {__version__} - Parallel TI Process Execution
 
 Usage:
@@ -750,7 +751,8 @@ Quick Start:
   {APP_NAME} run --tm1-instance tm1srv01 --workflow DailyETL --max-workers 4
 
 Use '{APP_NAME} <command> --help' for command-specific options and examples.
-""")
+"""
+        )
         return 0
 
     # Default behavior: execute task file (run mode)
@@ -789,10 +791,11 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         if cli_args.get("output_file") is not None
         else settings.defaults.result_file
     )
-    # Resolve result file path relative to application directory
-    from rushti.utils import resolve_app_path
+    # Resolve result file path relative to application directory (skip if empty/None)
+    if result_file:
+        from rushti.utils import resolve_app_path
 
-    result_file = resolve_app_path(result_file)
+        result_file = resolve_app_path(result_file)
 
     logger.debug(
         f"Effective settings: max_workers={max_workers}, retries={process_execution_retries}, result_file={result_file}"

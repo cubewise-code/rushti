@@ -440,12 +440,12 @@ def _apply_cli_args(settings: Settings, cli_args: Dict[str, Any]) -> None:
     cli_to_settings = {
         "max_workers": ("defaults", "max_workers"),
         "retries": ("defaults", "retries"),
-        "result_file": ("defaults", "result_file"),
+        "output_file": ("defaults", "result_file"),
         "execution_mode": ("defaults", "mode"),
     }
 
     for cli_key, (section, attr) in cli_to_settings.items():
-        if cli_key in cli_args and cli_args[cli_key] is not None:
+        if cli_key in cli_args and cli_args[cli_key] is not None and cli_args[cli_key] != "":
             section_obj = getattr(settings, section)
             value = cli_args[cli_key]
             # Convert ExecutionMode enum to string if needed
