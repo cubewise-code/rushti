@@ -92,7 +92,10 @@ def ensure_shared_file(path):
     if os.name == "nt":
         return
     try:
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
+        os.chmod(
+            path,
+            stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH,
+        )
     except OSError as e:
         logger.debug(f"Could not set shared permissions on {path}: {e}")
 
