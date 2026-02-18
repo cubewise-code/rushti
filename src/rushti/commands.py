@@ -4,7 +4,7 @@ This module contains the handler functions for all RushTI subcommands:
 - build: Create TM1 logging dimensions and cube
 - resume: Resume task execution from a checkpoint
 - tasks: Taskfile operations (export, push, expand, visualize, validate)
-- stats: Statistics queries (export, analyze, visualize, list)
+- stats: Statistics queries (export, analyze, optimize, visualize, list)
 - db: Database administration (list, clear, show, vacuum)
 
 Note: Functions from ``rushti.cli`` (argument helpers, config resolution)
@@ -822,6 +822,7 @@ def run_stats_command(argv: list) -> None:
     Provides tools for querying and analyzing execution data from the stats database:
     - Export results to CSV
     - Analyze historical runs for optimization
+    - Optimize taskfiles using contention-aware analysis
     - Visualize execution stats as an interactive HTML dashboard
     - List runs and tasks
 
@@ -839,6 +840,7 @@ def run_stats_command(argv: list) -> None:
 Examples:
   {APP_NAME} stats export --workflow daily-etl --output results.csv
   {APP_NAME} stats analyze --workflow daily-etl --runs 10
+  {APP_NAME} stats optimize --workflow daily-etl --tasks taskfile.json
   {APP_NAME} stats visualize --workflow daily-etl
   {APP_NAME} stats list runs --workflow daily-etl
   {APP_NAME} stats list tasks --workflow daily-etl
@@ -953,6 +955,70 @@ Examples:
     )
     add_log_level_arg(analyze_parser)
 
+    # --- optimize subcommand ---
+    optimize_parser = subparsers.add_parser(
+        "optimize",
+        help="Contention-aware optimization: detect resource contention and generate optimized taskfile",
+    )
+    optimize_parser.add_argument(
+        "--workflow",
+        "-W",
+        dest="workflow",
+        required=True,
+        metavar="NAME",
+        help="Workflow name to analyze for contention patterns",
+    )
+    optimize_parser.add_argument(
+        "--tasks",
+        "-t",
+        dest="taskfile",
+        required=True,
+        metavar="FILE",
+        help="Input task file (JSON) to optimize",
+    )
+    optimize_parser.add_argument(
+        "--output",
+        "-o",
+        dest="output_file",
+        default=None,
+        metavar="FILE",
+        help="Output path for optimized task file (default: <taskfile>_optimized.json)",
+    )
+    optimize_parser.add_argument(
+        "--sensitivity",
+        dest="sensitivity",
+        type=float,
+        default=10.0,
+        metavar="K",
+        help="IQR multiplier for outlier detection (default: 10.0, higher = more conservative)",
+    )
+    optimize_parser.add_argument(
+        "--runs",
+        "-n",
+        dest="lookback_runs",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of recent runs for EWMA estimation (default: 10)",
+    )
+    optimize_parser.add_argument(
+        "--ewma-alpha",
+        dest="ewma_alpha",
+        type=float,
+        default=0.3,
+        metavar="ALPHA",
+        help="EWMA smoothing factor 0-1 (default: 0.3, higher = more weight on recent)",
+    )
+    optimize_parser.add_argument(
+        "--settings",
+        "-s",
+        dest="settings_file",
+        default=None,
+        metavar="FILE",
+        help="Path to settings.ini file",
+    )
+    add_log_level_arg(optimize_parser)
+
     # --- visualize subcommand ---
     visualize_parser = subparsers.add_parser(
         "visualize",
@@ -1039,6 +1105,8 @@ Examples:
         _stats_export(args)
     elif args.subcommand == "analyze":
         _stats_analyze(args)
+    elif args.subcommand == "optimize":
+        _stats_optimize(args)
     elif args.subcommand == "visualize":
         _stats_visualize(args)
     elif args.subcommand == "list":
@@ -1170,6 +1238,127 @@ def _stats_analyze(args) -> None:
             print(f"✓ Analysis report written to: {args.report_file}")
 
         sys.exit(0)
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def _stats_optimize(args) -> None:
+    """Handle stats optimize action.
+
+    Runs contention-aware analysis on a workflow and generates an optimized
+    taskfile with predecessor chains that prevent heavy tasks from running
+    concurrently.
+
+    :param args: Parsed arguments
+    """
+    try:
+        from rushti.contention_analyzer import analyze_contention, write_optimized_taskfile
+        from rushti.settings import load_settings
+        from rushti.stats import StatsDatabase, get_db_path
+
+        settings = load_settings(args.settings_file)
+
+        if not settings.stats.enabled:
+            print("Error: Stats database is not enabled in settings.ini")
+            print("Set [stats] enabled = true to use contention analysis")
+            sys.exit(1)
+
+        # Initialize stats database
+        stats_db = StatsDatabase(db_path=get_db_path(settings), enabled=True)
+
+        try:
+            # Verify taskfile exists
+            taskfile_path = Path(args.taskfile)
+            if not taskfile_path.exists():
+                print(f"Error: Task file not found: {args.taskfile}")
+                sys.exit(1)
+
+            # Run contention analysis
+            print(f"\nContention Analysis for: {args.workflow}")
+            print("=" * 50)
+
+            result = analyze_contention(
+                stats_db=stats_db,
+                workflow=args.workflow,
+                sensitivity=args.sensitivity,
+                lookback_runs=args.lookback_runs,
+                ewma_alpha=args.ewma_alpha,
+            )
+
+            # Display results
+            if result.warnings and not result.contention_driver:
+                print(f"\n⚠ {result.warnings[0]}")
+                print("Falling back to standard optimization (longest_first).")
+                sys.exit(1)
+
+            print(f"\nContention driver: {result.contention_driver}")
+            print(f"Fan-out parameters: {', '.join(result.fan_out_keys) or 'none'}")
+            print(f"Fan-out size: {result.fan_out_size}")
+            print(f"Total tasks: {result.total_tasks}")
+
+            print(f"\nIQR statistics (sensitivity k={result.sensitivity}):")
+            print(f"  Q1: {result.iqr_stats.get('q1', 0):.1f}s")
+            print(f"  Q3: {result.iqr_stats.get('q3', 0):.1f}s")
+            print(f"  IQR: {result.iqr_stats.get('iqr', 0):.1f}s")
+            print(f"  Upper fence: {result.iqr_stats.get('upper_fence', 0):.1f}s")
+
+            print(f"\nHeavy groups ({len(result.heavy_groups)}):")
+            for g in result.heavy_groups:
+                print(f"  {g.driver_value}: {g.avg_duration:.1f}s ({len(g.task_ids)} tasks)")
+            if not result.heavy_groups:
+                print("  (none detected)")
+
+            print(f"\nLight groups ({len(result.light_groups)}):")
+            for g in result.light_groups[:5]:
+                print(f"  {g.driver_value}: {g.avg_duration:.1f}s ({len(g.task_ids)} tasks)")
+            if len(result.light_groups) > 5:
+                print(f"  ... and {len(result.light_groups) - 5} more")
+
+            if result.predecessor_map:
+                print("\nChain structure:")
+                print(f"  Chain length: {result.chain_length} heavy groups")
+                print(f"  Chains: {result.fan_out_size} independent chains")
+                print(f"  Tasks with predecessors: {len(result.predecessor_map)}")
+                print(f"  Critical path: {result.critical_path_seconds:.1f}s")
+            else:
+                print("\nNo predecessor chains generated.")
+
+            print(f"\nRecommended max_workers: {result.recommended_workers}")
+
+            if result.warnings:
+                print("\nWarnings:")
+                for w in result.warnings:
+                    print(f"  ⚠ {w}")
+
+            # Write optimized taskfile
+            if result.predecessor_map:
+                output_path = args.output_file
+                if not output_path:
+                    stem = taskfile_path.stem
+                    output_path = str(taskfile_path.parent / f"{stem}_optimized.json")
+
+                write_optimized_taskfile(
+                    original_taskfile_path=args.taskfile,
+                    result=result,
+                    output_path=output_path,
+                )
+                print(f"\n✓ Optimized task file written to: {output_path}")
+                print(
+                    f"  Use: rushti run --tasks {output_path} --max-workers {result.recommended_workers}"
+                )
+            else:
+                print(
+                    "\nNo optimization applied — consider lowering --sensitivity "
+                    "or using longest_first/shortest_first."
+                )
+
+        finally:
+            stats_db.close()
+
     except Exception as e:
         print(f"Error: {e}")
         import traceback
