@@ -1277,6 +1277,7 @@ def _stats_optimize(args) -> None:
         )
         from rushti.settings import load_settings
         from rushti.stats import StatsDatabase, get_db_path
+        from rushti.utils import resolve_app_path
 
         settings = load_settings(args.settings_file)
 
@@ -1374,7 +1375,7 @@ def _stats_optimize(args) -> None:
                 output_path = args.output_file
                 if not output_path:
                     stem = taskfile_path.stem
-                    output_path = str(taskfile_path.parent / f"{stem}_optimized.json")
+                    output_path = resolve_app_path(f"{stem}_optimized.json")
 
                 write_optimized_taskfile(
                     original_taskfile_path=str(taskfile_path),
@@ -1392,7 +1393,6 @@ def _stats_optimize(args) -> None:
             # Generate DAG visualization + HTML optimization report
             if not args.no_report and result.contention_driver:
                 from rushti.optimization_report import generate_optimization_report
-                from rushti.utils import resolve_app_path
 
                 # HTML outputs go under visualizations/ (same pattern as _stats_visualize)
                 report_output = args.report_output
