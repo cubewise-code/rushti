@@ -17,6 +17,7 @@ from rushti.contention_analyzer import (
     _build_predecessor_chains,
     _recommend_max_workers,
     analyze_contention,
+    get_archived_taskfile_path,
     write_optimized_taskfile,
     _empty_result,
 )
@@ -831,6 +832,9 @@ class TestWriteOptimizedTaskfile(TestCase):
             self.assertEqual(tasks_by_id["3"].get("predecessors", []), ["1"])
             self.assertEqual(tasks_by_id["4"].get("predecessors", []), ["2"])
 
+            # Check max_workers embedded in settings
+            self.assertEqual(optimized["settings"]["max_workers"], 4)
+
     def test_write_reorders_tasks(self):
         """Tasks are reordered to contention-driver-major."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -902,3 +906,40 @@ class TestWriteOptimizedTaskfile(TestCase):
             desc = optimized["metadata"]["description"]
             self.assertIn("Contention-aware", desc)
             self.assertIn("pSegment", desc)
+
+            # Check max_workers embedded in settings
+            self.assertEqual(optimized["settings"]["max_workers"], 2)
+
+
+class TestGetArchivedTaskfilePath(TestCase):
+    """Tests for get_archived_taskfile_path."""
+
+    def test_returns_path_for_successful_run(self):
+        """Returns taskfile_path from the most recent successful run."""
+        stats_db = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = {"taskfile_path": "/archive/my_workflow/run123.json"}
+        stats_db._conn.cursor.return_value = mock_cursor
+
+        result = get_archived_taskfile_path(stats_db, "my_workflow")
+        self.assertEqual(result, "/archive/my_workflow/run123.json")
+
+    def test_returns_none_when_no_runs(self):
+        """Returns None when no successful runs exist."""
+        stats_db = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = None
+        stats_db._conn.cursor.return_value = mock_cursor
+
+        result = get_archived_taskfile_path(stats_db, "empty_workflow")
+        self.assertIsNone(result)
+
+    def test_returns_none_when_path_is_null(self):
+        """Returns None when taskfile_path is NULL in the database."""
+        stats_db = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = {"taskfile_path": None}
+        stats_db._conn.cursor.return_value = mock_cursor
+
+        result = get_archived_taskfile_path(stats_db, "workflow_with_null")
+        self.assertIsNone(result)

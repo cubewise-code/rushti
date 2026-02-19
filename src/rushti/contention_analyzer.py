@@ -536,6 +536,35 @@ def analyze_contention(
     )
 
 
+def get_archived_taskfile_path(
+    stats_db: StatsDatabase,
+    workflow: str,
+) -> Optional[str]:
+    """Get the archived taskfile path from the most recent successful run.
+
+    The archive stores a JSON snapshot of every run's taskfile at
+    ``archive/{workflow}/{run_id}.json``, and the path is recorded in the
+    ``runs.taskfile_path`` column.
+
+    :param stats_db: Stats database connection
+    :param workflow: Workflow name
+    :return: Path to archived JSON taskfile, or None if no successful runs exist
+    """
+    cursor = stats_db._conn.cursor()
+    cursor.execute(
+        """
+        SELECT taskfile_path FROM runs
+        WHERE workflow = ? AND status = 'Success'
+        ORDER BY start_time DESC LIMIT 1
+        """,
+        (workflow,),
+    )
+    row = cursor.fetchone()
+    if row and row["taskfile_path"]:
+        return row["taskfile_path"]
+    return None
+
+
 def write_optimized_taskfile(
     original_taskfile_path: str,
     result: ContentionAnalysisResult,
@@ -544,7 +573,9 @@ def write_optimized_taskfile(
     """Write an optimized taskfile with predecessor chains and reordered tasks.
 
     Reorders tasks to contention-driver-major (groups by driver value, then fan-out
-    within each group). Injects predecessor chains for heavy groups.
+    within each group). Injects predecessor chains for heavy groups. Embeds the
+    recommended ``max_workers`` in the taskfile settings so it takes effect
+    automatically (the CLI ``--max-workers`` flag still overrides).
 
     :param original_taskfile_path: Path to original JSON taskfile
     :param result: Contention analysis result
@@ -589,6 +620,10 @@ def write_optimized_taskfile(
                 reordered.append(task)
 
         taskfile.tasks = reordered
+
+    # Embed recommended max_workers in taskfile settings
+    if result.recommended_workers > 0:
+        taskfile.settings.max_workers = result.recommended_workers
 
     # Update metadata
     heavy_vals = [g.driver_value for g in result.heavy_groups]

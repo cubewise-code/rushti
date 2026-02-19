@@ -840,7 +840,7 @@ def run_stats_command(argv: list) -> None:
 Examples:
   {APP_NAME} stats export --workflow daily-etl --output results.csv
   {APP_NAME} stats analyze --workflow daily-etl --runs 10
-  {APP_NAME} stats optimize --workflow daily-etl --tasks taskfile.json
+  {APP_NAME} stats optimize --workflow daily-etl
   {APP_NAME} stats visualize --workflow daily-etl
   {APP_NAME} stats list runs --workflow daily-etl
   {APP_NAME} stats list tasks --workflow daily-etl
@@ -972,9 +972,9 @@ Examples:
         "--tasks",
         "-t",
         dest="taskfile",
-        required=True,
+        default=None,
         metavar="FILE",
-        help="Input task file (JSON) to optimize",
+        help="Input task file (JSON). If not provided, uses the archived taskfile from the most recent run",
     )
     optimize_parser.add_argument(
         "--output",
@@ -1256,7 +1256,11 @@ def _stats_optimize(args) -> None:
     :param args: Parsed arguments
     """
     try:
-        from rushti.contention_analyzer import analyze_contention, write_optimized_taskfile
+        from rushti.contention_analyzer import (
+            analyze_contention,
+            get_archived_taskfile_path,
+            write_optimized_taskfile,
+        )
         from rushti.settings import load_settings
         from rushti.stats import StatsDatabase, get_db_path
 
@@ -1271,11 +1275,28 @@ def _stats_optimize(args) -> None:
         stats_db = StatsDatabase(db_path=get_db_path(settings), enabled=True)
 
         try:
-            # Verify taskfile exists
-            taskfile_path = Path(args.taskfile)
-            if not taskfile_path.exists():
-                print(f"Error: Task file not found: {args.taskfile}")
-                sys.exit(1)
+            # Resolve taskfile: explicit --tasks flag, or auto-resolve from archive
+            if args.taskfile:
+                taskfile_path = Path(args.taskfile)
+                if not taskfile_path.exists():
+                    print(f"Error: Task file not found: {args.taskfile}")
+                    sys.exit(1)
+            else:
+                archived_path = get_archived_taskfile_path(stats_db, args.workflow)
+                if not archived_path:
+                    print(
+                        f"Error: No archived taskfile found for workflow '{args.workflow}'.\n"
+                        "Run the workflow at least once, or provide --tasks explicitly."
+                    )
+                    sys.exit(1)
+                taskfile_path = Path(archived_path)
+                if not taskfile_path.exists():
+                    print(
+                        f"Error: Archived taskfile no longer exists: {archived_path}\n"
+                        "Provide --tasks explicitly."
+                    )
+                    sys.exit(1)
+                print(f"Using archived taskfile: {taskfile_path}")
 
             # Run contention analysis
             print(f"\nContention Analysis for: {args.workflow}")
@@ -1342,14 +1363,12 @@ def _stats_optimize(args) -> None:
                     output_path = str(taskfile_path.parent / f"{stem}_optimized.json")
 
                 write_optimized_taskfile(
-                    original_taskfile_path=args.taskfile,
+                    original_taskfile_path=str(taskfile_path),
                     result=result,
                     output_path=output_path,
                 )
                 print(f"\n✓ Optimized task file written to: {output_path}")
-                print(
-                    f"  Use: rushti run --tasks {output_path} --max-workers {result.recommended_workers}"
-                )
+                print(f"  Use: rushti run --tasks {output_path}")
             else:
                 print(
                     "\nNo optimization applied — consider lowering --sensitivity "
