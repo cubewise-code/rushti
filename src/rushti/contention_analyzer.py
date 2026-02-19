@@ -63,6 +63,7 @@ class ContentionAnalysisResult:
     iqr_stats: Dict[str, float]  # q1, q3, iqr, upper_fence
     predecessor_map: Dict[str, List[str]]  # {task_id: [predecessor_ids]}
     warnings: List[str] = field(default_factory=list)
+    parameter_analyses: List["ParameterAnalysis"] = field(default_factory=list)
 
     @property
     def total_tasks(self) -> int:
@@ -502,6 +503,7 @@ def analyze_contention(
             iqr_stats=iqr_stats,
             predecessor_map={},
             warnings=warnings,
+            parameter_analyses=all_analyses,
         )
 
     logger.info(
@@ -533,6 +535,7 @@ def analyze_contention(
         iqr_stats=iqr_stats,
         predecessor_map=predecessor_map,
         warnings=warnings,
+        parameter_analyses=all_analyses,
     )
 
 

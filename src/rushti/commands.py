@@ -1017,6 +1017,20 @@ Examples:
         metavar="FILE",
         help="Path to settings.ini file",
     )
+    optimize_parser.add_argument(
+        "--no-report",
+        dest="no_report",
+        action="store_true",
+        default=False,
+        help="Skip generating the HTML optimization report",
+    )
+    optimize_parser.add_argument(
+        "--report-output",
+        dest="report_output",
+        default=None,
+        metavar="FILE",
+        help="Output path for HTML optimization report (default: alongside taskfile)",
+    )
     add_log_level_arg(optimize_parser)
 
     # --- visualize subcommand ---
@@ -1374,6 +1388,22 @@ def _stats_optimize(args) -> None:
                     "\nNo optimization applied — consider lowering --sensitivity "
                     "or using longest_first/shortest_first."
                 )
+
+            # Generate HTML optimization report
+            if not args.no_report and result.contention_driver:
+                from rushti.optimization_report import generate_optimization_report
+
+                report_output = args.report_output
+                if not report_output:
+                    stem = taskfile_path.stem
+                    report_output = str(taskfile_path.parent / f"{stem}_optimization_report.html")
+
+                generate_optimization_report(
+                    workflow=args.workflow,
+                    result=result,
+                    output_path=report_output,
+                )
+                print(f"  Optimization report: {report_output}")
 
         finally:
             stats_db.close()
