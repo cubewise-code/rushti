@@ -275,6 +275,11 @@ PROCESS_EPILOG = r"""###########################################################
 #****Begin: Generated Statements***
 #****End: Generated Statements****
 
+### If required delete the source file
+if(pDeleteSourceFile=1);
+  ASCIIDelete(pSourceFile);
+endif;
+
 ### If required switch transaction logging back on
 CubeSetLogChanges( cCubeTgt, nCubeLogChanges );
 
@@ -338,6 +343,12 @@ PROCESS_PARAMETERS = [
     {
         "Name": "pLogOutput",
         "Prompt": "OPTIONAL:Write status messages to tm1server.log file?",
+        "Value": 0,
+        "Type": "Numeric",
+    },
+    {
+        "Name": "pDeleteSourceFile",
+        "Prompt": "OPTIONAL:Should the result file be deleted after it loads? (1=True, 0=False)",
         "Value": 0,
         "Type": "Numeric",
     },
