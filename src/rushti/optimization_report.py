@@ -16,7 +16,7 @@ import math
 import webbrowser
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from rushti.contention_analyzer import ContentionAnalysisResult
 from rushti.dashboard import _LOGO_SVG
@@ -167,6 +167,7 @@ def generate_optimization_report(
     result: ContentionAnalysisResult,
     output_path: str,
     open_browser: bool = True,
+    dag_url: Optional[str] = None,
 ) -> str:
     """Generate a self-contained HTML optimization report.
 
@@ -178,6 +179,7 @@ def generate_optimization_report(
     :param result: Contention analysis result
     :param output_path: Output file path for the HTML report
     :param open_browser: Whether to open the report in the default browser
+    :param dag_url: Relative URL to DAG visualization HTML (for cross-link)
     :return: Absolute path to the generated HTML file
     """
     data = _prepare_report_data(workflow, result)
@@ -185,6 +187,20 @@ def generate_optimization_report(
 
     # Format values for static HTML sections
     critical_path_fmt = _format_duration(result.critical_path_seconds)
+
+    # DAG link HTML (conditional)
+    dag_link_html = ""
+    if dag_url:
+        dag_link_html = (
+            f'<a href="{dag_url}" style="display:inline-flex;'
+            f"align-items:center;gap:6px;padding:8px 16px;"
+            f"background:#00AEEF;color:white;border-radius:8px;"
+            f"font-size:0.85rem;font-weight:500;text-decoration:none;"
+            f'transition:all 0.3s ease;" '
+            f"onmouseover=\"this.style.boxShadow='0 4px 12px rgba(0,174,239,0.3)'\" "
+            f"onmouseout=\"this.style.boxShadow='none'\">"
+            f"View DAG &#8594;</a>"
+        )
 
     # Warnings HTML (conditional)
     warnings_html = ""
@@ -457,6 +473,7 @@ def generate_optimization_report(
                 </div>
             </div>
             <div class="header-right">
+                {dag_link_html}
                 <div class="generated-at">Generated: {data["generated_at"]}</div>
             </div>
         </div>

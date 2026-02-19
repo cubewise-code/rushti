@@ -1389,19 +1389,49 @@ def _stats_optimize(args) -> None:
                     "or using longest_first/shortest_first."
                 )
 
-            # Generate HTML optimization report
+            # Generate DAG visualization + HTML optimization report
             if not args.no_report and result.contention_driver:
                 from rushti.optimization_report import generate_optimization_report
+                from rushti.utils import resolve_app_path
 
+                # HTML outputs go under visualizations/ (same pattern as _stats_visualize)
                 report_output = args.report_output
                 if not report_output:
-                    stem = taskfile_path.stem
-                    report_output = str(taskfile_path.parent / f"{stem}_optimization_report.html")
+                    report_output = resolve_app_path(
+                        f"visualizations/rushti_optimization_{args.workflow}.html"
+                    )
+
+                dag_path = resolve_app_path(
+                    f"visualizations/rushti_optimized_dag_{args.workflow}.html"
+                )
+
+                # Cross-link filenames (both in same visualizations/ dir)
+                report_filename = Path(report_output).name
+                dag_filename = Path(dag_path).name
+
+                # Generate DAG from optimized taskfile (if chains were created)
+                dag_generated = False
+                if result.predecessor_map:
+                    try:
+                        from rushti.taskfile_ops import visualize_dag
+
+                        Path(dag_path).parent.mkdir(parents=True, exist_ok=True)
+                        visualize_dag(
+                            source=output_path,
+                            output_path=dag_path,
+                            dashboard_url=report_filename,
+                        )
+                        dag_generated = True
+                        print(f"  DAG visualization: {dag_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not generate DAG visualization: {e}")
+                        print(f"  Warning: DAG visualization skipped ({e})")
 
                 generate_optimization_report(
                     workflow=args.workflow,
                     result=result,
                     output_path=report_output,
+                    dag_url=dag_filename if dag_generated else None,
                 )
                 print(f"  Optimization report: {report_output}")
 

@@ -451,5 +451,46 @@ class TestGenerateReportNoOptimization(unittest.TestCase):
             os.remove(output_path)
 
 
+class TestGenerateReportDagLink(unittest.TestCase):
+    """Tests for DAG link rendering in the report."""
+
+    def test_html_contains_dag_link(self):
+        result = _make_result()
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+            output_path = f.name
+
+        try:
+            generate_optimization_report(
+                workflow="test",
+                result=result,
+                output_path=output_path,
+                open_browser=False,
+                dag_url="rushti_optimized_dag_test.html",
+            )
+            content = Path(output_path).read_text(encoding="utf-8")
+            self.assertIn('href="rushti_optimized_dag_test.html"', content)
+            self.assertIn("View DAG", content)
+        finally:
+            os.remove(output_path)
+
+    def test_html_no_dag_link_when_none(self):
+        result = _make_result()
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+            output_path = f.name
+
+        try:
+            generate_optimization_report(
+                workflow="test",
+                result=result,
+                output_path=output_path,
+                open_browser=False,
+                dag_url=None,
+            )
+            content = Path(output_path).read_text(encoding="utf-8")
+            self.assertNotIn("View DAG", content)
+        finally:
+            os.remove(output_path)
+
+
 if __name__ == "__main__":
     unittest.main()
