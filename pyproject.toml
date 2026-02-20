@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rushti"
-version = "2.0.0b13"
+version = "2.0.0"
 description = "RushTI - Parallel TM1 TurboIntegrator Process Execution"
 readme = "README.md"
 license = "MIT"
@@ -17,7 +17,7 @@ maintainers = [
 ]
 keywords = ["TM1", "Planning Analytics", "TM1Py", "TurboIntegrator", "orchestration", "automation", "ETL"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "Operating System :: OS Independent",
