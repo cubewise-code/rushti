@@ -71,17 +71,20 @@ class TestTM1BuildIntegration(unittest.TestCase):
         if not hasattr(cls, "tm1"):
             return
 
+        # Delete cube first (depends on dimensions)
         try:
-            # Delete cube first (depends on dimensions)
             if cls.tm1.cubes.exists(CUBE_LOGS):
                 cls.tm1.cubes.delete(CUBE_LOGS)
+        except Exception:
+            pass
 
-            # Delete dimensions
-            for dim in [DIM_TASKFILE, DIM_TASK, DIM_RUN, DIM_MEASURE]:
+        # Delete dimensions individually so one failure doesn't block the rest
+        for dim in [DIM_TASKFILE, DIM_TASK, DIM_RUN, DIM_MEASURE]:
+            try:
                 if cls.tm1.dimensions.exists(dim):
                     cls.tm1.dimensions.delete(dim)
-        except Exception:
-            pass  # Ignore cleanup errors
+            except Exception:
+                pass
 
     def test_build_all_objects_from_scratch(self):
         """Test building all logging objects from scratch."""
