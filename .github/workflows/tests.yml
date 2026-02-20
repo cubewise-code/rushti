@@ -3,8 +3,8 @@
 # Runs tests on pull requests and pushes to main branches.
 # Only triggers when Python/application code changes.
 #
-# Unit tests run on every PR (no external dependencies).
-# Integration tests require TM1 server and are optional.
+# Unit tests and linting run on every push and PR.
+# Integration tests only run on PRs to master (expensive, ~7 min).
 #
 # Required secrets for integration tests:
 #   RUSHTI_TEST_TM1_CONFIG - Full content of a config.ini file with TM1 connection details.
@@ -79,8 +79,11 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Only run if TM1 secrets are configured
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # Only run on PRs (expensive ~7 min) and manual dispatch, not on every push
+    # Also requires TM1 secrets to be configured (checked in steps below)
+    if: >
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      github.event_name == 'workflow_dispatch'
     needs: unit-tests
 
     steps:
