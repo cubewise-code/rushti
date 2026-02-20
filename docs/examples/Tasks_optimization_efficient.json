@@ -1,0 +1,687 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "optimization_demo_efficient",
+    "name": "Optimization Demo - EFFICIENT (Longest First)",
+    "description": "75 tasks demonstrating OPTIMAL scheduling with 25 workers. Long tasks (60-240s) start immediately, short tasks (5-10s) fill gaps. This is what the optimization feature achieves.",
+    "author": "optimization-demo"
+  },
+  "settings": {},
+  "tasks": [
+    {
+      "id": "1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "240",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "2",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "238",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "3",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "228",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "4",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "222",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "5",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "218",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "6",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "212",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "7",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "200",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "8",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "199",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "9",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "192",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "10",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "184",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "11",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "184",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "12",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "177",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "13",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "157",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "14",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "156",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "15",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "153",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "16",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "151",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "17",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "141",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "18",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "140",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "19",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "135",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "20",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "134",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "21",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "134",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "22",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "133",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "23",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "125",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "24",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "124",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "25",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "119",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "26",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "118",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "27",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "109",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "28",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "105",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "29",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "101",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "30",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "90",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "31",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "90",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "32",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "87",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "33",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "83",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "34",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "64",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "35",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "60",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "36",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "37",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "38",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "39",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "40",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "41",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "42",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "43",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "44",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "45",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "46",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "10",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "47",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "9",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "48",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "9",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "49",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "50",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "51",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "52",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "53",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "54",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "55",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "56",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "57",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "58",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "8",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "59",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "7",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "60",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "7",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "61",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "7",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "62",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "63",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "64",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "65",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "66",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "67",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "68",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "69",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "70",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "71",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "72",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "5",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "73",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "5",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "74",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "5",
+        "pLogOutput": "1"
+      }
+    },
+    {
+      "id": "75",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "5",
+        "pLogOutput": "1"
+      }
+    }
+  ]
+}

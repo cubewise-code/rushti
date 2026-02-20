@@ -1,0 +1,151 @@
+# RushTI Test Workflow
+#
+# Runs tests on pull requests and pushes to main branches.
+# Only triggers when Python/application code changes.
+#
+# Unit tests run on every PR (no external dependencies).
+# Integration tests require TM1 server and are optional.
+#
+# Required secrets for integration tests:
+#   RUSHTI_TEST_TM1_CONFIG - Full content of a config.ini file with TM1 connection details.
+#                            The file format follows the standard RushTI config.ini format.
+#                            See tests/config.ini.template for the expected structure.
+
+name: Tests
+
+on:
+  push:
+    branches: [master, main, rushti2dot0, rushti2dot0-demo]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '*.py'
+      - '*.spec'
+      - 'config/**'
+      - '.github/workflows/tests.yml'
+  pull_request:
+    branches: [master, main, rushti2dot0, rushti2dot0-demo]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '*.py'
+      - '*.spec'
+      - 'config/**'
+      - '.github/workflows/tests.yml'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v --tb=short
+
+      - name: Run unit tests with coverage (Python 3.11 only)
+        if: matrix.python-version == '3.11'
+        run: |
+          pytest tests/unit/ -v --cov=src/rushti --cov-report=xml --cov-report=term
+
+      - name: Upload coverage reports
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v5
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run if TM1 secrets are configured
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio
+
+      - name: Check TM1 configuration
+        id: check-tm1
+        run: |
+          if [ -n "${{ secrets.RUSHTI_TEST_TM1_CONFIG }}" ]; then
+            echo "tm1_configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "tm1_configured=false" >> $GITHUB_OUTPUT
+            echo "::warning::TM1 config secret not configured. Integration tests will be skipped."
+          fi
+
+      - name: Create TM1 config file
+        if: steps.check-tm1.outputs.tm1_configured == 'true'
+        run: |
+          echo "${{ secrets.RUSHTI_TEST_TM1_CONFIG }}" > tests/config.ini
+
+      - name: Run integration tests
+        if: steps.check-tm1.outputs.tm1_configured == 'true'
+        run: |
+          pytest tests/integration/ -v --tb=short -m requires_tm1
+
+      - name: Skip message
+        if: steps.check-tm1.outputs.tm1_configured != 'true'
+        run: |
+          echo "Integration tests skipped - TM1 config secret not configured"
+          echo "To enable, add the RUSHTI_TEST_TM1_CONFIG secret to your repository."
+          echo "The secret should contain the full config.ini content with TM1 connection details."
+          echo "See tests/config.ini.template for the expected format."
+
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install linters
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black
+
+      - name: Run ruff
+        run: |
+          ruff check src/ tests/
+
+      - name: Check Black formatting
+        run: |
+          black --check src/ tests/

@@ -1,0 +1,39 @@
+# RushTI Staged Pipeline Example
+# This file demonstrates stages and stage_max_workers functionality
+# Pipeline: extract -> load -> analysis -> export
+
+# ============================================================================
+# EXTRACT STAGE - Parallel data extraction (max 4 workers)
+# ============================================================================
+id="1" predecessors="" stage="extract" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec*=*"{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}" pLogOutput=1
+id="2" predecessors="" stage="extract" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=2 pLogOutput=1
+id="3" predecessors="" stage="extract" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=4 pLogOutput=1
+id="4" predecessors="" stage="extract" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3 pLogOutput=1
+
+# ============================================================================
+# LOAD STAGE - Load data into staging cubes (max 2 workers - more memory intensive)
+# ============================================================================
+id="5" predecessors="1,2" require_predecessor_success="1" stage="load" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5 pLogOutput=1
+id="6" predecessors="3,4" stage="load" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec*=*"{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}" pLogOutput=1
+id="7" predecessors="1" stage="load" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3 pLogOutput=1
+
+# ============================================================================
+# ANALYSIS STAGE - Run calculations and business rules (max 3 workers)
+# ============================================================================
+id="8" predecessors="5" stage="analysis" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=6 pLogOutput=1
+id="9" predecessors="5,6" stage="analysis" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec*=*"{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}" pLogOutput=1
+id="10" predecessors="6,7" stage="analysis" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=5 pLogOutput=1
+id="11" predecessors="7" stage="analysis" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=4 pLogOutput=1
+
+# ============================================================================
+# EXPORT STAGE - Export results to files/databases (max 2 workers)
+# ============================================================================
+id="12" predecessors="8,9" stage="export" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec*=*"{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}" pLogOutput=1
+id="13" predecessors="9,10" stage="export" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=4 pLogOutput=1
+id="14" predecessors="10,11" stage="export" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=2 pLogOutput=1
+id="15" predecessors="12,13,14" stage="export" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=1 pLogOutput=1
+
+# ============================================================================
+# EXPORT STAGE - Export results to files/databases (max 2 workers)
+# ============================================================================
+id="16" predecessors="12,13,14" timeout="10" cancel_at_timeout="1" stage="export" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=30 pLogOutput=1

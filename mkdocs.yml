@@ -1,0 +1,177 @@
+site_name: RushTI Documentation
+site_description: Parallel execution engine for IBM TM1/Planning Analytics TurboIntegrator processes
+site_author: Cubewise CODE
+site_url: https://cubewise-code.github.io/rushti/docs/
+site_dir: mkdocs_site
+
+repo_name: cubewise-code/rushti
+repo_url: https://github.com/cubewise-code/rushti
+edit_uri: edit/rushti2dot0/docs/
+
+# Copyright
+copyright: |
+  Copyright &copy; 2026 <a href="https://cubewise.com" target="_blank">Cubewise</a> -
+  Professional IBM Planning Analytics Solutions
+
+# Theme configuration
+theme:
+  name: material
+  language: en
+  logo: assets/images/rushti/RushTi2026_bluesqr.svg
+  favicon: assets/images/rushti/RushTi2026_bluesqr.svg
+  palette:
+    # Light mode
+    - scheme: default
+      primary: white
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: blue grey
+      accent: light blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/squirrel-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+
+# Extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      title: On this page
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Plugins
+plugins:
+  - search:
+      lang: en
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+  - mike:
+      version_selector: true
+      css_dir: css
+      javascript_dir: js
+      canonical_version: latest
+
+# Extra configuration
+extra:
+  version:
+    provider: mike
+    default: latest
+  social:
+    - icon: fontawesome/solid/globe
+      link: https://cubewise.com
+      name: Cubewise
+    - icon: fontawesome/brands/github
+      link: https://github.com/cubewise-code/rushti
+      name: GitHub Repository
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/rushti/
+      name: PyPI Package
+  homepage: https://cubewise-code.github.io/rushti/
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: >-
+            Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: >-
+            Thanks for your feedback! Help us improve this page by
+            <a href="https://github.com/cubewise-code/rushti/issues/new/?title=[Docs]+{title}+-+{url}" target="_blank" rel="noopener">opening an issue</a>.
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quick-start.md
+    - Task File Basics: getting-started/task-files.md
+  - Features:
+    - DAG Execution: features/dag-execution.md
+    - Self-Optimization: features/optimization.md
+    - TM1 Integration: features/tm1-integration.md
+    - Exclusive Mode: features/exclusive-mode.md
+    - Statistics & Dashboards: features/statistics.md
+    - Checkpoint & Resume: features/checkpoint-resume.md
+  - Advanced:
+    - Settings Reference: advanced/settings-reference.md
+    - CLI Reference: advanced/cli-reference.md
+    - Advanced Task Files: advanced/advanced-task-files.md
+    - Performance Tuning: advanced/performance-tuning.md
+    - Migration from v1.x: advanced/migration-guide.md
+  - Architecture:
+    - Design Overview: architecture/design.md
+    - Contributing: architecture/contributing.md

@@ -1,0 +1,221 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "Tasks_staged_pipeline",
+    "name": "",
+    "description": "",
+    "author": ""
+  },
+  "settings": {},
+  "tasks": [
+    {
+      "id": "1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec*": "*{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}",
+        "pLogOutput": "1"
+      },
+      "stage": "extract"
+    },
+    {
+      "id": "2",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "2",
+        "pLogOutput": "1"
+      },
+      "stage": "extract"
+    },
+    {
+      "id": "3",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "4",
+        "pLogOutput": "1"
+      },
+      "stage": "extract"
+    },
+    {
+      "id": "4",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "3",
+        "pLogOutput": "1"
+      },
+      "stage": "extract"
+    },
+    {
+      "id": "5",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "5",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "1",
+        "2"
+      ],
+      "stage": "load"
+    },
+    {
+      "id": "6",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec*": "*{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "3",
+        "4"
+      ],
+      "stage": "load"
+    },
+    {
+      "id": "7",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "3",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "1"
+      ],
+      "stage": "load"
+    },
+    {
+      "id": "8",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "6",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "5"
+      ],
+      "stage": "analysis"
+    },
+    {
+      "id": "9",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec*": "*{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "5",
+        "6"
+      ],
+      "stage": "analysis"
+    },
+    {
+      "id": "10",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "5",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "6",
+        "7"
+      ],
+      "stage": "analysis"
+    },
+    {
+      "id": "11",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "4",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "7"
+      ],
+      "stage": "analysis"
+    },
+    {
+      "id": "12",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec*": "*{TM1SUBSETALL([rushti.dimension.counter].[rushti.dimension.counter])}",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "8",
+        "9"
+      ],
+      "stage": "export"
+    },
+    {
+      "id": "13",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "4",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "9",
+        "10"
+      ],
+      "stage": "export"
+    },
+    {
+      "id": "14",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "2",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "10",
+        "11"
+      ],
+      "stage": "export"
+    },
+    {
+      "id": "15",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "1",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "12",
+        "13",
+        "14"
+      ],
+      "stage": "export"
+    },
+    {
+      "id": "16",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {
+        "pWaitSec": "30",
+        "pLogOutput": "1"
+      },
+      "predecessors": [
+        "12",
+        "13",
+        "14"
+      ],
+      "stage": "export",
+      "timeout": 10,
+      "cancel_at_timeout": true
+    }
+  ]
+}

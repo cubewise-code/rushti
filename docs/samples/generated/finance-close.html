@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RushTI DAG Visualization</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style type="text/css">
+        :root {
+            --bg-primary: #F8FAFC;
+            --bg-secondary: #FFFFFF;
+            --bg-tertiary: #F1F5F9;
+            --accent-primary: #00AEEF;
+            --accent-secondary: #FBB040;
+            --text-primary: #1E293B;
+            --text-secondary: #64748B;
+            --text-muted: #94A3B8;
+            --border-color: #E2E8F0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        #header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 64px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        #header h1 {
+            font-size: 1.25em;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: var(--text-primary);
+        }
+
+        #header .subtitle {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+        }
+
+        #header a {
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+
+        #toolbar {
+            background: var(--bg-secondary);
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 60px;
+        }
+
+        #toolbar .left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        #toolbar .right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 12px;
+            font-size: 0.875em;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            color: var(--text-secondary);
+        }
+
+        .legend-item:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .legend-item.filtered {
+            opacity: 0.3;
+        }
+
+        .legend-color {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid currentColor;
+            margin-right: 6px;
+            border-radius: 4px;
+        }
+
+        #searchBox {
+            padding: 10px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            width: 280px;
+            font-size: 0.9em;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+
+        #searchBox::placeholder {
+            color: var(--text-muted);
+        }
+
+        #searchBox:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 174, 239, 0.15);
+            background: var(--bg-secondary);
+        }
+
+        .view-btn {
+            padding: 10px 18px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.875em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .view-btn:first-child {
+            border-radius: 8px 0 0 8px;
+        }
+
+        .view-btn:last-child {
+            border-radius: 0 8px 8px 0;
+        }
+
+        .view-btn:not(:last-child) {
+            border-right: none;
+        }
+
+        .view-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .view-btn.active {
+            background: var(--accent-primary);
+            color: white;
+            border-color: transparent;
+        }
+
+        #main-container {
+            display: flex;
+            height: calc(100vh - 124px);
+        }
+
+        #content-area {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #mynetwork {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-primary);
+        }
+
+        #tableView {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            display: none;
+            background: var(--bg-primary);
+        }
+
+        #taskTable {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+
+        #taskTable th {
+            background: var(--bg-primary);
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 2px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+            white-space: nowrap;
+            color: var(--text-primary);
+            font-weight: 600;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        #taskTable th:hover {
+            background: var(--bg-tertiary);
+        }
+
+        #taskTable th .sort-icon {
+            margin-left: 5px;
+            opacity: 0.3;
+        }
+
+        #taskTable th.sorted .sort-icon {
+            opacity: 1;
+            color: var(--accent-primary);
+        }
+
+        #taskTable td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+            color: var(--text-secondary);
+        }
+
+        #taskTable tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        #taskTable tr.selected {
+            background: rgba(0, 174, 239, 0.08);
+        }
+
+        #taskTable .stage-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            font-weight: 500;
+            color: white;
+        }
+
+        #taskTable .params-cell {
+            max-width: 300px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.85em;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        #sidebar {
+            width: 360px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            transition: width 0.3s ease;
+        }
+
+        #sidebar.collapsed {
+            width: 0;
+            overflow: hidden;
+        }
+
+        #sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #sidebar-header h3 {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        #sidebar-toggle {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.3em;
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+        }
+
+        #sidebar-toggle:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        #sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        #sidebar-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #sidebar-content::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+        }
+
+        #sidebar-content::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 4px;
+        }
+
+        #sidebar-content::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        .detail-section {
+            margin-bottom: 24px;
+        }
+
+        .detail-section h4 {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .detail-value {
+            font-size: 0.95em;
+            padding: 10px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            word-break: break-word;
+            color: var(--text-primary);
+        }
+
+        .detail-value.stage {
+            display: inline-block;
+            font-weight: 500;
+            color: white;
+            border: none;
+        }
+
+        .detail-list {
+            list-style: none;
+        }
+
+        .detail-list li {
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            margin-bottom: 6px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            transition: all 0.3s ease;
+        }
+
+        .detail-list li:hover {
+            background: var(--bg-tertiary);
+            border-color: #CBD5E1;
+        }
+
+        .params-table {
+            width: 100%;
+            font-size: 0.85em;
+        }
+
+        .params-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .params-table td:first-child {
+            font-weight: 600;
+            white-space: nowrap;
+            width: 40%;
+            color: var(--text-primary);
+        }
+
+        .params-table td:last-child {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            word-break: break-all;
+        }
+
+        #placeholder-message {
+            color: var(--text-muted);
+            text-align: center;
+            padding: 60px 20px;
+            font-size: 0.95em;
+        }
+
+        #stats-bar {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: var(--bg-secondary);
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            font-size: 0.875em;
+            z-index: 100;
+            color: var(--text-secondary);
+        }
+
+        #stats-bar strong {
+            color: var(--text-primary);
+        }
+
+        #dag-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-secondary);
+            padding: 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            z-index: 100;
+            display: flex;
+            gap: 8px;
+        }
+
+        .ctrl-btn {
+            padding: 8px 14px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .ctrl-btn:hover {
+            background: var(--bg-tertiary);
+            border-color: #CBD5E1;
+            color: var(--text-primary);
+            transform: translateY(-2px);
+        }
+
+        .ctrl-btn.active {
+            background: var(--accent-primary);
+            color: white;
+            border-color: transparent;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .match-count {
+            font-size: 0.875em;
+            color: var(--text-muted);
+            margin-left: 10px;
+        }
+
+        .sidebar-toggle-btn {
+            padding: 10px 18px;
+            border: 1px solid transparent;
+            background: var(--accent-primary);
+            color: white;
+            cursor: pointer;
+            font-size: 0.875em;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-toggle-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 174, 239, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div style="display:flex;align-items:center;gap:16px;">
+            <svg viewBox="0 0 809.52 235.88" xmlns="http://www.w3.org/2000/svg" style="height:32px;width:auto;"><path fill="#6eabde" d="M215.98,0H19.9C8.91,0,0,8.91,0,19.9v196.08c0,10.99,8.91,19.9,19.9,19.9h196.08c10.99,0,19.9-8.91,19.9-19.9V19.9c0-10.99-8.91-19.9-19.9-19.9ZM151.18,41.46c10.98,0,19.87,8.9,19.87,19.87s-8.9,19.87-19.87,19.87c-1.13,0-2.23-.12-3.31-.3,9.4-1.58,16.56-9.73,16.56-19.58s-7.17-18-16.56-19.58c1.08-.18,2.18-.3,3.31-.3ZM178.35,107.92l-21.44-.21-12.46-20.77c1.63-.41,3.24-.99,4.81-1.73l.6-.28,13.67,22.78,21.44.21c3.35.03,6.05,2.76,6.05,6.11v7.81c0,3.4-2.78,6.14-6.18,6.11l-5.73-.06c2.98-.41,5.28-2.95,5.28-6.04v-7.81c0-3.35-2.7-6.07-6.05-6.11ZM138.02,41.46c10.98,0,19.87,8.9,19.87,19.87s-8.9,19.87-19.87,19.87c-1.13,0-2.23-.12-3.31-.3,9.4-1.58,16.56-9.73,16.56-19.58s-7.17-18-16.56-19.58c1.08-.18,2.18-.3,3.31-.3ZM124.83,41.46c10.98,0,19.87,8.9,19.87,19.87s-8.9,19.87-19.87,19.87c-1.13,0-2.23-.12-3.31-.3,9.4-1.58,16.56-9.73,16.56-19.58s-7.17-18-16.56-19.58c1.08-.18,2.18-.3,3.31-.3ZM111.19,41.46c10.98,0,19.87,8.9,19.87,19.87s-8.9,19.87-19.87,19.87-19.87-8.9-19.87-19.87,8.9-19.87,19.87-19.87ZM190.19,201.74h0c-2.75,2.1-6.26,2.53-9.31,1.45.94-.34,1.85-.81,2.69-1.45,4.45-3.39,5.21-9.8,1.67-14.14l-47.76-58.62.42-1.26-6.51-.07-.44,1.33,47.77,58.62c3.54,4.34,2.78,10.75-1.67,14.14h0c-2.75,2.1-6.26,2.53-9.31,1.45.94-.34,1.85-.81,2.69-1.45,4.45-3.39,5.21-9.8,1.67-14.14l-47.76-58.62.7-2.1-4.23-7.04-3.05,9.14,47.77,58.62c3.54,4.34,2.78,10.75-1.67,14.14h0c-2.75,2.1-6.26,2.53-9.31,1.45.94-.34,1.85-.81,2.69-1.45,4.45-3.39,5.21-9.8,1.67-14.14l-47.76-58.62,5.41-16.24-4.51-7.51-7.92,23.75,47.76,58.62c3.54,4.34,2.78,10.75-1.67,14.14h0c-4.24,3.23-10.28,2.53-13.66-1.59l-16.24-19.75c-.67.11-1.35.18-2.05.18h-6.62c2.62,0,5.05-.78,7.09-2.1l-2.89-3.52c-2.36,3.39-6.28,5.62-10.73,5.62h-6.62c6.53,0,11.92-4.79,12.9-11.04l-6.4-7.78v5.74c0,7.22-5.85,13.07-13.07,13.07h-6.62c7.22,0,13.07-5.85,13.07-13.07v-13.8l-7.01-8.53v22.32c0,7.22-5.85,13.07-13.07,13.07h-39.69c-3.79,0-6.86-3.07-6.86-6.86v-6.16c0-3.79,3.07-6.86,6.86-6.86h26.26v-33.12l12.42-33.12h-12.59l-11.99,26.62c-1.71,3.8-6.22,5.44-9.97,3.63l-4.5-2.17c-3.61-1.74-5.19-6.04-3.55-9.7l17.1-38.26h36.65c6.85,11.86,21.66,16.48,34.04,10.63l.6-.28,13.67,22.78,10.25.1-.04-.07-3.19-.03-12.46-20.77c1.63-.41,3.24-.99,4.81-1.73l.6-.28,13.67,22.78,21.44.21c3.35.03,6.05,2.76,6.05,6.11v7.81c0,3.4-2.78,6.14-6.18,6.11l-5.73-.06c2.98-.41,5.28-2.95,5.28-6.04v-7.81c0-3.35-2.7-6.07-6.05-6.11l-18.25-.18.04.07,11.2.11c3.35.03,6.05,2.76,6.05,6.11v7.81c0,3.4-2.78,6.14-6.18,6.11l-13.52-.15-.4,1.19,47.77,58.62c3.54,4.34,2.78,10.75-1.67,14.14ZM204.18,121.83c0,3.4-2.78,6.14-6.18,6.11l-5.73-.06c2.98-.41,5.28-2.95,5.28-6.04v-7.81c0-3.35-2.7-6.07-6.05-6.11l-21.44-.21-12.46-20.77c1.63-.41,3.24-.99,4.81-1.73l.6-.28,13.67,22.78,21.44.21c3.35.03,6.05,2.76,6.05,6.11v7.81Z"/><path fill="#6eabde" d="M363.22,177.89l-30-53.01v53.01h-33.29V40.83h44.38c17.94,0,31.37,3.43,40.27,10.27,9.86,7.54,14.79,19.11,14.79,34.73,0,20.82-8.84,34.73-26.51,41.71l30.21,50.34h-39.86ZM333.22,68.16v38.01h10.69c6.85,0,12.19-1.64,16.03-4.93,3.83-3.29,5.75-7.94,5.75-13.97s-1.82-10.38-5.45-13.87c-3.63-3.49-8.39-5.24-14.28-5.24h-12.74Z"/><path fill="#6eabde" d="M467.61,142.54v-59.8h31.23v59.8c0,13.43-3.77,23.22-11.3,29.38-8.08,6.44-18.9,9.66-32.47,9.66-14.79,0-26.1-3.49-33.9-10.48-6.99-5.89-10.48-15.41-10.48-28.56v-59.8h31.23v57.54c0,10.27,4.38,15.41,13.15,15.41,3.97,0,7.05-1.16,9.25-3.49,2.19-2.33,3.29-5.55,3.29-9.66Z"/><path fill="#6eabde" d="M580.83,110.9h-28.97v-1.85c0-2.19-.86-4.01-2.57-5.45-1.71-1.44-3.87-2.16-6.47-2.16-3.56-.13-5.89,1.3-6.99,4.31-1.37,3.56.13,6.44,4.52,8.63,1.64.82,3.63,1.44,5.96,1.85,13.29,3.84,22.67,8.22,28.15,13.15,5.48,4.93,8.22,11.58,8.22,19.93,0,9.73-3.53,17.54-10.58,23.43-7.06,5.89-16.41,8.83-28.05,8.83s-20.89-2.84-27.74-8.53c-6.85-5.68-10.41-13.53-10.68-23.53h29.59c.68,3.56,1.68,6.06,2.98,7.5,1.3,1.44,3.25,2.16,5.86,2.16,2.05,0,3.77-.65,5.14-1.95,1.37-1.3,2.05-2.91,2.05-4.83,0-2.19-1.06-4.01-3.19-5.45-2.12-1.44-6.34-3.19-12.64-5.24-10.41-3.29-17.98-7.43-22.71-12.43-4.73-5-7.09-11.27-7.09-18.8,0-9.45,3.52-17.06,10.58-22.81,7.05-5.75,16.34-8.63,27.84-8.63s20.31,2.81,26.82,8.42c6.5,5.62,9.83,13.43,9.97,23.43Z"/><path fill="#6eabde" d="M591.31,40.83h31.23v50.75c7.12-8.35,15.34-12.54,24.66-12.54s16.78,2.95,23.22,8.84c6.03,5.48,9.04,14.73,9.04,27.74v62.26h-31.23v-57.12c0-4.79-1.13-8.63-3.39-11.51-2.26-2.88-5.31-4.31-9.14-4.31-4.11,0-7.33,1.37-9.66,4.11-2.33,2.74-3.49,6.65-3.49,11.71v57.12h-31.23V40.83Z"/><path fill="#6eabde" d="M753.84,67.75h-31.44v110.14h-33.29v-110.14h-31.64v-26.92h96.37v26.92Z"/><path fill="#6eabde" d="M763.09,40.83h33.29v137.06h-33.29V40.83Z"/></svg>
+            <div>
+                <h1>DAG Visualization</h1>
+                <div class="subtitle">Interactive Task Dependency Graph</div>
+            </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;">
+            
+        </div>
+    </div>
+    <div id="toolbar">
+        <div class="left">
+            <div class="view-buttons">
+                <button class="view-btn active" data-view="compact">Compact</button>
+                <button class="view-btn" data-view="detailed">Detailed</button>
+                <button class="view-btn" data-view="table">Table</button>
+            </div>
+            <div class="legend">
+                <span class="legend-item" data-stage="consolidate"><span class="legend-color" style="background-color:#6b7280;"></span>consolidate</span><span class="legend-item" data-stage="extract"><span class="legend-color" style="background-color:#3b82f6;"></span>extract</span><span class="legend-item" data-stage="notify"><span class="legend-color" style="background-color:#6b7280;"></span>notify</span><span class="legend-item" data-stage="report"><span class="legend-color" style="background-color:#6b7280;"></span>report</span><span class="legend-item" data-stage="transform"><span class="legend-color" style="background-color:#6b7280;"></span>transform</span>
+            </div>
+        </div>
+        <div class="right">
+            <input type="text" id="searchBox" placeholder="Search ID, process, instance, stage, parameters..." />
+            <span id="matchCount" class="match-count"></span>
+            <button id="btnToggleSidebar" class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Task Details panel">&gt;&gt; Details</button>
+        </div>
+    </div>
+    <div id="main-container">
+        <div id="content-area">
+            <div id="mynetwork"></div>
+            <div id="tableView">
+                <table id="taskTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="id">ID <span class="sort-icon">&#8597;</span></th>
+                            <th data-sort="process">Process <span class="sort-icon">&#8597;</span></th>
+                            <th data-sort="instance">Instance <span class="sort-icon">&#8597;</span></th>
+                            <th data-sort="stage">Stage <span class="sort-icon">&#8597;</span></th>
+                            <th data-sort="predecessors">Predecessors <span class="sort-icon">&#8597;</span></th>
+                            <th>Parameters</th>
+                            <th>Options</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div id="stats-bar">
+                <strong>Tasks:</strong> <span id="taskCount">13</span> &nbsp;|&nbsp;
+                <strong>Dependencies:</strong> <span id="depCount">18</span>
+                <span id="filterStatus"></span>
+            </div>
+            <div id="dag-controls">
+                <button class="ctrl-btn" onclick="network.fit()" title="Fit to screen">Fit</button>
+                <button class="ctrl-btn" onclick="zoomIn()" title="Zoom in">+</button>
+                <button class="ctrl-btn" onclick="zoomOut()" title="Zoom out">−</button>
+                <button class="ctrl-btn" id="btnPhysics" onclick="togglePhysics()" title="Toggle physics">Physics</button>
+            </div>
+        </div>
+        <div id="sidebar">
+            <div id="sidebar-header">
+                <h3>Task Details</h3>
+                <button id="sidebar-toggle" onclick="toggleSidebar()">×</button>
+            </div>
+            <div id="sidebar-content">
+                <div id="placeholder-message">
+                    Click on a task to view details
+                </div>
+                <div id="task-details" class="hidden">
+                    <div class="detail-section">
+                        <h4>Task ID</h4>
+                        <div class="detail-value" id="detail-id"></div>
+                    </div>
+                    <div class="detail-section">
+                        <h4>Process</h4>
+                        <div class="detail-value" id="detail-process"></div>
+                    </div>
+                    <div class="detail-section">
+                        <h4>Instance</h4>
+                        <div class="detail-value" id="detail-instance"></div>
+                    </div>
+                    <div class="detail-section">
+                        <h4>Stage</h4>
+                        <div class="detail-value stage" id="detail-stage"></div>
+                    </div>
+                    <div class="detail-section">
+                        <h4>Predecessors</h4>
+                        <ul class="detail-list" id="detail-predecessors"></ul>
+                        <div class="detail-value" id="detail-no-predecessors" style="display:none;">None</div>
+                    </div>
+                    <div class="detail-section" id="params-section">
+                        <h4>Parameters</h4>
+                        <table class="params-table" id="detail-params"></table>
+                    </div>
+                    <div class="detail-section" id="options-section">
+                        <h4>Execution Options</h4>
+                        <table class="params-table" id="detail-options"></table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // Data
+        var nodesData = [{"id": "extract-na", "label": "extract-na", "compactLabel": "extract-na", "detailedLabel": "ID: extract-na\nProcess: Close.Extract.Regional\nInstance: tm1-finance\nParams: pRegion=NorthAmerica, pPeriod=Current", "title": "ID: extract-na\nProcess: Close.Extract.Regional\nInstance: tm1-finance\nStage: extract\nParameters: pRegion=NorthAmerica, pPeriod=Current", "color": {"background": "#3b82f6", "border": "#3b82f6", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#3b82f6", "border": "#64748B"}}, "stage": "extract", "process": "Close.Extract.Regional", "instance": "tm1-finance", "predecessors": [], "parameters": {"pRegion": "NorthAmerica", "pPeriod": "Current"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}, {"id": "extract-eu", "label": "extract-eu", "compactLabel": "extract-eu", "detailedLabel": "ID: extract-eu\nProcess: Close.Extract.Regional\nInstance: tm1-finance\nParams: pRegion=Europe, pPeriod=Current", "title": "ID: extract-eu\nProcess: Close.Extract.Regional\nInstance: tm1-finance\nStage: extract\nParameters: pRegion=Europe, pPeriod=Current", "color": {"background": "#3b82f6", "border": "#3b82f6", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#3b82f6", "border": "#64748B"}}, "stage": "extract", "process": "Close.Extract.Regional", "instance": "tm1-finance", "predecessors": [], "parameters": {"pRegion": "Europe", "pPeriod": "Current"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}, {"id": "extract-apac", "label": "extract-apac", "compactLabel": "extract-apac", "detailedLabel": "ID: extract-apac\nProcess: Close.Extract.Regional\nInstance: tm1-finance\nParams: pRegion=AsiaPacific, pPeriod=Current", "title": "ID: extract-apac\nProcess: Close.Extract.Regional\nInstance: tm1-finance\nStage: extract\nParameters: pRegion=AsiaPacific, pPeriod=Current", "color": {"background": "#3b82f6", "border": "#3b82f6", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#3b82f6", "border": "#64748B"}}, "stage": "extract", "process": "Close.Extract.Regional", "instance": "tm1-finance", "predecessors": [], "parameters": {"pRegion": "AsiaPacific", "pPeriod": "Current"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}, {"id": "extract-fx", "label": "extract-fx", "compactLabel": "extract-fx", "detailedLabel": "ID: extract-fx\nProcess: Close.Extract.ExchangeRates\nInstance: tm1-finance\nParams: pSource=Bloomberg", "title": "ID: extract-fx\nProcess: Close.Extract.ExchangeRates\nInstance: tm1-finance\nStage: extract\nParameters: pSource=Bloomberg", "color": {"background": "#3b82f6", "border": "#3b82f6", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#3b82f6", "border": "#64748B"}}, "stage": "extract", "process": "Close.Extract.ExchangeRates", "instance": "tm1-finance", "predecessors": [], "parameters": {"pSource": "Bloomberg"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}, {"id": "transform-na", "label": "transform-na", "compactLabel": "transform-na", "detailedLabel": "ID: transform-na\nProcess: Close.Transform.Currency\nInstance: tm1-finance\nParams: pRegion=NorthAmerica, pTargetCurrency...", "title": "ID: transform-na\nProcess: Close.Transform.Currency\nInstance: tm1-finance\nStage: transform\nPredecessors: extract-na, extract-fx\nParameters: pRegion=NorthAmerica, pTargetCurrency=USD", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "transform", "process": "Close.Transform.Currency", "instance": "tm1-finance", "predecessors": ["extract-na", "extract-fx"], "parameters": {"pRegion": "NorthAmerica", "pTargetCurrency": "USD"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": true, "succeed_on_minor_errors": false}, {"id": "transform-eu", "label": "transform-eu", "compactLabel": "transform-eu", "detailedLabel": "ID: transform-eu\nProcess: Close.Transform.Currency\nInstance: tm1-finance\nParams: pRegion=Europe, pTargetCurrency=USD", "title": "ID: transform-eu\nProcess: Close.Transform.Currency\nInstance: tm1-finance\nStage: transform\nPredecessors: extract-eu, extract-fx\nParameters: pRegion=Europe, pTargetCurrency=USD", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "transform", "process": "Close.Transform.Currency", "instance": "tm1-finance", "predecessors": ["extract-eu", "extract-fx"], "parameters": {"pRegion": "Europe", "pTargetCurrency": "USD"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": true, "succeed_on_minor_errors": false}, {"id": "transform-apac", "label": "transform-apac", "compactLabel": "transform-apac", "detailedLabel": "ID: transform-apac\nProcess: Close.Transform.Currency\nInstance: tm1-finance\nParams: pRegion=AsiaPacific, pTargetCurrency=USD", "title": "ID: transform-apac\nProcess: Close.Transform.Currency\nInstance: tm1-finance\nStage: transform\nPredecessors: extract-apac, extract-fx\nParameters: pRegion=AsiaPacific, pTargetCurrency=USD", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "transform", "process": "Close.Transform.Currency", "instance": "tm1-finance", "predecessors": ["extract-apac", "extract-fx"], "parameters": {"pRegion": "AsiaPacific", "pTargetCurrency": "USD"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": true, "succeed_on_minor_errors": false}, {"id": "consolidate-global", "label": "consolidate-global", "compactLabel": "consolidate-global", "detailedLabel": "ID: consolidate-global\nProcess: Close.Consolidate.Global\nInstance: tm1-finance\nParams: pVersion=Actual", "title": "ID: consolidate-global\nProcess: Close.Consolidate.Global\nInstance: tm1-finance\nStage: consolidate\nPredecessors: transform-na, transform-eu, transform-apac\nParameters: pVersion=Actual", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "consolidate", "process": "Close.Consolidate.Global", "instance": "tm1-finance", "predecessors": ["transform-na", "transform-eu", "transform-apac"], "parameters": {"pVersion": "Actual"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": true, "succeed_on_minor_errors": false}, {"id": "consolidate-interco", "label": "consolidate-interco", "compactLabel": "consolidate-interco", "detailedLabel": "ID: consolidate-interco\nProcess: Close.Consolidate.Intercompany\nInstance: tm1-finance\nParams: pEliminate=Yes", "title": "ID: consolidate-interco\nProcess: Close.Consolidate.Intercompany\nInstance: tm1-finance\nStage: consolidate\nPredecessors: transform-na, transform-eu, transform-apac\nParameters: pEliminate=Yes", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "consolidate", "process": "Close.Consolidate.Intercompany", "instance": "tm1-finance", "predecessors": ["transform-na", "transform-eu", "transform-apac"], "parameters": {"pEliminate": "Yes"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}, {"id": "consolidate-validate", "label": "consolidate-validate", "compactLabel": "consolidate-validate", "detailedLabel": "ID: consolidate-validate\nProcess: Close.Validate.Balances\nInstance: tm1-finance", "title": "ID: consolidate-validate\nProcess: Close.Validate.Balances\nInstance: tm1-finance\nStage: consolidate\nPredecessors: consolidate-global, consolidate-interco", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "consolidate", "process": "Close.Validate.Balances", "instance": "tm1-finance", "predecessors": ["consolidate-global", "consolidate-interco"], "parameters": {}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": true, "succeed_on_minor_errors": false}, {"id": "report-management", "label": "report-management", "compactLabel": "report-management", "detailedLabel": "ID: report-management\nProcess: Report.Generate.ManagementPack\nInstance: tm1-reporting\nParams: pFormat=PDF, pDistribution=Email", "title": "ID: report-management\nProcess: Report.Generate.ManagementPack\nInstance: tm1-reporting\nStage: report\nPredecessors: consolidate-validate\nParameters: pFormat=PDF, pDistribution=Email", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "report", "process": "Report.Generate.ManagementPack", "instance": "tm1-reporting", "predecessors": ["consolidate-validate"], "parameters": {"pFormat": "PDF", "pDistribution": "Email"}, "timeout": 300, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}, {"id": "report-regulatory", "label": "report-regulatory", "compactLabel": "report-regulatory", "detailedLabel": "ID: report-regulatory\nProcess: Report.Generate.Regulatory\nInstance: tm1-reporting\nParams: pFormat=XBRL", "title": "ID: report-regulatory\nProcess: Report.Generate.Regulatory\nInstance: tm1-reporting\nStage: report\nPredecessors: consolidate-validate\nParameters: pFormat=XBRL", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "report", "process": "Report.Generate.Regulatory", "instance": "tm1-reporting", "predecessors": ["consolidate-validate"], "parameters": {"pFormat": "XBRL"}, "timeout": 600, "cancel_at_timeout": true, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}, {"id": "notify-complete", "label": "notify-complete", "compactLabel": "notify-complete", "detailedLabel": "ID: notify-complete\nProcess: Close.Notify.Completion\nInstance: tm1-finance\nParams: pRecipients=finance-team@company.com", "title": "ID: notify-complete\nProcess: Close.Notify.Completion\nInstance: tm1-finance\nStage: notify\nPredecessors: report-management, report-regulatory\nParameters: pRecipients=finance-team@company.com", "color": {"background": "#6b7280", "border": "#6b7280", "highlight": {"background": "#00AEEF", "border": "#0097D4"}, "hover": {"background": "#6b7280", "border": "#64748B"}}, "stage": "notify", "process": "Close.Notify.Completion", "instance": "tm1-finance", "predecessors": ["report-management", "report-regulatory"], "parameters": {"pRecipients": "finance-team@company.com"}, "timeout": null, "cancel_at_timeout": false, "safe_retry": false, "require_predecessor_success": false, "succeed_on_minor_errors": false}];
+        var edgesData = [{"from": "extract-na", "to": "transform-na"}, {"from": "extract-fx", "to": "transform-na"}, {"from": "extract-fx", "to": "transform-eu"}, {"from": "extract-fx", "to": "transform-apac"}, {"from": "extract-eu", "to": "transform-eu"}, {"from": "extract-apac", "to": "transform-apac"}, {"from": "transform-na", "to": "consolidate-global"}, {"from": "transform-na", "to": "consolidate-interco"}, {"from": "transform-eu", "to": "consolidate-global"}, {"from": "transform-eu", "to": "consolidate-interco"}, {"from": "transform-apac", "to": "consolidate-global"}, {"from": "transform-apac", "to": "consolidate-interco"}, {"from": "consolidate-global", "to": "consolidate-validate"}, {"from": "consolidate-interco", "to": "consolidate-validate"}, {"from": "consolidate-validate", "to": "report-management"}, {"from": "consolidate-validate", "to": "report-regulatory"}, {"from": "report-management", "to": "notify-complete"}, {"from": "report-regulatory", "to": "notify-complete"}];
+        var stageColors = {"extract": "#3b82f6", "load": "#10b981", "input": "#f59e0b", "analysis": "#8b5cf6", "export": "#ec4899", "import": "#06b6d4", "reporting": "#6366f1", "NoStage": "#6b7280", "default": "#6b7280"};
+
+        // State
+        var currentView = 'compact';
+        var physicsEnabled = false;
+        var selectedTaskId = null;
+        var filteredStages = new Set();
+        var searchTerm = '';
+        var sortColumn = 'id';
+        var sortDirection = 'asc';
+
+        // Create vis.js datasets
+        var nodes = new vis.DataSet(nodesData);
+        var edges = new vis.DataSet(edgesData);
+
+        // Network setup
+        var container = document.getElementById("mynetwork");
+        var data = { nodes: nodes, edges: edges };
+
+        var options = {
+            nodes: {
+                shape: "box",
+                margin: 12,
+                font: {
+                    size: 14,
+                    face: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+                    color: "#ffffff",
+                    multi: "md",
+                    bold: { color: "#ffffff" }
+                },
+                shadow: {
+                    enabled: true,
+                    color: "rgba(0, 0, 0, 0.1)",
+                    size: 8,
+                    x: 0,
+                    y: 2
+                },
+                borderWidth: 2,
+                borderWidthSelected: 3,
+                widthConstraint: { minimum: 60 },
+                shapeProperties: {
+                    borderRadius: 8
+                }
+            },
+            edges: {
+                arrows: { to: { enabled: true, scaleFactor: 0.9 } },
+                color: {
+                    color: "rgba(100, 116, 139, 0.4)",
+                    highlight: "#00AEEF",
+                    hover: "#00AEEF"
+                },
+                smooth: {
+                    type: "cubicBezier",
+                    forceDirection: "horizontal",
+                    roundness: 0.5
+                },
+                width: 2,
+                selectionWidth: 3
+            },
+            layout: {
+                hierarchical: {
+                    enabled: true,
+                    direction: "LR",
+                    sortMethod: "directed",
+                    levelSeparation: 200,
+                    nodeSpacing: 120,
+                    treeSpacing: 200
+                }
+            },
+            physics: { enabled: false },
+            interaction: {
+                hover: true,
+                tooltipDelay: 150,
+                navigationButtons: false,
+                keyboard: true,
+                zoomView: true,
+                zoomSpeed: 0.8
+            }
+        };
+
+        var network = new vis.Network(container, data, options);
+
+        // View mode switching
+        document.querySelectorAll('.view-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var view = this.dataset.view;
+                setView(view);
+            });
+        });
+
+        function setView(view) {
+            currentView = view;
+
+            // Update buttons
+            document.querySelectorAll('.view-btn').forEach(function(btn) {
+                btn.classList.toggle('active', btn.dataset.view === view);
+            });
+
+            // Show/hide views
+            var networkEl = document.getElementById('mynetwork');
+            var tableEl = document.getElementById('tableView');
+            var dagControls = document.getElementById('dag-controls');
+
+            if (view === 'table') {
+                networkEl.classList.add('hidden');
+                tableEl.style.display = 'block';
+                dagControls.classList.add('hidden');
+                renderTable();
+            } else {
+                networkEl.classList.remove('hidden');
+                tableEl.style.display = 'none';
+                dagControls.classList.remove('hidden');
+
+                // Update node labels
+                var updates = [];
+                nodesData.forEach(function(node) {
+                    if (isNodeVisible(node)) {
+                        updates.push({
+                            id: node.id,
+                            label: view === 'compact' ? node.compactLabel : node.detailedLabel,
+                            hidden: false
+                        });
+                    }
+                });
+                nodes.update(updates);
+
+                // Adjust layout - detailed view needs more spacing for larger nodes
+                var levelSep = view === 'detailed' ? 350 : 200;
+                var nodeSep = view === 'detailed' ? 200 : 100;
+                network.setOptions({
+                    layout: { hierarchical: { levelSeparation: levelSep, nodeSpacing: nodeSep } }
+                });
+
+                setTimeout(function() { network.fit(); }, 100);
+            }
+        }
+
+        // Search functionality
+        var searchBox = document.getElementById('searchBox');
+        searchBox.addEventListener('input', function() {
+            searchTerm = this.value.toLowerCase();
+            applyFilters();
+        });
+
+        // Stage filtering (click on legend)
+        document.querySelectorAll('.legend-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                var stage = this.dataset.stage;
+                if (filteredStages.has(stage)) {
+                    filteredStages.delete(stage);
+                    this.classList.remove('filtered');
+                } else {
+                    filteredStages.add(stage);
+                    this.classList.add('filtered');
+                }
+                applyFilters();
+            });
+        });
+
+        function isNodeVisible(node) {
+            // Check stage filter
+            if (filteredStages.size > 0 && filteredStages.has(node.stage)) {
+                return false;
+            }
+            // Check search (includes parameters)
+            if (searchTerm) {
+                var searchIn = (node.id + ' ' + node.process + ' ' + node.instance + ' ' + node.stage).toLowerCase();
+                // Also search in parameter names and values
+                if (node.parameters) {
+                    Object.entries(node.parameters).forEach(function(p) {
+                        searchIn += ' ' + p[0].toLowerCase() + ' ' + String(p[1]).toLowerCase();
+                    });
+                }
+                if (!searchIn.includes(searchTerm)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function applyFilters() {
+            var visibleCount = 0;
+            var updates = [];
+
+            nodesData.forEach(function(node) {
+                var visible = isNodeVisible(node);
+                if (visible) visibleCount++;
+                updates.push({
+                    id: node.id,
+                    hidden: !visible
+                });
+            });
+
+            nodes.update(updates);
+
+            // Update match count
+            var matchEl = document.getElementById('matchCount');
+            var filterStatus = document.getElementById('filterStatus');
+            if (searchTerm || filteredStages.size > 0) {
+                matchEl.textContent = visibleCount + ' of ' + nodesData.length + ' shown';
+                filterStatus.textContent = ' (filtered)';
+            } else {
+                matchEl.textContent = '';
+                filterStatus.textContent = '';
+            }
+
+            // Update table if visible
+            if (currentView === 'table') {
+                renderTable();
+            }
+
+            setTimeout(function() { network.fit(); }, 100);
+        }
+
+        // Table rendering
+        function renderTable() {
+            var tbody = document.getElementById('tableBody');
+            var rows = [];
+
+            // Filter and sort data
+            var filteredData = nodesData.filter(isNodeVisible);
+
+            filteredData.sort(function(a, b) {
+                var valA, valB;
+                if (sortColumn === 'predecessors') {
+                    valA = a.predecessors.length;
+                    valB = b.predecessors.length;
+                } else if (sortColumn === 'id') {
+                    // Smart numeric/string sorting for IDs
+                    var strA = (a.id || '').toString();
+                    var strB = (b.id || '').toString();
+                    var numA = parseFloat(strA);
+                    var numB = parseFloat(strB);
+                    // If both are purely numeric, sort numerically
+                    if (!isNaN(numA) && !isNaN(numB) && strA === numA.toString() && strB === numB.toString()) {
+                        valA = numA;
+                        valB = numB;
+                    } else {
+                        // Natural sort for mixed alphanumeric (e.g., "task1", "task2", "task10")
+                        return sortDirection === 'asc'
+                            ? strA.localeCompare(strB, undefined, {numeric: true, sensitivity: 'base'})
+                            : strB.localeCompare(strA, undefined, {numeric: true, sensitivity: 'base'});
+                    }
+                } else {
+                    valA = (a[sortColumn] || '').toString().toLowerCase();
+                    valB = (b[sortColumn] || '').toString().toLowerCase();
+                }
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            filteredData.forEach(function(node) {
+                var stageColor = stageColors[node.stage] || stageColors['default'];
+                var paramsHtml = '';
+                if (node.parameters && Object.keys(node.parameters).length > 0) {
+                    paramsHtml = Object.entries(node.parameters)
+                        .map(function(p) { return p[0] + '=' + p[1]; })
+                        .join('\n');
+                }
+                var predsHtml = node.predecessors.length > 0 ? node.predecessors.join(', ') : '-';
+
+                // Build options summary
+                var optionsList = [];
+                if (node.timeout !== null && node.timeout !== undefined) {
+                    optionsList.push('timeout=' + node.timeout + 's');
+                }
+                if (node.cancel_at_timeout) {
+                    optionsList.push('cancel_at_timeout');
+                }
+                if (node.safe_retry) {
+                    optionsList.push('safe_retry');
+                }
+                if (!node.require_predecessor_success) {
+                    optionsList.push('no_require_pred_success');
+                }
+                if (node.succeed_on_minor_errors) {
+                    optionsList.push('succeed_on_minor_errors');
+                }
+                var optionsHtml = optionsList.length > 0 ? optionsList.join('\n') : '-';
+
+                rows.push(
+                    '<tr data-id="' + node.id + '" class="' + (node.id === selectedTaskId ? 'selected' : '') + '">' +
+                    '<td>' + node.id + '</td>' +
+                    '<td>' + node.process + '</td>' +
+                    '<td>' + (node.instance || '-') + '</td>' +
+                    '<td><span class="stage-badge" style="background-color:' + stageColor + '">' + node.stage + '</span></td>' +
+                    '<td>' + predsHtml + '</td>' +
+                    '<td class="params-cell">' + paramsHtml + '</td>' +
+                    '<td class="params-cell">' + optionsHtml + '</td>' +
+                    '</tr>'
+                );
+            });
+
+            tbody.innerHTML = rows.join('');
+
+            // Add click handlers
+            tbody.querySelectorAll('tr').forEach(function(row) {
+                row.addEventListener('click', function() {
+                    var id = this.dataset.id;
+                    selectTask(id);
+                    tbody.querySelectorAll('tr').forEach(function(r) { r.classList.remove('selected'); });
+                    this.classList.add('selected');
+                });
+            });
+        }
+
+        // Table sorting
+        document.querySelectorAll('#taskTable th[data-sort]').forEach(function(th) {
+            th.addEventListener('click', function() {
+                var col = this.dataset.sort;
+                if (sortColumn === col) {
+                    sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortColumn = col;
+                    sortDirection = 'asc';
+                }
+
+                // Update sort indicators
+                document.querySelectorAll('#taskTable th').forEach(function(h) {
+                    h.classList.remove('sorted');
+                    var icon = h.querySelector('.sort-icon');
+                    if (icon) icon.innerHTML = '&#8597;';
+                });
+                this.classList.add('sorted');
+                var icon = this.querySelector('.sort-icon');
+                if (icon) icon.innerHTML = sortDirection === 'asc' ? '&#8593;' : '&#8595;';
+
+                renderTable();
+            });
+        });
+
+        // Task selection (network click)
+        network.on('click', function(params) {
+            if (params.nodes.length > 0) {
+                selectTask(params.nodes[0]);
+            }
+        });
+
+        function selectTask(taskId) {
+            selectedTaskId = taskId;
+            var node = nodesData.find(function(n) { return n.id === taskId; });
+            if (!node) return;
+
+            // Show details
+            document.getElementById('placeholder-message').classList.add('hidden');
+            document.getElementById('task-details').classList.remove('hidden');
+
+            document.getElementById('detail-id').textContent = node.id;
+            document.getElementById('detail-process').textContent = node.process;
+            document.getElementById('detail-instance').textContent = node.instance || '-';
+
+            var stageEl = document.getElementById('detail-stage');
+            stageEl.textContent = node.stage;
+            stageEl.style.backgroundColor = stageColors[node.stage] || stageColors['default'];
+
+            // Predecessors
+            var predList = document.getElementById('detail-predecessors');
+            var noPred = document.getElementById('detail-no-predecessors');
+            if (node.predecessors && node.predecessors.length > 0) {
+                predList.innerHTML = node.predecessors.map(function(p) {
+                    return '<li>' + p + '</li>';
+                }).join('');
+                predList.style.display = 'block';
+                noPred.style.display = 'none';
+            } else {
+                predList.style.display = 'none';
+                noPred.style.display = 'block';
+            }
+
+            // Parameters
+            var paramsSection = document.getElementById('params-section');
+            var paramsTable = document.getElementById('detail-params');
+            if (node.parameters && Object.keys(node.parameters).length > 0) {
+                paramsTable.innerHTML = Object.entries(node.parameters).map(function(p) {
+                    return '<tr><td>' + p[0] + '</td><td>' + p[1] + '</td></tr>';
+                }).join('');
+                paramsSection.style.display = 'block';
+            } else {
+                paramsSection.style.display = 'none';
+            }
+
+            // Execution Options
+            var optionsSection = document.getElementById('options-section');
+            var optionsTable = document.getElementById('detail-options');
+            var optionRows = [];
+
+            if (node.timeout !== null && node.timeout !== undefined) {
+                optionRows.push('<tr><td>Timeout</td><td>' + node.timeout + ' seconds</td></tr>');
+            }
+            if (node.cancel_at_timeout) {
+                optionRows.push('<tr><td>Cancel at Timeout</td><td>Yes</td></tr>');
+            }
+            if (node.safe_retry) {
+                optionRows.push('<tr><td>Safe Retry</td><td>Yes</td></tr>');
+            }
+            if (!node.require_predecessor_success) {
+                optionRows.push('<tr><td>Require Predecessor Success</td><td>No</td></tr>');
+            }
+            if (node.succeed_on_minor_errors) {
+                optionRows.push('<tr><td>Succeed on Minor Errors</td><td>Yes</td></tr>');
+            }
+
+            if (optionRows.length > 0) {
+                optionsTable.innerHTML = optionRows.join('');
+                optionsSection.style.display = 'block';
+            } else {
+                optionsSection.style.display = 'none';
+            }
+
+            // Highlight in network
+            network.selectNodes([taskId]);
+        }
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            var sidebar = document.getElementById('sidebar');
+            var btn = document.getElementById('btnToggleSidebar');
+            sidebar.classList.toggle('collapsed');
+            var isCollapsed = sidebar.classList.contains('collapsed');
+            btn.innerHTML = isCollapsed ? 'Details &lt;&lt;' : '&gt;&gt; Details';
+        }
+
+        // DAG controls
+        function togglePhysics() {
+            physicsEnabled = !physicsEnabled;
+            network.setOptions({ physics: { enabled: physicsEnabled } });
+            document.getElementById('btnPhysics').classList.toggle('active', physicsEnabled);
+        }
+
+        function zoomIn() {
+            var scale = network.getScale();
+            network.moveTo({ scale: scale * 1.3 });
+        }
+
+        function zoomOut() {
+            var scale = network.getScale();
+            network.moveTo({ scale: scale / 1.3 });
+        }
+
+        // Initial fit
+        network.once("afterDrawing", function() {
+            network.fit();
+        });
+    </script>
+</body>
+</html>

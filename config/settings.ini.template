@@ -1,0 +1,219 @@
+# RushTI Settings Configuration
+# ==============================
+#
+# This file configures RushTI behavior settings, separate from TM1 connection
+# settings in config.ini.
+#
+# Settings Precedence (highest to lowest):
+# 1. CLI arguments (e.g., --max-workers 8)
+# 2. JSON task file settings section
+# 3. This settings.ini file
+# 4. Built-in defaults
+#
+# To use this file:
+# 1. Copy to settings.ini in the same directory as rushti.py
+# 2. Uncomment and modify the settings you need
+# 3. Delete or leave commented any settings you want to use defaults for
+
+# ------------------------------------------------------------------------------
+# [defaults] - Common execution settings
+# ------------------------------------------------------------------------------
+[defaults]
+
+# Maximum number of parallel workers
+# Valid range: 1-100 (recommended: between 30-40 if you hardware allows)
+# Default: 4
+# max_workers = 4
+
+# Number of retries for failed process executions
+# Valid range: 0-10
+# Default: 0
+# retries = 0
+
+# Output file path for execution results summary CSV
+# Set to a file path to create a summary CSV (e.g. rushti.csv)
+# Leave empty or omit to skip creating the summary CSV
+# Default: (empty - no CSV created)
+# result_file = rushti.csv
+
+# Execution mode: 'norm' (normal) or 'opt' (optimized with dependencies)
+# Default: norm
+# mode = norm
+
+# ------------------------------------------------------------------------------
+# [optimization] - Automatic task ordering optimization
+# ------------------------------------------------------------------------------
+[optimization]
+
+# Enable automatic task optimization during execution.
+# When enabled, ready tasks are sorted by estimated runtime (longest first)
+# to maximize parallel efficiency. Dependencies are always preserved.
+#
+# Requires: [stats] enabled = true (needs historical data for estimates)
+# Override: Use --no-optimize flag to disable for a specific run
+#
+# Default: false
+# enabled = false
+
+# Number of historical runs to analyze for EWMA runtime estimates
+# Valid range: 1-100
+# Default: 10
+# lookback_runs = 10
+
+# Weight historical runs at similar times of day higher
+# Useful for processes with time-varying performance
+# Note: When enabled, caching is disabled (recalculates each run)
+# Default: false
+# time_of_day_weighting = false
+
+# Minimum number of successful samples required before applying optimization
+# Tasks with fewer samples use a default estimate
+# Default: 3
+# min_samples = 3
+
+# Hours to cache optimization data between runs
+# Ignored if time_of_day_weighting is enabled
+# Default: 24
+# cache_duration_hours = 24
+
+# ------------------------------------------------------------------------------
+# [logging] - Enhanced logging settings
+# ------------------------------------------------------------------------------
+[logging]
+
+# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+# Default: INFO
+# level = INFO
+
+# Log format (Python logging format string)
+# Default: %(asctime)s %(levelname)s %(message)s
+# format = %(asctime)s %(levelname)s %(message)s
+
+# Log file path (if not set, logs only to console)
+# file = /var/log/rushti/rushti.log
+
+# Maximum log file size in MB before rotation
+# Default: 10
+# max_file_size_mb = 10
+
+# Number of backup log files to keep
+# Default: 5
+# backup_count = 5
+
+
+# ------------------------------------------------------------------------------
+# [tm1_integration] - TM1 integration for reading taskfiles and logging results
+# ------------------------------------------------------------------------------
+[tm1_integration]
+
+# Push execution results to TM1
+# When enabled, the results CSV is uploaded to TM1 files after each run
+# as: rushti_{workflow}_{run_id}.csv
+#
+# To set up TM1 integration:
+# 1. Run: python rushti.py build --tm1-instance tm1srv01
+#    This creates the required dimensions and cube automatically.
+# 2. Set push_results = true and configure default_tm1_instance below
+#
+# Default: false
+# push_results = false
+
+# Automatically load results into TM1 cube after push
+# When enabled (and push_results = true), calls }rushti.load.results TI process
+# on the target TM1 instance after uploading the results CSV.
+# The TI process must exist on the target instance.
+#
+# Default: false
+# auto_load_results = false
+
+# Default TM1 instance for reading taskfiles and writing results
+# Used when --tm1-instance is specified without an instance, and for auto-upload
+# Must be defined in config.ini
+# default_tm1_instance = tm1srv01
+
+# Default cube name for task definitions and results
+# The build command creates this cube with dimensions:
+#   - rushti_workflow: Workflow identifiers
+#   - rushti_task_id: Task sequence (1-5000 default elements)
+#   - rushti_run_id: "Input" for definitions, timestamps for results
+#   - rushti_measure: Task field measures
+#
+# Default: rushti
+# default_rushti_cube = rushti
+
+# ------------------------------------------------------------------------------
+# [exclusive_mode] - Prevent concurrent RushTI executions
+# ------------------------------------------------------------------------------
+[exclusive_mode]
+
+# Enable exclusive mode checking by default
+# When enabled, RushTI will check TM1 server sessions for other RushTI instances
+# and wait if an exclusive session is running.
+#
+# Session identification uses TM1 session context fields:
+# - Normal mode: RushTI{workflow}
+# - Exclusive mode: RushTIX{workflow}
+#
+# Interaction matrix:
+# - Exclusive run + any RushTI running = wait
+# - Non-exclusive run + exclusive running = wait
+# - Non-exclusive run + non-exclusive running = proceed
+#
+# Can also be enabled per-taskfile via JSON settings.exclusive or --exclusive flag
+# Default: false
+# enabled = false
+
+# Seconds between checks when waiting for exclusive access
+# Valid range: 5-300
+# Default: 30
+# polling_interval = 30
+
+# Maximum seconds to wait for exclusive access before failing
+# Valid range: 0-3600
+# Default: 600 (10 minutes)
+# timeout = 600
+
+# ------------------------------------------------------------------------------
+# [resume] - Checkpoint and resume feature
+# ------------------------------------------------------------------------------
+[resume]
+
+# Enable checkpoint saving for resume capability
+# Default: false
+# enabled = false
+
+# Seconds between checkpoint saves
+# Valid range: 10-600
+# Default: 60
+# checkpoint_interval = 60
+
+# Directory for checkpoint files
+# Default: ./checkpoints
+# checkpoint_dir = ./checkpoints
+
+# Automatically resume from last checkpoint on startup
+# Default: false
+# auto_resume = false
+
+# ------------------------------------------------------------------------------
+# [stats] - SQLite stats database for execution history
+# ------------------------------------------------------------------------------
+[stats]
+
+# Enable the stats database for storing execution history
+# The stats database stores execution statistics for:
+# - Optimization features (EWMA runtime estimation)
+# - TM1 cube logging data source
+# - Historical analysis via 'rushti db' commands
+# Default: false
+# enabled = false
+
+# Path to the SQLite database file
+# Relative paths are resolved from the application directory
+# Default: data/rushti_stats.db
+# db_path = data/rushti_stats.db
+
+# Number of days to retain execution history
+# Valid range: 1-365
+# Default: 90
+# retention_days = 90

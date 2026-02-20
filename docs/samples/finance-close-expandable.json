@@ -1,0 +1,86 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "finance-close-expandable",
+    "name": "Monthly Financial Close (Dynamic Regions)",
+    "description": "Same as finance-close but uses MDX to dynamically expand regions from TM1",
+    "author": "TM1 Admin"
+  },
+  "settings": {
+    "max_workers": 8,
+    "retries": 2
+  },
+  "tasks": [
+    {
+      "id": "1",
+      "instance": "tm1-finance",
+      "process": "Close.Extract.Regional",
+      "parameters": {
+        "pRegion*": "*{TM1FILTERBYLEVEL({TM1SUBSETALL([Region].[Region])}, 0)}",
+        "pPeriod": "Current"
+      },
+      "stage": "extract"
+    },
+    {
+      "id": "2",
+      "instance": "tm1-finance",
+      "process": "Close.Extract.ExchangeRates",
+      "parameters": { "pSource": "Bloomberg" },
+      "stage": "extract"
+    },
+    {
+      "id": "3",
+      "instance": "tm1-finance",
+      "process": "Close.Transform.Currency",
+      "parameters": {
+        "pRegion*": "*{TM1FILTERBYLEVEL({TM1SUBSETALL([Region].[Region])}, 0)}",
+        "pTargetCurrency": "USD"
+      },
+      "predecessors": ["1", "2"],
+      "stage": "transform",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "4",
+      "instance": "tm1-finance",
+      "process": "Close.Consolidate.Global",
+      "parameters": { "pVersion": "Actual" },
+      "predecessors": ["3"],
+      "stage": "consolidate",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "5",
+      "instance": "tm1-finance",
+      "process": "Close.Consolidate.Intercompany",
+      "parameters": { "pEliminate": "Yes" },
+      "predecessors": ["3"],
+      "stage": "consolidate"
+    },
+    {
+      "id": "6",
+      "instance": "tm1-finance",
+      "process": "Close.Validate.Balances",
+      "predecessors": ["4", "5"],
+      "stage": "consolidate",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "7",
+      "instance": "tm1-reporting",
+      "process": "Report.Generate.ManagementPack",
+      "parameters": { "pFormat": "PDF", "pDistribution": "Email" },
+      "predecessors": ["6"],
+      "stage": "report",
+      "timeout": 300
+    },
+    {
+      "id": "8",
+      "instance": "tm1-finance",
+      "process": "Close.Notify.Completion",
+      "parameters": { "pRecipients": "finance-team@company.com" },
+      "predecessors": ["7"],
+      "stage": "notify"
+    }
+  ]
+}

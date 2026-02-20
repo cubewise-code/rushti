@@ -1,0 +1,14 @@
+# This file defines the order of pages for MkDocs navigation
+# It's optional but helps maintain organization
+
+title: Documentation
+nav:
+  - Home: index.md
+  - Getting Started
+  - User Guide
+  - CLI Reference
+  - Architecture
+  - Advanced Topics
+  - Troubleshooting
+  - Contributing
+  - API Reference

@@ -1,0 +1,125 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rushti"
+version = "2.0.0b13"
+description = "RushTI - Parallel TM1 TurboIntegrator Process Execution"
+readme = "README.md"
+license = "MIT"
+authors = [
+    {name = "nicolasbisurgi", email = "nbisurgi@cubewise.com"},
+    {name = "Marius Wirtz", email = "mwirtz@cubewise.com"}
+]
+maintainers = [
+    {name = "Cubewise CODE"},
+]
+keywords = ["TM1", "Planning Analytics", "TM1Py", "TurboIntegrator", "orchestration", "automation", "ETL"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: System :: Systems Administration",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "TM1py>=2.0.0",
+    "keyring>=25.7.0",
+    "chardet>=5.2.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pyinstaller>=5.0.0",
+    "pre-commit",
+    "black>=24.10.0",
+    "ruff>=0.8.0",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://cubewise-code.github.io/rushti/"
+Documentation = "https://cubewise-code.github.io/rushti/docs/"
+Repository = "https://github.com/cubewise-code/rushti"
+Issues = "https://github.com/cubewise-code/rushti/issues"
+Changelog = "https://github.com/cubewise-code/rushti/releases"
+
+[project.scripts]
+rushti = "rushti.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"rushti.templates" = ["*.html"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "requires_tm1: marks tests as requiring TM1 connection (deselect with '-m \"not requires_tm1\"')",
+    "slow: marks tests as slow running",
+    "integration: marks tests as integration tests",
+]
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+src_paths = ["src", "tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# E501 handled by Black formatter (which intentionally skips strings/comments)
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Integration tests manipulate sys.path before imports (standard pattern)
+"tests/integration/*.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

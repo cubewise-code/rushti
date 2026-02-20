@@ -1,0 +1,22 @@
+# RushTI Test Settings
+# ====================
+# Copy this file to tests/settings.ini and customize as needed.
+# tests/settings.ini is gitignored to avoid committing local overrides.
+#
+# Using separate TM1 object names for testing avoids interfering with
+# production/demo data on shared TM1 instances.
+
+[defaults]
+max_workers = 4
+result_file = rushti_test.csv
+
+[tm1_integration]
+# Default cube name for task definitions and results (test namespace)
+default_rushti_cube = rushti_test
+default_workflow_dim = rushti_workflow_test
+default_task_id_dim = rushti_task_id_test
+default_run_id_dim = rushti_run_id_test
+default_measure_dim = rushti_measure_test
+
+[stats]
+enabled = false

@@ -1,0 +1,122 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "finance-close",
+    "name": "Monthly Financial Close",
+    "description": "End-of-month close process: extract, transform, consolidate, report, and notify",
+    "author": "TM1 Admin"
+  },
+  "settings": {
+    "max_workers": 8,
+    "retries": 2
+  },
+  "tasks": [
+    {
+      "id": "1",
+      "instance": "tm1-finance",
+      "process": "Close.Extract.Regional",
+      "parameters": { "pRegion": "NorthAmerica", "pPeriod": "Current" },
+      "stage": "extract"
+    },
+    {
+      "id": "2",
+      "instance": "tm1-finance",
+      "process": "Close.Extract.Regional",
+      "parameters": { "pRegion": "Europe", "pPeriod": "Current" },
+      "stage": "extract"
+    },
+    {
+      "id": "3",
+      "instance": "tm1-finance",
+      "process": "Close.Extract.Regional",
+      "parameters": { "pRegion": "AsiaPacific", "pPeriod": "Current" },
+      "stage": "extract"
+    },
+    {
+      "id": "4",
+      "instance": "tm1-finance",
+      "process": "Close.Extract.ExchangeRates",
+      "parameters": { "pSource": "Bloomberg" },
+      "stage": "extract"
+    },
+    {
+      "id": "5",
+      "instance": "tm1-finance",
+      "process": "Close.Transform.Currency",
+      "parameters": { "pRegion": "NorthAmerica", "pTargetCurrency": "USD" },
+      "predecessors": ["1", "4"],
+      "stage": "transform",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "6",
+      "instance": "tm1-finance",
+      "process": "Close.Transform.Currency",
+      "parameters": { "pRegion": "Europe", "pTargetCurrency": "USD" },
+      "predecessors": ["2", "4"],
+      "stage": "transform",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "7",
+      "instance": "tm1-finance",
+      "process": "Close.Transform.Currency",
+      "parameters": { "pRegion": "AsiaPacific", "pTargetCurrency": "USD" },
+      "predecessors": ["3", "4"],
+      "stage": "transform",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "8",
+      "instance": "tm1-finance",
+      "process": "Close.Consolidate.Global",
+      "parameters": { "pVersion": "Actual" },
+      "predecessors": ["5", "6", "7"],
+      "stage": "consolidate",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "9",
+      "instance": "tm1-finance",
+      "process": "Close.Consolidate.Intercompany",
+      "parameters": { "pEliminate": "Yes" },
+      "predecessors": ["5", "6", "7"],
+      "stage": "consolidate"
+    },
+    {
+      "id": "10",
+      "instance": "tm1-finance",
+      "process": "Close.Validate.Balances",
+      "predecessors": ["8", "9"],
+      "stage": "consolidate",
+      "require_predecessor_success": true
+    },
+    {
+      "id": "11",
+      "instance": "tm1-reporting",
+      "process": "Report.Generate.ManagementPack",
+      "parameters": { "pFormat": "PDF", "pDistribution": "Email" },
+      "predecessors": ["10"],
+      "stage": "report",
+      "timeout": 300
+    },
+    {
+      "id": "12",
+      "instance": "tm1-reporting",
+      "process": "Report.Generate.Regulatory",
+      "parameters": { "pFormat": "XBRL" },
+      "predecessors": ["10"],
+      "stage": "report",
+      "timeout": 600,
+      "cancel_at_timeout": true
+    },
+    {
+      "id": "13",
+      "instance": "tm1-finance",
+      "process": "Close.Notify.Completion",
+      "parameters": { "pRecipients": "finance-team@company.com" },
+      "predecessors": ["11", "12"],
+      "stage": "notify"
+    }
+  ]
+}
