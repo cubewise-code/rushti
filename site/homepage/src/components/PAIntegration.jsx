@@ -424,6 +424,19 @@ export default function PAIntegration() {
                 ))}
               </ul>
             </div>
+
+            {/* Code snippet - CLI example */}
+            <div className="mt-4 p-4 bg-slate-900 rounded-xl">
+              <div className="text-xs text-slate-400 mb-2 font-mono">Command line</div>
+              <pre className="text-sm font-mono">
+                <code>
+                  <span className="text-emerald-400">rushti</span>
+                  <span className="text-slate-300"> build </span>
+                  <span className="text-sky-400">--tm1-instance</span>
+                  <span className="text-amber-300"> tm1srv01</span>
+                </code>
+              </pre>
+            </div>
           </div>
         </div>
       </div>
