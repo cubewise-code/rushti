@@ -108,7 +108,7 @@ jobs:
           cp README.md release/rushti-windows/ || true
           cp LICENSE release/rushti-windows/ || true
 
-          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/rushti/__init__.py)
+          VERSION=$(python -c "import re, pathlib; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('src/rushti/__init__.py').read_text()).group(1))")
           echo "RushTI Windows Build" > release/rushti-windows/BUILD_INFO.txt
           echo "Version: $VERSION" >> release/rushti-windows/BUILD_INFO.txt
           echo "Build: Complete build with all features (onedir mode for fast startup)" >> release/rushti-windows/BUILD_INFO.txt
