@@ -249,23 +249,23 @@ If( pLogOutput >= 1 );
    nDataRecordCount = nDataRecordCount + 1;
 EndIf;
 
-CellPutS(vinstance, pTargetCube, vworkflow, vtask_id, vrun_id, 'instance');
-CellPutS(vprocess, pTargetCube, vworkflow, vtask_id, vrun_id, 'process');
-CellPutS(vparameters, pTargetCube, vworkflow, vtask_id, vrun_id, 'parameters');
-CellPutS(vstatus, pTargetCube, vworkflow, vtask_id, vrun_id, 'status');
-CellPutS(vstart_time, pTargetCube, vworkflow, vtask_id, vrun_id, 'start_time');
-CellPutS(vend_time, pTargetCube, vworkflow, vtask_id, vrun_id, 'end_time');
-CellPutS(vduration_seconds, pTargetCube, vworkflow, vtask_id, vrun_id, 'duration_seconds');
-CellPutS(vretries, pTargetCube, vworkflow, vtask_id, vrun_id, 'retries');
-CellPutS(vretry_count, pTargetCube, vworkflow, vtask_id, vrun_id, 'retry_count');
-CellPutS(verror_message, pTargetCube, vworkflow, vtask_id, vrun_id, 'error_message');
-CellPutS(vpredecessors, pTargetCube, vworkflow, vtask_id, vrun_id, 'predecessors');
-CellPutS(vstage, pTargetCube, vworkflow, vtask_id, vrun_id, 'stage');
-CellPutS(vsafe_retry, pTargetCube, vworkflow, vtask_id, vrun_id, 'safe_retry');
-CellPutS(vtimeout, pTargetCube, vworkflow, vtask_id, vrun_id, 'timeout');
-CellPutS(vcancel_at_timeout, pTargetCube, vworkflow, vtask_id, vrun_id, 'cancel_at_timeout');
-CellPutS(vrequire_predecessor_success, pTargetCube, vworkflow, vtask_id, vrun_id, 'require_predecessor_success');
-CellPutS(vsucceed_on_minor_errors, pTargetCube, vworkflow, vtask_id, vrun_id, 'succeed_on_minor_errors');
+CellPutS(vinstance, pTargetCube, vworkflow, vrun_id, vtask_id, 'instance');
+CellPutS(vprocess, pTargetCube, vworkflow, vrun_id, vtask_id, 'process');
+CellPutS(vparameters, pTargetCube, vworkflow, vrun_id, vtask_id, 'parameters');
+CellPutS(vstatus, pTargetCube, vworkflow, vrun_id, vtask_id, 'status');
+CellPutS(vstart_time, pTargetCube, vworkflow, vrun_id, vtask_id, 'start_time');
+CellPutS(vend_time, pTargetCube, vworkflow, vrun_id, vtask_id, 'end_time');
+CellPutS(vduration_seconds, pTargetCube, vworkflow, vrun_id, vtask_id, 'duration_seconds');
+CellPutS(vretries, pTargetCube, vworkflow, vrun_id, vtask_id, 'retries');
+CellPutS(vretry_count, pTargetCube, vworkflow, vrun_id, vtask_id, 'retry_count');
+CellPutS(verror_message, pTargetCube, vworkflow, vrun_id, vtask_id, 'error_message');
+CellPutS(vpredecessors, pTargetCube, vworkflow, vrun_id, vtask_id, 'predecessors');
+CellPutS(vstage, pTargetCube, vworkflow, vrun_id, vtask_id, 'stage');
+CellPutS(vsafe_retry, pTargetCube, vworkflow, vrun_id, vtask_id, 'safe_retry');
+CellPutS(vtimeout, pTargetCube, vworkflow, vrun_id, vtask_id, 'timeout');
+CellPutS(vcancel_at_timeout, pTargetCube, vworkflow, vrun_id, vtask_id, 'cancel_at_timeout');
+CellPutS(vrequire_predecessor_success, pTargetCube, vworkflow, vrun_id, vtask_id, 'require_predecessor_success');
+CellPutS(vsucceed_on_minor_errors, pTargetCube, vworkflow, vrun_id, vtask_id, 'succeed_on_minor_errors');
 """
 
 PROCESS_EPILOG = r"""#################################################################################################
@@ -349,7 +349,7 @@ PROCESS_PARAMETERS = [
     {
         "Name": "pDeleteSourceFile",
         "Prompt": "OPTIONAL:Should the result file be deleted after it loads? (1=True, 0=False)",
-        "Value": 0,
+        "Value": 1,
         "Type": "Numeric",
     },
 ]

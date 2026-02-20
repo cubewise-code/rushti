@@ -272,7 +272,7 @@ class TestResultPushV12(unittest.TestCase):
 
             # Verify results in cube
             try:
-                value = self.tm1.cells.get_value("rushti", f"{workflow},task1,{run_id},status")
+                value = self.tm1.cells.get_value("rushti", f"{workflow},{run_id},task1,status")
                 self.assertEqual(value, "Success")
             except Exception:
                 # Cube read may fail if elements weren't created

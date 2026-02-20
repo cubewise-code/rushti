@@ -208,7 +208,7 @@ class TestTM1BuildIntegration(unittest.TestCase):
 
         self.assertIsNotNone(cube)
         # Check cube has correct dimensions in order
-        expected_dims = [DIM_TASKFILE, DIM_TASK, DIM_RUN, DIM_MEASURE]
+        expected_dims = [DIM_TASKFILE, DIM_RUN, DIM_TASK, DIM_MEASURE]
         self.assertEqual(cube.dimensions, expected_dims)
 
     def test_populate_sample_data(self):
@@ -227,12 +227,12 @@ class TestTM1BuildIntegration(unittest.TestCase):
 
         # Verify data exists in cube
         # Check first task of Sample_Stage_Mode
-        instance = self.tm1.cells.get_value(CUBE_LOGS, "Sample_Stage_Mode,1,Input,instance")
+        instance = self.tm1.cells.get_value(CUBE_LOGS, "Sample_Stage_Mode,Input,1,instance")
         self.assertIsNotNone(instance)
         self.assertEqual(instance, "tm1srv01")
 
         # Check process name
-        process = self.tm1.cells.get_value(CUBE_LOGS, "Sample_Stage_Mode,1,Input,process")
+        process = self.tm1.cells.get_value(CUBE_LOGS, "Sample_Stage_Mode,Input,1,process")
         self.assertIsNotNone(process)
         self.assertIn("bedrock", process.lower())
 

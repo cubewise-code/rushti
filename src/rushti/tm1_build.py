@@ -10,7 +10,7 @@ Creates:
     - Dimensions: rushti_workflow, rushti_task_id, rushti_run_id, rushti_measure
       (with attributes and MDX subsets)
     - Cube: rushti (with custom dimension names if configured in settings.ini)
-    - MDX Views: Sample_Normal_Mode and Sample_Optimal_Mode
+    - MDX Views: Default, Sample_Normal_Mode and Sample_Optimal_Mode
     - Process: }rushti.load.results (for loading execution results)
     - Sample data for demonstration taskfiles
 
@@ -139,6 +139,7 @@ def build_logging_objects(
             f"Failed to create MDX views programmatically: {e}. "
             f"Views can be created manually in TM1 if needed."
         )
+        results[f"{cube_name}/Default"] = False
         results[f"{cube_name}/Sample_Normal_Mode"] = False
         results[f"{cube_name}/Sample_Optimal_Mode"] = False
 
@@ -277,7 +278,7 @@ def _create_cube(
 
     cube = Cube(
         name=cube_name,
-        dimensions=[dim_workflow, dim_task, dim_run, dim_measure],
+        dimensions=[dim_workflow, dim_run, dim_task, dim_measure],
     )
     tm1.cubes.create(cube)
     return True
@@ -411,7 +412,8 @@ def _create_mdx_views(
 ) -> Dict[str, bool]:
     """Create MDX-based views for the cube.
 
-    Creates two views:
+    Creates three views:
+    - Default: Default view with the same strcutrue than the Sample_Normal_Mode
     - Sample_Normal_Mode: View for Sample_Stage_Mode taskfile with inputs_norm subset
     - Sample_Optimal_Mode: View for Sample_Optimal_Mode taskfile with inputs_opt subset
 
@@ -425,6 +427,11 @@ def _create_mdx_views(
     :return: Dictionary of view names and whether they were created
     """
     views_config = [
+        {
+            "name": "Default",
+            "taskfile": "Sample_Stage_Mode",
+            "subset": "rushti_inputs_norm",
+        },
         {
             "name": "Sample_Normal_Mode",
             "taskfile": "Sample_Stage_Mode",
@@ -554,8 +561,8 @@ def _populate_sample_data(tm1: TM1Service, cube_name: str) -> Dict[str, int]:
             for record in records:
                 key = (
                     record["workflow"],
-                    record["task_id"],
                     record["run_id"],
+                    record["task_id"],
                     record["measure"],
                 )
                 cellset[key] = record["value"]
