@@ -25,6 +25,7 @@ The `max_workers` setting controls how many TI processes RushTI executes concurr
 2. Run the same workflow several times, increasing workers: 8, 12, 16.
 3. Watch for diminishing returns -- when doubling workers no longer cuts runtime significantly, you have hit a bottleneck (usually TM1 server threads or write locks).
 4. Use `rushti stats visualize` to inspect Gantt charts and identify idle workers.
+5. Use `rushti stats optimize` to get a data-driven recommendation based on runs at different worker levels.
 
 ```bash
 # Collect timing data at different worker levels
@@ -34,6 +35,9 @@ rushti run --tasks workflow.json --max-workers 16
 
 # Compare in dashboard
 rushti stats visualize --workflow workflow
+
+# Get a data-driven worker recommendation
+rushti stats optimize --workflow workflow
 ```
 
 !!! warning "Too Many Workers"
@@ -335,6 +339,62 @@ rushti stats analyze --workflow daily-etl --ewma-alpha 0.5 --report report_05.js
 
 ---
 
+## Contention-Aware Analysis
+
+When runtime-based scheduling is not enough, RushTI's contention-aware optimizer (`rushti stats optimize`) provides deeper analysis. See [Self-Optimization: Contention-Aware](../features/optimization.md#contention-aware-optimization) for the full algorithm description.
+
+### When Contention Analysis Helps
+
+| Symptom | What Contention Analysis Does |
+|---------|-------------------------------|
+| Adding workers does not reduce total runtime | Detects concurrency ceiling and recommends the optimal worker count |
+| A few heavy tasks slow down everything when running together | Identifies heavy outlier groups and chains them sequentially |
+| Reducing workers actually improved performance | Confirms the ceiling with multi-run comparison data |
+| Unclear which parameter drives the performance difference | Identifies the contention driver (e.g., `pRegion`, `pDimension`) |
+
+### Tuning Sensitivity
+
+The `--sensitivity` parameter controls how aggressively outliers are detected:
+
+| Sensitivity | Behavior |
+|-------------|----------|
+| `5.0` | Aggressive -- flags more groups as heavy. Use when you know contention is a problem. |
+| `10.0` | Balanced (default). Good for most workloads. |
+| `20.0` | Conservative -- only flags extreme outliers. Use for workflows with naturally varied durations. |
+
+```bash
+# Compare sensitivity levels
+rushti stats optimize --workflow daily-etl --sensitivity 5.0
+rushti stats optimize --workflow daily-etl --sensitivity 20.0
+```
+
+### Concurrency Ceiling vs Scale-Up
+
+The optimizer detects two complementary signals from multi-run data:
+
+- **Concurrency ceiling**: Runs with fewer workers were *faster*. The server was overwhelmed. The optimizer recommends reducing `max_workers`.
+- **Scale-up opportunity**: Runs with more workers were *faster*, but the most recent run used fewer workers. The optimizer recommends increasing `max_workers` back to the efficient sweet spot.
+
+The **sweet spot algorithm** avoids overreacting: it finds the fewest workers within 10% of the best observed wall clock time. For example, if 10 workers achieved 581s and 50 workers achieved 547s (only 6% faster), the optimizer recommends 10 workers — nearly the same speed with 5x fewer resources.
+
+### Combining Contention Analysis with Stages
+
+For complex workflows, combine contention-aware optimization with stage-based throttling:
+
+```bash
+# 1. Run contention analysis to understand the bottleneck
+rushti stats optimize --workflow complex-etl --tasks complex-etl.json --output optimized.json
+
+# 2. Review the HTML report for heavy groups and recommended workers
+# 3. Add stage_workers constraints for resource-intensive phases
+# 4. Run with the optimized file
+rushti run --tasks optimized.json
+```
+
+The optimized task file embeds the recommended `max_workers` value. You can further refine it by adding stage-level worker limits.
+
+---
+
 ## Monitoring and Identifying Bottlenecks
 
 ### Dashboard Visualization
@@ -450,11 +510,13 @@ Use this checklist when reviewing a workflow for performance:
 - [ ] **Dashboard reviewed**: Gantt chart shows minimal idle time between tasks.
 - [ ] **Retry count appropriate**: Non-zero retries for transient failures, zero for logic errors.
 - [ ] **Expandable parameters**: Dynamic member lists instead of hardcoded task duplication.
+- [ ] **Contention analyzed**: Run `rushti stats optimize` after collecting runs at 2--3 worker levels. Review the HTML report for bottleneck insights.
 
 ---
 
 ## Next Steps
 
+- **[Self-Optimization](../features/optimization.md)** -- Runtime scheduling and contention-aware analysis
 - **[Settings Reference](settings-reference.md)** -- `[optimization]` and `[stats]` configuration
 - **[Advanced Task Files](advanced-task-files.md)** -- Stages, timeouts, and expandable parameters
-- **[CLI Reference](cli-reference.md)** -- `rushti stats analyze` and `rushti stats visualize`
+- **[CLI Reference](cli-reference.md)** -- `rushti stats analyze`, `rushti stats optimize`, and `rushti stats visualize`

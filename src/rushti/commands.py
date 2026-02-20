@@ -1326,42 +1326,137 @@ def _stats_optimize(args) -> None:
             )
 
             # Display results
-            if result.warnings and not result.contention_driver:
+            has_optimization = result.contention_driver or result.concurrency_ceiling
+
+            if result.warnings and not has_optimization:
                 print(f"\n⚠ {result.warnings[0]}")
-                print("Falling back to standard optimization (longest_first).")
-                sys.exit(1)
+                print("Falling back to standard optimization (longest_first).\n")
 
-            print(f"\nContention driver: {result.contention_driver}")
-            print(f"Fan-out parameters: {', '.join(result.fan_out_keys) or 'none'}")
-            print(f"Fan-out size: {result.fan_out_size}")
-            print(f"Total tasks: {result.total_tasks}")
+                # Actually perform the fallback: use analyze_runs for EWMA
+                # longest_first reordering, then write an optimized taskfile.
+                from rushti.taskfile_ops import analyze_runs
+                from rushti.taskfile_ops import (
+                    write_optimized_taskfile as write_optimized_taskfile_standard,
+                )
 
-            print(f"\nIQR statistics (sensitivity k={result.sensitivity}):")
-            print(f"  Q1: {result.iqr_stats.get('q1', 0):.1f}s")
-            print(f"  Q3: {result.iqr_stats.get('q3', 0):.1f}s")
-            print(f"  IQR: {result.iqr_stats.get('iqr', 0):.1f}s")
-            print(f"  Upper fence: {result.iqr_stats.get('upper_fence', 0):.1f}s")
+                report = analyze_runs(
+                    workflow=args.workflow,
+                    stats_db=stats_db,
+                    run_count=args.lookback_runs,
+                    ewma_alpha=args.ewma_alpha,
+                )
 
-            print(f"\nHeavy groups ({len(result.heavy_groups)}):")
-            for g in result.heavy_groups:
-                print(f"  {g.driver_value}: {g.avg_duration:.1f}s ({len(g.task_ids)} tasks)")
-            if not result.heavy_groups:
-                print("  (none detected)")
+                fallback_output = args.output_file
+                if not fallback_output:
+                    fallback_output = resolve_app_path(f"{taskfile_path.stem}_optimized.json")
 
-            print(f"\nLight groups ({len(result.light_groups)}):")
-            for g in result.light_groups[:5]:
-                print(f"  {g.driver_value}: {g.avg_duration:.1f}s ({len(g.task_ids)} tasks)")
-            if len(result.light_groups) > 5:
-                print(f"  ... and {len(result.light_groups) - 5} more")
+                write_optimized_taskfile_standard(
+                    original_taskfile_path=str(taskfile_path),
+                    optimized_order=report.optimized_order,
+                    output_path=fallback_output,
+                    report=report,
+                )
+                print(f"✓ Optimized task file written to: {fallback_output}")
+                print(f"  Use: rushti run --tasks {fallback_output}")
+                print(
+                    "\n⚠ Note: Contention-aware optimization is based on statistical "
+                    "analysis of historical\n  execution data. The recommendations "
+                    "follow theoretical reasoning but actual TM1\n  server behavior "
+                    "depends on factors beyond task ordering — server load, memory,\n"
+                    "  concurrent users, and data volumes. Test the optimized taskfile "
+                    "before deploying\n  to production."
+                )
+                sys.exit(0)
 
-            if result.predecessor_map:
-                print("\nChain structure:")
-                print(f"  Chain length: {result.chain_length} heavy groups")
-                print(f"  Chains: {result.fan_out_size} independent chains")
-                print(f"  Tasks with predecessors: {len(result.predecessor_map)}")
-                print(f"  Critical path: {result.critical_path_seconds:.1f}s")
-            else:
-                print("\nNo predecessor chains generated.")
+            # Display contention driver analysis (if found)
+            if result.contention_driver:
+                print(f"\nContention driver: {result.contention_driver}")
+                print(f"Fan-out parameters: {', '.join(result.fan_out_keys) or 'none'}")
+                print(f"Fan-out size: {result.fan_out_size}")
+                print(f"Total tasks: {result.total_tasks}")
+
+                print(f"\nIQR statistics (sensitivity k={result.sensitivity}):")
+                print(f"  Q1: {result.iqr_stats.get('q1', 0):.1f}s")
+                print(f"  Q3: {result.iqr_stats.get('q3', 0):.1f}s")
+                print(f"  IQR: {result.iqr_stats.get('iqr', 0):.1f}s")
+                print(f"  Upper fence: {result.iqr_stats.get('upper_fence', 0):.1f}s")
+
+                print(f"\nHeavy groups ({len(result.heavy_groups)}):")
+                for g in result.heavy_groups:
+                    print(f"  {g.driver_value}: {g.avg_duration:.1f}s ({len(g.task_ids)} tasks)")
+                if not result.heavy_groups:
+                    print("  (none detected)")
+
+                print(f"\nLight groups ({len(result.light_groups)}):")
+                for g in result.light_groups[:5]:
+                    print(f"  {g.driver_value}: {g.avg_duration:.1f}s ({len(g.task_ids)} tasks)")
+                if len(result.light_groups) > 5:
+                    print(f"  ... and {len(result.light_groups) - 5} more")
+
+                if result.predecessor_map:
+                    print("\nChain structure:")
+                    print(f"  Chain length: {result.chain_length} heavy groups")
+                    print(f"  Chains: {result.fan_out_size} independent chains")
+                    print(f"  Tasks with predecessors: {len(result.predecessor_map)}")
+                    print(f"  Critical path: {result.critical_path_seconds:.1f}s")
+                else:
+                    print("\nNo predecessor chains generated.")
+
+            # Display concurrency ceiling / scale-up analysis (if found)
+            if result.concurrency_ceiling:
+                evidence = result.ceiling_evidence or {}
+                confidence = evidence.get("confidence", "")
+                if confidence == "scale_up":
+                    print(
+                        f"\nScale-up opportunity detected: recommend increasing to "
+                        f"{result.concurrency_ceiling} workers"
+                    )
+                    best = evidence.get("best_level", {})
+                    worst = evidence.get("worst_level", {})
+                    print(
+                        f"  {worst.get('max_workers')} workers: "
+                        f"{worst.get('wall_clock', 0):.0f}s wall clock (slowest)"
+                    )
+                    print(
+                        f"  {best.get('max_workers')} workers: "
+                        f"{best.get('wall_clock', 0):.0f}s wall clock (fastest)"
+                    )
+                    print(
+                        f"  Potential improvement: "
+                        f"{evidence.get('wall_clock_improvement', 0):.0f}s "
+                        f"({evidence.get('wall_clock_improvement_pct', 0):.1f}%)"
+                    )
+                else:
+                    print(
+                        f"\nConcurrency ceiling detected: " f"{result.concurrency_ceiling} workers"
+                    )
+                    if confidence == "multi_run":
+                        best = evidence.get("best_level", {})
+                        worst = evidence.get("worst_level", {})
+                        print(
+                            f"  {worst.get('max_workers')} workers: "
+                            f"{worst.get('wall_clock', 0):.0f}s wall clock"
+                        )
+                        print(
+                            f"  {best.get('max_workers')} workers: "
+                            f"{best.get('wall_clock', 0):.0f}s wall clock"
+                        )
+                        print(
+                            f"  Improvement: "
+                            f"{evidence.get('wall_clock_improvement', 0):.0f}s "
+                            f"({evidence.get('wall_clock_improvement_pct', 0):.1f}%)"
+                        )
+                    elif confidence == "single_run":
+                        print(
+                            f"  Correlation (concurrency↔duration): "
+                            f"{evidence.get('correlation', 0):.2f}"
+                        )
+                        print(
+                            f"  Effective parallelism: "
+                            f"{evidence.get('effective_parallelism', 0):.1f}"
+                            f"/{evidence.get('max_workers_used', 0)}"
+                        )
+                        print(f"  Efficiency: {evidence.get('efficiency', 0):.1%}")
 
             print(f"\nRecommended max_workers: {result.recommended_workers}")
 
@@ -1371,7 +1466,8 @@ def _stats_optimize(args) -> None:
                     print(f"  ⚠ {w}")
 
             # Write optimized taskfile
-            if result.predecessor_map:
+            output_path = None
+            if result.predecessor_map or result.concurrency_ceiling:
                 output_path = args.output_file
                 if not output_path:
                     stem = taskfile_path.stem
@@ -1385,13 +1481,40 @@ def _stats_optimize(args) -> None:
                 print(f"\n✓ Optimized task file written to: {output_path}")
                 print(f"  Use: rushti run --tasks {output_path}")
             else:
+                # Driver found but insufficient heavy groups for chains
+                # and no concurrency ceiling — fall back to longest_first
                 print(
-                    "\nNo optimization applied — consider lowering --sensitivity "
-                    "or using longest_first/shortest_first."
+                    "\nNo contention chains generated — falling back to "
+                    "standard optimization (longest_first)."
                 )
 
+                from rushti.taskfile_ops import analyze_runs
+                from rushti.taskfile_ops import (
+                    write_optimized_taskfile as write_optimized_taskfile_standard,
+                )
+
+                fallback_report = analyze_runs(
+                    workflow=args.workflow,
+                    stats_db=stats_db,
+                    run_count=args.lookback_runs,
+                    ewma_alpha=args.ewma_alpha,
+                )
+
+                output_path = args.output_file
+                if not output_path:
+                    output_path = resolve_app_path(f"{taskfile_path.stem}_optimized.json")
+
+                write_optimized_taskfile_standard(
+                    original_taskfile_path=str(taskfile_path),
+                    optimized_order=fallback_report.optimized_order,
+                    output_path=output_path,
+                    report=fallback_report,
+                )
+                print(f"\n✓ Optimized task file written to: {output_path}")
+                print(f"  Use: rushti run --tasks {output_path}")
+
             # Generate DAG visualization + HTML optimization report
-            if not args.no_report and result.contention_driver:
+            if not args.no_report and has_optimization:
                 from rushti.optimization_report import generate_optimization_report
 
                 # HTML outputs go under visualizations/ (same pattern as _stats_visualize)
@@ -1409,9 +1532,9 @@ def _stats_optimize(args) -> None:
                 report_filename = Path(report_output).name
                 dag_filename = Path(dag_path).name
 
-                # Generate DAG from optimized taskfile (if chains were created)
+                # Generate DAG from optimized taskfile (if output was written)
                 dag_generated = False
-                if result.predecessor_map:
+                if output_path and result.predecessor_map:
                     try:
                         from rushti.taskfile_ops import visualize_dag
 
@@ -1434,6 +1557,15 @@ def _stats_optimize(args) -> None:
                     dag_url=dag_filename if dag_generated else None,
                 )
                 print(f"  Optimization report: {report_output}")
+
+            print(
+                "\n⚠ Note: Contention-aware optimization is based on statistical "
+                "analysis of historical\n  execution data. The recommendations "
+                "follow theoretical reasoning but actual TM1\n  server behavior "
+                "depends on factors beyond task ordering — server load, memory,\n"
+                "  concurrent users, and data volumes. Test the optimized taskfile "
+                "before deploying\n  to production."
+            )
 
         finally:
             stats_db.close()
@@ -1521,8 +1653,7 @@ def _stats_visualize(args) -> None:
                 print(f"Warning: DAG visualization skipped ({e})")
         else:
             print(
-                "Warning: No accessible taskfile found in run history, "
-                "skipping DAG visualization"
+                "Warning: No accessible taskfile found in run history, skipping DAG visualization"
             )
 
         # --- Generate dashboard ---

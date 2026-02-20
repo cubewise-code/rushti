@@ -720,12 +720,74 @@ class StatsDatabase:
         cursor.execute(
             """
             SELECT run_id, start_time, end_time, duration_seconds, status, task_count,
-                   success_count, failure_count
+                   success_count, failure_count, max_workers
             FROM runs
             WHERE workflow = ?
             ORDER BY start_time DESC
             """,
             (workflow,),
+        )
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_run_task_stats(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Get aggregate task statistics for a single run.
+
+        :param run_id: Run identifier
+        :return: Dict with total_duration, task_count, avg_duration or None
+        """
+        if not self.enabled or not self._conn:
+            return None
+
+        cursor = self._conn.cursor()
+        cursor.execute(
+            """
+            SELECT SUM(duration_seconds) as total_duration,
+                   COUNT(*) as task_count,
+                   AVG(duration_seconds) as avg_duration
+            FROM task_results
+            WHERE run_id = ? AND status = 'Success'
+            """,
+            (run_id,),
+        )
+        row = cursor.fetchone()
+        if not row or row["task_count"] == 0:
+            return None
+
+        return {
+            "total_duration": row["total_duration"],
+            "task_count": row["task_count"],
+            "avg_duration": row["avg_duration"],
+        }
+
+    def get_concurrent_task_counts(self, run_id: str) -> List[Dict[str, Any]]:
+        """Get per-task concurrent task count for concurrency ceiling analysis.
+
+        For each task in the run, counts how many other tasks had overlapping
+        execution windows (start_time < this.end_time AND end_time > this.start_time).
+
+        :param run_id: Run identifier
+        :return: List of dicts with task_signature, duration_seconds, concurrent_count
+        """
+        if not self.enabled or not self._conn:
+            return []
+
+        cursor = self._conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                a.task_signature,
+                a.duration_seconds,
+                (SELECT COUNT(*) FROM task_results b
+                 WHERE b.run_id = a.run_id
+                 AND b.start_time < a.end_time
+                 AND b.end_time > a.start_time
+                 AND b.id != a.id) as concurrent_count
+            FROM task_results a
+            WHERE a.run_id = ? AND a.status = 'Success'
+            ORDER BY a.start_time
+            """,
+            (run_id,),
         )
 
         return [dict(row) for row in cursor.fetchall()]

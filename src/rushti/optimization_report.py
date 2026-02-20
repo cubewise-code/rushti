@@ -119,6 +119,8 @@ def _prepare_report_data(
         "chains": chains,
         "worker_breakdown": worker_breakdown,
         "predecessor_count": len(result.predecessor_map),
+        "concurrency_ceiling": result.concurrency_ceiling,
+        "ceiling_evidence": result.ceiling_evidence,
     }
 
 
@@ -206,7 +208,7 @@ def generate_optimization_report(
     warnings_html = ""
     if result.warnings:
         warning_items = "".join(
-            f'<div style="padding:8px 0;border-bottom:1px solid #FDE68A;">' f"&#9888; {w}</div>"
+            f'<div style="padding:8px 0;border-bottom:1px solid #FDE68A;">&#9888; {w}</div>'
             for w in result.warnings
         )
         warnings_html = f"""
@@ -215,6 +217,125 @@ def generate_optimization_report(
             <div style="font-size:0.85rem;color:#92400E;">{warning_items}</div>
         </div>
         """
+
+    # Concurrency ceiling HTML (conditional)
+    ceiling_html = ""
+    if result.concurrency_ceiling and result.ceiling_evidence:
+        ev = result.ceiling_evidence
+        confidence = ev.get("confidence", "unknown")
+
+        if confidence in ("multi_run", "scale_up"):
+            levels = ev.get("worker_levels", [])
+            rows_html = ""
+            for lvl in sorted(levels, key=lambda x: x["max_workers"]):
+                is_best = lvl["max_workers"] == ev.get("best_level", {}).get("max_workers")
+                row_style = "background:#F0FDF4;font-weight:600;" if is_best else ""
+                best_badge = ' <span class="badge badge-info">best</span>' if is_best else ""
+                rows_html += (
+                    f'<tr style="{row_style}">'
+                    f"<td>{lvl['max_workers']}{best_badge}</td>"
+                    f"<td>{lvl['wall_clock']:.0f}s</td>"
+                    f"<td>{lvl['avg_task_duration']:.1f}s</td>"
+                    f"<td>{lvl['effective_parallelism']:.1f}</td>"
+                    f"<td>{lvl['efficiency']:.1%}</td>"
+                    f"</tr>"
+                )
+            if confidence == "scale_up":
+                section_title = "Scale-Up Opportunity"
+                section_color = "#059669"
+                badge_color = "#059669"
+                badge_text = "Scale-up recommended"
+                tip_text = (
+                    "Historical runs show that more workers produced faster wall clock times. "
+                    "Workers were previously reduced too aggressively. "
+                    "Increasing workers back to the best-observed level should improve performance."
+                )
+                footer_text = (
+                    f"Recommended: <strong>{result.concurrency_ceiling}</strong> workers "
+                    f"(best observed performance level)"
+                )
+            else:
+                section_title = "Concurrency Ceiling Analysis"
+                section_color = "#7C3AED"
+                badge_color = "#8B5CF6"
+                badge_text = "Multi-run comparison"
+                tip_text = (
+                    "When too many tasks run simultaneously, server-side resource contention "
+                    "causes each task to take longer. The effective parallelism measures how much "
+                    "of the worker capacity is actually productive. Lower efficiency means more "
+                    'time is wasted on contention. Learn more: <a href="https://en.wikipedia.org/'
+                    'wiki/Amdahl%%27s_law" target="_blank" style="color:#00AEEF;">Amdahl\'s Law</a>'
+                )
+                footer_text = (
+                    f"Recommended ceiling: <strong>{result.concurrency_ceiling}</strong> workers "
+                    f"(based on effective parallelism of best run)"
+                )
+
+            ceiling_html = f"""
+        <div class="chart-panel section" style="border-color:{badge_color};">
+            <h3 style="color:{section_color};">{section_title}
+                <span class="help-icon">?<span class="help-tip">{tip_text}</span></span>
+            </h3>
+            <div style="margin-bottom:16px;">
+                <span class="badge" style="background:{badge_color};color:white;">{badge_text}</span>
+                <span style="font-size:0.85rem;color:#64748B;margin-left:8px;">
+                    Improvement: {ev.get("wall_clock_improvement", 0):.0f}s
+                    ({ev.get("wall_clock_improvement_pct", 0):.1f}%)
+                </span>
+            </div>
+            <table class="details-table">
+                <thead><tr>
+                    <th>Max Workers</th><th>Wall Clock</th><th>Avg Task Duration</th>
+                    <th>Effective Parallelism</th><th>Efficiency</th>
+                </tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+            <div style="margin-top:12px;font-size:0.85rem;color:#64748B;">
+                {footer_text}
+            </div>
+        </div>
+            """
+        elif confidence == "single_run":
+            correlation = ev.get("correlation", 0)
+            eff_par = ev.get("effective_parallelism", 0)
+            max_w = ev.get("max_workers_used", 0)
+            efficiency = ev.get("efficiency", 0)
+
+            # Color code correlation strength
+            r_color = (
+                "#DC2626" if correlation > 0.9 else "#F59E0B" if correlation > 0.8 else "#10B981"
+            )
+
+            ceiling_html = f"""
+        <div class="chart-panel section" style="border-color:#8B5CF6;">
+            <h3 style="color:#7C3AED;">Concurrency Ceiling Analysis
+                <span class="help-icon">?<span class="help-tip">When too many tasks run simultaneously, server-side resource contention causes each task to take longer. A high correlation between concurrent task count and task duration indicates the server is overwhelmed. The effective parallelism shows how much of the worker capacity is actually productive. Learn more: <a href="https://en.wikipedia.org/wiki/Amdahl%27s_law" target="_blank" style="color:#00AEEF;">Amdahl's Law</a></span></span>
+            </h3>
+            <div style="margin-bottom:16px;">
+                <span class="badge" style="background:#8B5CF6;color:white;">Single-run inference</span>
+                <span style="font-size:0.85rem;color:#64748B;margin-left:8px;">
+                    Run another pass at reduced workers to confirm
+                </span>
+            </div>
+            <div class="summary-cards" style="margin-bottom:0;">
+                <div class="card" style="border-color:{r_color};">
+                    <div class="card-label">Correlation</div>
+                    <div class="card-value" style="color:{r_color};">{correlation:.2f}</div>
+                    <div class="card-sub">Concurrency &#8596; Duration (<a href="https://en.wikipedia.org/wiki/Pearson_correlation_coefficient" target="_blank" style="color:#00AEEF;">Pearson r</a>)</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Effective Parallelism</div>
+                    <div class="card-value">{eff_par:.1f} / {max_w}</div>
+                    <div class="card-sub">Only {efficiency:.0%} of workers productive</div>
+                </div>
+                <div class="card best">
+                    <div class="card-label">Recommended Ceiling</div>
+                    <div class="card-value">{result.concurrency_ceiling}</div>
+                    <div class="card-sub">workers (rounded to nearest 5)</div>
+                </div>
+            </div>
+        </div>
+            """
 
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -468,7 +589,7 @@ def generate_optimization_report(
             <div class="header-left">
                 {_LOGO_SVG}
                 <div>
-                    <div class="header-title">Contention Analysis Report</div>
+                    <div class="header-title">Optimization Report</div>
                     <div class="header-subtitle">Workflow: {workflow}</div>
                 </div>
             </div>
@@ -520,6 +641,20 @@ def generate_optimization_report(
         </div>
 
         {warnings_html}
+
+        <!-- Disclaimer -->
+        <div class="chart-panel" style="border-color:#F59E0B;background:#FFFBEB;margin-bottom:28px;">
+            <h3 style="color:#D97706;">&#9888; Important</h3>
+            <div style="font-size:0.85rem;color:#92400E;line-height:1.6;">
+                Contention-aware optimization is based on statistical analysis of historical execution data.
+                The recommendations follow theoretical reasoning (IQR outlier detection, DAG scheduling,
+                concurrency analysis) but actual TM1 server behavior depends on factors beyond task ordering &mdash;
+                server load, memory pressure, concurrent users, and data volumes. There is no one-size-fits-all
+                solution. Test the optimized taskfile in a non-production environment before deploying.
+            </div>
+        </div>
+
+        {ceiling_html}
 
         <!-- Parameter Variance Analysis -->
         <div class="chart-panel section">

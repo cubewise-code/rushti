@@ -59,7 +59,7 @@ export default function OptimizationShowcase() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <Sparkles className="w-4 h-4 text-amber-500" />
-                    <span className="text-slate-500 text-sm font-medium">EWMA Optimization</span>
+                    <span className="text-slate-500 text-sm font-medium">Contention-Aware Optimization</span>
                   </div>
                   <div className="w-16" />
                 </div>
@@ -125,7 +125,7 @@ export default function OptimizationShowcase() {
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded bg-gradient-to-r from-emerald-400 to-emerald-500" />
-                      <span className="text-xs text-slate-500">After EWMA learning</span>
+                      <span className="text-xs text-slate-500">After optimization</span>
                     </div>
                   </div>
                 </div>
@@ -158,8 +158,8 @@ export default function OptimizationShowcase() {
             </h2>
 
             <p className="text-slate-600 text-lg mb-8 leading-relaxed max-w-lg">
-              RushTI's EWMA-based learning algorithm analyzes your execution history and continuously
-              refines task scheduling. The more you run, the better it gets.
+              RushTI analyzes your execution history to detect resource contention, chain heavy
+              task groups, and recommend optimal worker counts — automatically.
             </p>
 
             {/* Stats cards */}
@@ -176,26 +176,26 @@ export default function OptimizationShowcase() {
               </div>
               <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                 <Zap className="w-5 h-5 text-amber-500 mb-2" />
-                <div className="text-2xl font-bold text-slate-900">Better</div>
-                <div className="text-slate-500 text-xs">CPU Utilization</div>
+                <div className="text-2xl font-bold text-slate-900">Auto</div>
+                <div className="text-slate-500 text-xs">Worker Tuning</div>
               </div>
             </div>
 
             {/* How it works */}
             <div className="mt-8 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-100">
-              <div className="text-sm font-medium text-slate-700 mb-2">How EWMA optimization works:</div>
+              <div className="text-sm font-medium text-slate-700 mb-2">How contention-aware optimization works:</div>
               <ul className="text-sm text-slate-600 space-y-1">
                 <li className="flex items-start gap-2">
                   <span className="text-amber-500 mt-0.5">•</span>
-                  Tracks actual execution times vs estimates
+                  Detects which parameters drive resource contention
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-amber-500 mt-0.5">•</span>
-                  Weighs recent runs more heavily for accuracy
+                  Chains heavy task groups to prevent server overload
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-amber-500 mt-0.5">•</span>
-                  Choose <code className="text-amber-700 bg-amber-50 px-1 rounded">shortest_first</code> or <code className="text-amber-700 bg-amber-50 px-1 rounded">longest_first</code> scheduling
+                  Falls back to <code className="text-amber-700 bg-amber-50 px-1 rounded">longest_first</code> or <code className="text-amber-700 bg-amber-50 px-1 rounded">shortest_first</code> scheduling
                 </li>
               </ul>
             </div>

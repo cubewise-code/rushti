@@ -445,7 +445,7 @@ class TestGenerateReportNoOptimization(unittest.TestCase):
             )
             content = Path(output_path).read_text(encoding="utf-8")
             # Should still render (diagnostic info)
-            self.assertIn("Contention Analysis Report", content)
+            self.assertIn("Optimization Report", content)
             self.assertIn("const DATA =", content)
         finally:
             os.remove(output_path)

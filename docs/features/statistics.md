@@ -76,6 +76,7 @@ Open the CSV in Excel or any reporting tool for further analysis.
 | `rushti stats export --workflow ID` | Export run data to CSV |
 | `rushti stats visualize --workflow ID` | Generate interactive HTML dashboard |
 | `rushti stats analyze --workflow ID` | Analyze runs and suggest optimizations |
+| `rushti stats optimize --workflow ID` | Contention-aware analysis with HTML report |
 
 ### Database Commands
 
@@ -139,11 +140,14 @@ rushti stats visualize --workflow daily-refresh --output dashboard.html
 # 6. Export raw data for deeper analysis in Excel
 rushti stats export --workflow daily-refresh --output results.csv
 
-# 7. Analyze and generate an optimized task file
+# 7. Analyze and generate an optimized task file (duration-based reordering)
 rushti stats analyze \
   --workflow daily-refresh \
   --tasks daily-refresh.json \
   --output daily-refresh-optimized.json
+
+# 8. Or run contention-aware analysis for deeper optimization
+rushti stats optimize --workflow daily-refresh
 ```
 
 ---
@@ -296,13 +300,28 @@ The statistics database directly powers RushTI's [Self-Optimization](optimizatio
 You can also manually generate an optimized task file:
 
 ```bash
+# Duration-based reordering (longest first)
 rushti stats analyze \
   --workflow daily-refresh \
   --tasks daily-refresh.json \
   --output daily-refresh-optimized.json
 ```
 
-See [Self-Optimization](optimization.md) for the full details.
+### Contention-Aware Analysis
+
+For deeper optimization, use `rushti stats optimize` to detect resource contention patterns, identify heavy outlier groups, and get data-driven worker count recommendations:
+
+```bash
+rushti stats optimize --workflow daily-refresh
+```
+
+This analyzes execution history across multiple runs (including runs at different `max_workers` levels) and produces:
+
+- An optimized task file with predecessor chains to prevent heavy tasks from running simultaneously
+- An HTML optimization report with charts and analysis details
+- A recommended `max_workers` value based on observed server capacity
+
+See [Self-Optimization: Contention-Aware](optimization.md#contention-aware-optimization) for the full details.
 
 ---
 
@@ -342,7 +361,7 @@ cp data/rushti_stats.db data/rushti_stats_backup.db
 
 ## Customize Further
 
-- **[Self-Optimization](optimization.md)** — Use stats data to optimize task ordering
+- **[Self-Optimization](optimization.md)** — Use stats data to optimize task ordering and detect contention
 - **[TM1 Integration](tm1-integration.md)** — Push stats to a TM1 cube for PA dashboards
 - **[Performance Tuning](../advanced/performance-tuning.md)** — Analyze stats to tune worker counts and identify bottlenecks
 - **[Settings Reference](../advanced/settings-reference.md)** — Complete `[stats]` settings documentation

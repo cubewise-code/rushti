@@ -64,6 +64,8 @@ class ContentionAnalysisResult:
     predecessor_map: Dict[str, List[str]]  # {task_id: [predecessor_ids]}
     warnings: List[str] = field(default_factory=list)
     parameter_analyses: List["ParameterAnalysis"] = field(default_factory=list)
+    concurrency_ceiling: Optional[int] = None
+    ceiling_evidence: Optional[Dict[str, Any]] = None
 
     @property
     def total_tasks(self) -> int:
@@ -392,6 +394,266 @@ def _recommend_max_workers(
     return max(fan_out_size, recommended)
 
 
+def _pearson_correlation(xs: List[float], ys: List[float]) -> float:
+    """Compute Pearson correlation coefficient between two sequences.
+
+    :param xs: First sequence of values
+    :param ys: Second sequence of values
+    :return: Pearson r (-1.0 to 1.0), or 0.0 if computation is not possible
+    """
+    n = len(xs)
+    if n < 3 or n != len(ys):
+        return 0.0
+
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+
+    sum_xy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    sum_x2 = sum((x - mean_x) ** 2 for x in xs)
+    sum_y2 = sum((y - mean_y) ** 2 for y in ys)
+
+    denom = math.sqrt(sum_x2 * sum_y2)
+    if denom == 0:
+        return 0.0
+
+    return sum_xy / denom
+
+
+def _round_to_5(value: float) -> int:
+    """Round a value to the nearest multiple of 5, with a minimum of 5.
+
+    :param value: Value to round
+    :return: Rounded integer (multiple of 5, minimum 5)
+    """
+    return max(5, int(round(value / 5.0) * 5))
+
+
+def _detect_concurrency_ceiling(
+    stats_db: StatsDatabase,
+    workflow: str,
+    min_correlation: float = 0.7,
+    max_efficiency_ratio: float = 0.75,
+) -> Optional[Dict[str, Any]]:
+    """Detect server-side concurrency ceiling or scale-up opportunity from execution history.
+
+    Analyzes whether the server is overwhelmed by too many concurrent tasks,
+    or whether more workers would improve performance.
+    Works in two modes:
+
+    Phase 1 (single run): Analyzes within-run concurrency-duration correlation.
+    If tasks that ran at higher concurrency took proportionally longer, the
+    server has a concurrency ceiling. Recommends reducing max_workers to the
+    effective parallelism level.
+
+    Phase 2 (multi-run): When 2+ runs exist at different max_workers values,
+    compares wall clock times. If fewer workers produced a shorter wall clock,
+    the ceiling is confirmed and refined. If more workers produced a shorter
+    wall clock, a scale-up recommendation is returned.
+
+    :param stats_db: Stats database connection
+    :param workflow: Workflow name
+    :param min_correlation: Minimum Pearson r to consider ceiling present
+    :param max_efficiency_ratio: Maximum efficiency ratio below which ceiling is detected
+    :return: Dict with ceiling/scale-up analysis or None if no signal detected
+    """
+    runs = stats_db.get_runs_for_workflow(workflow)
+    successful_runs = [r for r in runs if r.get("status") == "Success"]
+
+    if not successful_runs:
+        return None
+
+    # Phase 2: Multi-run comparison (takes priority if available)
+    # Group runs by max_workers
+    workers_to_runs: Dict[int, List[Dict]] = {}
+    for run in successful_runs:
+        w = run.get("max_workers")
+        if w is not None and run.get("duration_seconds") is not None:
+            if w not in workers_to_runs:
+                workers_to_runs[w] = []
+            workers_to_runs[w].append(run)
+
+    if len(workers_to_runs) >= 2:
+        # We have runs at different max_workers — compare them
+        # For each worker level, use the most recent run
+        worker_levels = []
+        for w, w_runs in sorted(workers_to_runs.items()):
+            best_run = w_runs[0]  # Already sorted by start_time DESC
+            task_stats = stats_db.get_run_task_stats(best_run["run_id"])
+            if task_stats:
+                eff_parallelism = task_stats["total_duration"] / best_run["duration_seconds"]
+                efficiency = eff_parallelism / w
+                worker_levels.append(
+                    {
+                        "max_workers": w,
+                        "wall_clock": best_run["duration_seconds"],
+                        "total_task_time": task_stats["total_duration"],
+                        "task_count": task_stats["task_count"],
+                        "avg_task_duration": task_stats["avg_duration"],
+                        "effective_parallelism": round(eff_parallelism, 1),
+                        "efficiency": round(efficiency, 3),
+                        "run_id": best_run["run_id"],
+                    }
+                )
+
+        if len(worker_levels) >= 2:
+            # Find the best run (shortest wall clock)
+            best_level = min(worker_levels, key=lambda x: x["wall_clock"])
+            worst_level = max(worker_levels, key=lambda x: x["wall_clock"])
+
+            # Ceiling detected if a run with fewer workers had shorter wall clock
+            if best_level["max_workers"] < worst_level["max_workers"]:
+                ceiling_workers = _round_to_5(best_level["effective_parallelism"])
+
+                logger.info(
+                    f"Concurrency ceiling detected (multi-run): "
+                    f"{worst_level['max_workers']}w={worst_level['wall_clock']:.0f}s vs "
+                    f"{best_level['max_workers']}w={best_level['wall_clock']:.0f}s. "
+                    f"Recommending {ceiling_workers} workers."
+                )
+
+                return {
+                    "ceiling_workers": ceiling_workers,
+                    "confidence": "multi_run",
+                    "worker_levels": worker_levels,
+                    "best_level": best_level,
+                    "worst_level": worst_level,
+                    "wall_clock_improvement": round(
+                        worst_level["wall_clock"] - best_level["wall_clock"], 1
+                    ),
+                    "wall_clock_improvement_pct": round(
+                        (worst_level["wall_clock"] - best_level["wall_clock"])
+                        / worst_level["wall_clock"]
+                        * 100,
+                        1,
+                    ),
+                }
+
+            # Scale-up detected: more workers produced shorter wall clock
+            # The current (most recent) run used fewer workers than the best,
+            # so recommend scaling back up to the efficient sweet spot.
+            most_recent_workers = successful_runs[0].get("max_workers")
+            if (
+                best_level["max_workers"] > worst_level["max_workers"]
+                and most_recent_workers is not None
+                and best_level["max_workers"] > most_recent_workers
+            ):
+                # Find the efficient sweet spot: fewest workers within 10%
+                # of the best wall clock. This avoids recommending far more
+                # workers when a smaller count achieves nearly the same speed.
+                best_wall_clock = best_level["wall_clock"]
+                threshold = best_wall_clock * 1.10
+                efficient_levels = [lvl for lvl in worker_levels if lvl["wall_clock"] <= threshold]
+                if efficient_levels:
+                    sweet_spot = min(efficient_levels, key=lambda x: x["max_workers"])
+                    recommended = sweet_spot["max_workers"]
+                else:
+                    sweet_spot = best_level
+                    recommended = best_level["max_workers"]
+
+                # Only recommend if actually higher than current
+                if recommended > most_recent_workers:
+                    # Compute improvement relative to most recent run
+                    current_level = next(
+                        (
+                            lvl
+                            for lvl in worker_levels
+                            if lvl["run_id"] == successful_runs[0]["run_id"]
+                        ),
+                        worst_level,
+                    )
+
+                    logger.info(
+                        f"Scale-up opportunity detected (multi-run): "
+                        f"current {current_level['max_workers']}w="
+                        f"{current_level['wall_clock']:.0f}s, "
+                        f"sweet spot {recommended}w={sweet_spot['wall_clock']:.0f}s. "
+                        f"Recommending increase to {recommended} workers."
+                    )
+
+                    return {
+                        "ceiling_workers": recommended,
+                        "confidence": "scale_up",
+                        "worker_levels": worker_levels,
+                        "best_level": sweet_spot,
+                        "worst_level": current_level,
+                        "wall_clock_improvement": round(
+                            current_level["wall_clock"] - sweet_spot["wall_clock"], 1
+                        ),
+                        "wall_clock_improvement_pct": round(
+                            (current_level["wall_clock"] - sweet_spot["wall_clock"])
+                            / current_level["wall_clock"]
+                            * 100,
+                            1,
+                        ),
+                    }
+
+    # Phase 1: Single-run analysis using within-run concurrency-duration correlation
+    most_recent = successful_runs[0]
+    run_id = most_recent["run_id"]
+    max_workers = most_recent.get("max_workers")
+    wall_clock = most_recent.get("duration_seconds")
+
+    if max_workers is None or wall_clock is None or wall_clock <= 0:
+        return None
+
+    # Get per-task concurrency counts
+    concurrent_data = stats_db.get_concurrent_task_counts(run_id)
+    if len(concurrent_data) < 5:
+        return None
+
+    # Get aggregate stats
+    task_stats = stats_db.get_run_task_stats(run_id)
+    if not task_stats:
+        return None
+
+    concurrencies = [d["concurrent_count"] for d in concurrent_data]
+    durations = [d["duration_seconds"] for d in concurrent_data]
+
+    # Compute Pearson correlation
+    correlation = _pearson_correlation(
+        [float(c) for c in concurrencies],
+        [float(d) for d in durations],
+    )
+
+    # Compute effective parallelism and efficiency
+    effective_parallelism = task_stats["total_duration"] / wall_clock
+    efficiency = effective_parallelism / max_workers
+
+    logger.info(
+        f"Concurrency ceiling analysis: correlation={correlation:.2f}, "
+        f"effective_parallelism={effective_parallelism:.1f}/{max_workers}, "
+        f"efficiency={efficiency:.1%}"
+    )
+
+    # Ceiling detected if: strong correlation AND low efficiency
+    if correlation >= min_correlation and efficiency < max_efficiency_ratio:
+        ceiling_workers = _round_to_5(effective_parallelism)
+
+        # Don't recommend if already close to or above current max_workers
+        if ceiling_workers >= max_workers:
+            return None
+
+        logger.info(
+            f"Concurrency ceiling detected (single-run): "
+            f"recommending {ceiling_workers} workers (was {max_workers})"
+        )
+
+        return {
+            "ceiling_workers": ceiling_workers,
+            "confidence": "single_run",
+            "correlation": round(correlation, 4),
+            "effective_parallelism": round(effective_parallelism, 1),
+            "efficiency": round(efficiency, 3),
+            "max_workers_used": max_workers,
+            "wall_clock": round(wall_clock, 1),
+            "total_task_time": round(task_stats["total_duration"], 1),
+            "avg_task_duration": round(task_stats["avg_duration"], 1),
+            "task_count": task_stats["task_count"],
+        }
+
+    return None
+
+
 def analyze_contention(
     stats_db: StatsDatabase,
     workflow: str,
@@ -430,9 +692,29 @@ def analyze_contention(
     # Step 2: Identify varying parameters
     varying_keys = _identify_varying_parameters(task_params)
     if not varying_keys:
-        return _empty_result(
-            "No varying parameters found — all tasks have identical parameters", sensitivity
-        )
+        msg = "No varying parameters found — all tasks have identical parameters"
+        # No varying parameters → try concurrency ceiling / scale-up detection
+        ceiling_result = _detect_concurrency_ceiling(stats_db, workflow)
+        if ceiling_result:
+            confidence = ceiling_result["confidence"]
+            if confidence == "scale_up":
+                ceiling_msg = (
+                    f"Scale-up opportunity detected: recommending increase to "
+                    f"{ceiling_result['ceiling_workers']} workers"
+                )
+            else:
+                ceiling_msg = (
+                    f"Concurrency ceiling detected: recommending {ceiling_result['ceiling_workers']} "
+                    f"workers (confidence: {confidence})"
+                )
+            logger.info(ceiling_msg)
+            result = _empty_result(msg, sensitivity)
+            result.concurrency_ceiling = ceiling_result["ceiling_workers"]
+            result.ceiling_evidence = ceiling_result
+            result.recommended_workers = ceiling_result["ceiling_workers"]
+            result.warnings = [msg, ceiling_msg]
+            return result
+        return _empty_result(msg, sensitivity)
 
     logger.info(f"Varying parameters: {varying_keys}")
 
@@ -446,6 +728,30 @@ def analyze_contention(
         if all_analyses:
             details = ", ".join(f"{a.key}={a.range_seconds:.1f}s" for a in all_analyses[:3])
             msg += f" (ranges: {details})"
+
+        # No contention driver — try concurrency ceiling / scale-up detection (Case 2)
+        ceiling_result = _detect_concurrency_ceiling(stats_db, workflow)
+        if ceiling_result:
+            confidence = ceiling_result["confidence"]
+            if confidence == "scale_up":
+                ceiling_msg = (
+                    f"Scale-up opportunity detected: recommending increase to "
+                    f"{ceiling_result['ceiling_workers']} workers"
+                )
+            else:
+                ceiling_msg = (
+                    f"Concurrency ceiling detected: recommending {ceiling_result['ceiling_workers']} "
+                    f"workers (confidence: {confidence})"
+                )
+            logger.info(ceiling_msg)
+            result = _empty_result(msg, sensitivity)
+            result.concurrency_ceiling = ceiling_result["ceiling_workers"]
+            result.ceiling_evidence = ceiling_result
+            result.recommended_workers = ceiling_result["ceiling_workers"]
+            result.warnings = [msg, ceiling_msg]
+            result.parameter_analyses = all_analyses
+            return result
+
         return _empty_result(msg, sensitivity)
 
     contention_driver = driver_analysis.key
@@ -521,6 +827,28 @@ def analyze_contention(
 
     critical_path = sum(g.avg_duration for g in heavy_groups)
 
+    # Step 9: Concurrency ceiling / scale-up detection (Case 3: both driver AND ceiling)
+    concurrency_ceiling = None
+    ceiling_evidence = None
+    ceiling_result = _detect_concurrency_ceiling(stats_db, workflow)
+    if ceiling_result:
+        concurrency_ceiling = ceiling_result["ceiling_workers"]
+        ceiling_evidence = ceiling_result
+        if ceiling_result["confidence"] == "scale_up":
+            # Scale-up: set a floor (don't go below the best-observed level)
+            if ceiling_result["ceiling_workers"] > recommended_workers:
+                logger.info(
+                    f"Scale-up evidence ({ceiling_result['ceiling_workers']}) is higher than "
+                    f"driver recommendation ({recommended_workers}), raising workers"
+                )
+                recommended_workers = ceiling_result["ceiling_workers"]
+        elif ceiling_result["ceiling_workers"] < recommended_workers:
+            logger.info(
+                f"Concurrency ceiling ({ceiling_result['ceiling_workers']}) is lower than "
+                f"driver recommendation ({recommended_workers}), capping workers"
+            )
+            recommended_workers = ceiling_result["ceiling_workers"]
+
     return ContentionAnalysisResult(
         contention_driver=contention_driver,
         fan_out_keys=fan_out_keys,
@@ -536,6 +864,8 @@ def analyze_contention(
         predecessor_map=predecessor_map,
         warnings=warnings,
         parameter_analyses=all_analyses,
+        concurrency_ceiling=concurrency_ceiling,
+        ceiling_evidence=ceiling_evidence,
     )
 
 
@@ -629,13 +959,30 @@ def write_optimized_taskfile(
         taskfile.settings.max_workers = result.recommended_workers
 
     # Update metadata
-    heavy_vals = [g.driver_value for g in result.heavy_groups]
-    chain_desc = ">".join(heavy_vals) if heavy_vals else "none"
-    taskfile.metadata.description = (
-        f"Contention-aware optimized: driver={result.contention_driver}, "
-        f"chain=[{chain_desc}], sensitivity={result.sensitivity}, "
-        f"recommended_workers={result.recommended_workers}"
-    )
+    if result.contention_driver:
+        heavy_vals = [g.driver_value for g in result.heavy_groups]
+        chain_desc = ">".join(heavy_vals) if heavy_vals else "none"
+        taskfile.metadata.description = (
+            f"Contention-aware optimized: driver={result.contention_driver}, "
+            f"chain=[{chain_desc}], sensitivity={result.sensitivity}, "
+            f"recommended_workers={result.recommended_workers}"
+        )
+    elif result.concurrency_ceiling:
+        evidence = result.ceiling_evidence or {}
+        if evidence.get("confidence") == "scale_up":
+            taskfile.metadata.description = (
+                f"Scale-up optimized: max_workers increased to "
+                f"{result.recommended_workers} (best observed={result.concurrency_ceiling})"
+            )
+        else:
+            taskfile.metadata.description = (
+                f"Concurrency ceiling optimized: max_workers reduced to "
+                f"{result.recommended_workers} (ceiling={result.concurrency_ceiling})"
+            )
+    else:
+        taskfile.metadata.description = (
+            f"Optimized: recommended_workers={result.recommended_workers}"
+        )
 
     # Write output
     output = Path(output_path)

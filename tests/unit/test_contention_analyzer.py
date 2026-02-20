@@ -16,6 +16,9 @@ from rushti.contention_analyzer import (
     _detect_heavy_outliers,
     _build_predecessor_chains,
     _recommend_max_workers,
+    _pearson_correlation,
+    _round_to_5,
+    _detect_concurrency_ceiling,
     analyze_contention,
     get_archived_taskfile_path,
     write_optimized_taskfile,
@@ -582,6 +585,9 @@ class TestAnalyzeContention(TestCase):
 
         stats_db.get_task_durations.side_effect = get_durations
 
+        # Mock ceiling-detection methods (default: no runs for ceiling analysis)
+        stats_db.get_runs_for_workflow.return_value = []
+
         return stats_db
 
     def test_kdp_like_workflow(self):
@@ -943,3 +949,548 @@ class TestGetArchivedTaskfilePath(TestCase):
 
         result = get_archived_taskfile_path(stats_db, "workflow_with_null")
         self.assertIsNone(result)
+
+
+class TestPearsonCorrelation(TestCase):
+    """Tests for _pearson_correlation helper."""
+
+    def test_perfect_positive(self):
+        """Perfect positive correlation returns ~1.0."""
+        xs = [1.0, 2.0, 3.0, 4.0, 5.0]
+        ys = [10.0, 20.0, 30.0, 40.0, 50.0]
+        r = _pearson_correlation(xs, ys)
+        self.assertAlmostEqual(r, 1.0, places=5)
+
+    def test_perfect_negative(self):
+        """Perfect negative correlation returns ~-1.0."""
+        xs = [1.0, 2.0, 3.0, 4.0, 5.0]
+        ys = [50.0, 40.0, 30.0, 20.0, 10.0]
+        r = _pearson_correlation(xs, ys)
+        self.assertAlmostEqual(r, -1.0, places=5)
+
+    def test_no_correlation(self):
+        """No correlation returns near 0."""
+        xs = [1.0, 2.0, 3.0, 4.0, 5.0]
+        ys = [5.0, 1.0, 5.0, 1.0, 5.0]
+        r = _pearson_correlation(xs, ys)
+        self.assertAlmostEqual(r, 0.0, places=1)
+
+    def test_too_few_points(self):
+        """Fewer than 3 points returns 0.0."""
+        self.assertEqual(_pearson_correlation([1.0, 2.0], [3.0, 4.0]), 0.0)
+        self.assertEqual(_pearson_correlation([], []), 0.0)
+
+    def test_constant_values(self):
+        """Constant values (zero variance) returns 0.0."""
+        xs = [5.0, 5.0, 5.0, 5.0]
+        ys = [1.0, 2.0, 3.0, 4.0]
+        r = _pearson_correlation(xs, ys)
+        self.assertEqual(r, 0.0)
+
+
+class TestRoundTo5(TestCase):
+    """Tests for _round_to_5 helper."""
+
+    def test_round_down(self):
+        self.assertEqual(_round_to_5(17.4), 15)
+
+    def test_round_up(self):
+        self.assertEqual(_round_to_5(17.7), 20)
+
+    def test_exact(self):
+        self.assertEqual(_round_to_5(30.0), 30)
+
+    def test_minimum_is_5(self):
+        self.assertEqual(_round_to_5(1.0), 5)
+        self.assertEqual(_round_to_5(0.0), 5)
+
+    def test_large_value(self):
+        self.assertEqual(_round_to_5(29.9), 30)
+
+
+class TestDetectConcurrencyCeiling(TestCase):
+    """Tests for _detect_concurrency_ceiling."""
+
+    def _make_mock_db(
+        self,
+        runs=None,
+        task_stats=None,
+        concurrent_data=None,
+    ):
+        """Create a mock StatsDatabase for ceiling detection.
+
+        :param runs: List of run dicts (for get_runs_for_workflow)
+        :param task_stats: Dict or None (for get_run_task_stats)
+        :param concurrent_data: List of dicts (for get_concurrent_task_counts)
+        """
+        db = Mock()
+        db.enabled = True
+        db.get_runs_for_workflow.return_value = runs or []
+
+        if task_stats is not None:
+            db.get_run_task_stats.return_value = task_stats
+        else:
+            db.get_run_task_stats.return_value = None
+
+        db.get_concurrent_task_counts.return_value = concurrent_data or []
+        return db
+
+    def test_no_runs_returns_none(self):
+        """No runs → no ceiling."""
+        db = self._make_mock_db(runs=[])
+        result = _detect_concurrency_ceiling(db, "wf")
+        self.assertIsNone(result)
+
+    def test_single_run_no_data_returns_none(self):
+        """Single run but no task stats → no ceiling."""
+        db = self._make_mock_db(
+            runs=[
+                {
+                    "run_id": "r1",
+                    "status": "Success",
+                    "max_workers": 50,
+                    "duration_seconds": 100.0,
+                }
+            ],
+            task_stats=None,
+            concurrent_data=[],
+        )
+        result = _detect_concurrency_ceiling(db, "wf")
+        self.assertIsNone(result)
+
+    def test_single_run_high_correlation_low_efficiency(self):
+        """Strong correlation + low efficiency → ceiling detected."""
+        # Simulate: tasks at higher concurrency take proportionally longer
+        concurrent_data = []
+        for i in range(50):
+            # concurrency 40-90, duration 100-500 (strong positive correlation)
+            conc = 40 + i
+            dur = 100.0 + i * 8.0  # linear relationship
+            concurrent_data.append(
+                {
+                    "task_signature": f"sig_{i}",
+                    "duration_seconds": dur,
+                    "concurrent_count": conc,
+                }
+            )
+
+        db = self._make_mock_db(
+            runs=[
+                {
+                    "run_id": "r1",
+                    "status": "Success",
+                    "max_workers": 50,
+                    "duration_seconds": 600.0,
+                }
+            ],
+            task_stats={
+                "total_duration": 15000.0,  # effective_parallelism = 25
+                "task_count": 50,
+                "avg_duration": 300.0,
+            },
+            concurrent_data=concurrent_data,
+        )
+        result = _detect_concurrency_ceiling(db, "wf")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["confidence"], "single_run")
+        self.assertEqual(result["ceiling_workers"], 25)
+        self.assertGreater(result["correlation"], 0.7)
+        self.assertLess(result["efficiency"], 0.75)
+
+    def test_single_run_low_correlation_returns_none(self):
+        """Weak correlation → no ceiling detected."""
+        # Random-ish relationship between concurrency and duration
+        concurrent_data = [
+            {
+                "task_signature": f"s{i}",
+                "duration_seconds": 50 + (i % 3) * 10,
+                "concurrent_count": 20 + i,
+            }
+            for i in range(20)
+        ]
+
+        db = self._make_mock_db(
+            runs=[
+                {
+                    "run_id": "r1",
+                    "status": "Success",
+                    "max_workers": 30,
+                    "duration_seconds": 200.0,
+                }
+            ],
+            task_stats={
+                "total_duration": 4000.0,  # eff_par = 20
+                "task_count": 20,
+                "avg_duration": 200.0,
+            },
+            concurrent_data=concurrent_data,
+        )
+        result = _detect_concurrency_ceiling(db, "wf")
+        self.assertIsNone(result)
+
+    def test_single_run_high_efficiency_returns_none(self):
+        """High efficiency means server handles concurrency fine → no ceiling."""
+        concurrent_data = [
+            {
+                "task_signature": f"s{i}",
+                "duration_seconds": 100 + i * 10,
+                "concurrent_count": 10 + i,
+            }
+            for i in range(20)
+        ]
+
+        db = self._make_mock_db(
+            runs=[
+                {
+                    "run_id": "r1",
+                    "status": "Success",
+                    "max_workers": 20,
+                    "duration_seconds": 200.0,
+                }
+            ],
+            task_stats={
+                "total_duration": 3600.0,  # eff_par = 18, efficiency = 18/20 = 0.90
+                "task_count": 20,
+                "avg_duration": 180.0,
+            },
+            concurrent_data=concurrent_data,
+        )
+        result = _detect_concurrency_ceiling(db, "wf")
+        self.assertIsNone(result)
+
+    def test_multi_run_fewer_workers_faster(self):
+        """Fewer workers with shorter wall clock → ceiling confirmed."""
+        runs = [
+            {  # Most recent first (30 workers, faster)
+                "run_id": "r2",
+                "status": "Success",
+                "max_workers": 30,
+                "duration_seconds": 600.0,
+            },
+            {  # Older (50 workers, slower)
+                "run_id": "r1",
+                "status": "Success",
+                "max_workers": 50,
+                "duration_seconds": 800.0,
+            },
+        ]
+
+        db = self._make_mock_db(runs=runs)
+
+        # Mock get_run_task_stats per run_id
+        def get_task_stats(run_id):
+            if run_id == "r2":
+                return {
+                    "total_duration": 10000.0,
+                    "task_count": 70,
+                    "avg_duration": 142.9,
+                }
+            elif run_id == "r1":
+                return {
+                    "total_duration": 20000.0,
+                    "task_count": 70,
+                    "avg_duration": 285.7,
+                }
+            return None
+
+        db.get_run_task_stats.side_effect = get_task_stats
+
+        result = _detect_concurrency_ceiling(db, "wf")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["confidence"], "multi_run")
+        # Best run: 30w, eff_par = 10000/600 = 16.7, rounded to 15
+        self.assertEqual(result["ceiling_workers"], _round_to_5(10000.0 / 600.0))
+        self.assertGreater(result["wall_clock_improvement"], 0)
+
+    def test_multi_run_normal_scaling_returns_none(self):
+        """More workers = faster wall clock → normal scaling, no ceiling."""
+        runs = [
+            {
+                "run_id": "r2",
+                "status": "Success",
+                "max_workers": 50,
+                "duration_seconds": 400.0,
+            },
+            {
+                "run_id": "r1",
+                "status": "Success",
+                "max_workers": 30,
+                "duration_seconds": 600.0,
+            },
+        ]
+
+        db = self._make_mock_db(runs=runs)
+
+        def get_task_stats(run_id):
+            if run_id == "r2":
+                return {"total_duration": 8000.0, "task_count": 70, "avg_duration": 114.3}
+            elif run_id == "r1":
+                return {"total_duration": 9000.0, "task_count": 70, "avg_duration": 128.6}
+            return None
+
+        db.get_run_task_stats.side_effect = get_task_stats
+
+        result = _detect_concurrency_ceiling(db, "wf")
+        self.assertIsNone(result)
+
+    def test_failed_runs_ignored(self):
+        """Only successful runs are considered."""
+        runs = [
+            {"run_id": "r1", "status": "Failed", "max_workers": 50, "duration_seconds": 100.0},
+        ]
+        db = self._make_mock_db(runs=runs)
+        result = _detect_concurrency_ceiling(db, "wf")
+        self.assertIsNone(result)
+
+    def test_multi_run_scale_up_detected(self):
+        """More workers was faster AND most recent has fewer workers → scale_up."""
+        runs = [
+            {  # Most recent first (5 workers, slowest — workers were reduced too aggressively)
+                "run_id": "r4",
+                "status": "Success",
+                "max_workers": 5,
+                "duration_seconds": 734.0,
+            },
+            {
+                "run_id": "r3",
+                "status": "Success",
+                "max_workers": 10,
+                "duration_seconds": 581.0,
+            },
+            {
+                "run_id": "r2",
+                "status": "Success",
+                "max_workers": 24,
+                "duration_seconds": 692.0,
+            },
+            {  # Oldest (50 workers, fastest)
+                "run_id": "r1",
+                "status": "Success",
+                "max_workers": 50,
+                "duration_seconds": 547.0,
+            },
+        ]
+
+        db = self._make_mock_db(runs=runs)
+
+        def get_task_stats(run_id):
+            stats_map = {
+                "r4": {"total_duration": 2952.0, "task_count": 79, "avg_duration": 37.4},
+                "r3": {"total_duration": 3489.0, "task_count": 79, "avg_duration": 44.2},
+                "r2": {"total_duration": 5872.0, "task_count": 79, "avg_duration": 74.3},
+                "r1": {"total_duration": 5684.0, "task_count": 79, "avg_duration": 71.9},
+            }
+            return stats_map.get(run_id)
+
+        db.get_run_task_stats.side_effect = get_task_stats
+
+        result = _detect_concurrency_ceiling(db, "wf")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["confidence"], "scale_up")
+        # Sweet spot: 10w (581s) is within 10% of best (547s), uses fewest workers
+        self.assertEqual(result["ceiling_workers"], 10)
+        self.assertGreater(result["wall_clock_improvement"], 0)
+        # best_level = sweet spot (10w), worst_level = current (5w)
+        self.assertEqual(result["best_level"]["max_workers"], 10)
+        self.assertEqual(result["worst_level"]["max_workers"], 5)
+        # Improvement: 734 - 581 = 153s
+        self.assertAlmostEqual(result["wall_clock_improvement"], 153.0, places=0)
+
+    def test_multi_run_scale_up_not_triggered_when_most_recent_is_best(self):
+        """More workers faster but most recent already at best level → no scale_up."""
+        runs = [
+            {  # Most recent: already at optimal (50 workers, fastest)
+                "run_id": "r2",
+                "status": "Success",
+                "max_workers": 50,
+                "duration_seconds": 400.0,
+            },
+            {
+                "run_id": "r1",
+                "status": "Success",
+                "max_workers": 30,
+                "duration_seconds": 600.0,
+            },
+        ]
+
+        db = self._make_mock_db(runs=runs)
+
+        def get_task_stats(run_id):
+            if run_id == "r2":
+                return {"total_duration": 8000.0, "task_count": 70, "avg_duration": 114.3}
+            elif run_id == "r1":
+                return {"total_duration": 9000.0, "task_count": 70, "avg_duration": 128.6}
+            return None
+
+        db.get_run_task_stats.side_effect = get_task_stats
+
+        result = _detect_concurrency_ceiling(db, "wf")
+        # No scale_up needed — already running at best level
+        self.assertIsNone(result)
+
+
+class TestCeilingIntegration(TestCase):
+    """Tests for ceiling detection integrated into analyze_contention."""
+
+    def _create_mock_stats_db(self, task_rows, ewma_durations, runs=None):
+        """Create mock with both contention driver AND ceiling data."""
+        stats_db = Mock()
+        stats_db.enabled = True
+
+        # Mock _conn.cursor() for _get_task_parameters
+        mock_cursor = Mock()
+        mock_rows = []
+        for row in task_rows:
+            mock_row = {
+                "task_id": row["task_id"],
+                "task_signature": row["task_signature"],
+                "process": row["process"],
+                "parameters": json.dumps(row["parameters"]),
+            }
+            mock_rows.append(mock_row)
+        mock_cursor.fetchall.return_value = mock_rows
+        stats_db._conn.cursor.return_value = mock_cursor
+
+        # Mock get_workflow_signatures
+        stats_db.get_workflow_signatures.return_value = list(ewma_durations.keys())
+
+        # Mock get_task_durations
+        def get_durations(sig, limit=10):
+            return ewma_durations.get(sig, [])
+
+        stats_db.get_task_durations.side_effect = get_durations
+
+        # Mock ceiling-detection methods
+        stats_db.get_runs_for_workflow.return_value = runs or []
+        stats_db.get_run_task_stats.return_value = None
+        stats_db.get_concurrent_task_counts.return_value = []
+
+        return stats_db
+
+    def test_ceiling_standalone_no_driver(self):
+        """When no contention driver but ceiling found → result has ceiling recommendation."""
+        # All tasks have same parameters → no varying keys → no driver
+        # But we mock ceiling detection to find something
+        task_rows = []
+        ewma_durations = {}
+        for i in range(10):
+            sig = f"sig_{i}"
+            task_rows.append(
+                {
+                    "task_id": str(i),
+                    "task_signature": sig,
+                    "process": "TestProcess",
+                    "parameters": {"pYear": "2025"},  # All identical
+                }
+            )
+            ewma_durations[sig] = [100.0 + i * 5]
+
+        runs = [
+            {
+                "run_id": "r1",
+                "status": "Success",
+                "max_workers": 50,
+                "duration_seconds": 700.0,
+            }
+        ]
+
+        stats_db = self._create_mock_stats_db(task_rows, ewma_durations, runs=runs)
+
+        # Mock ceiling data: strong correlation, low efficiency
+        concurrent_data = [
+            {
+                "task_signature": f"sig_{i}",
+                "duration_seconds": 100.0 + i * 30,
+                "concurrent_count": 20 + i * 3,
+            }
+            for i in range(10)
+        ]
+        stats_db.get_concurrent_task_counts.return_value = concurrent_data
+        stats_db.get_run_task_stats.return_value = {
+            "total_duration": 15000.0,
+            "task_count": 10,
+            "avg_duration": 1500.0,
+        }
+
+        result = analyze_contention(stats_db, "wf")
+
+        # No contention driver (all params identical)
+        self.assertIsNone(result.contention_driver)
+        # But ceiling should be detected
+        self.assertIsNotNone(result.concurrency_ceiling)
+        self.assertGreater(result.recommended_workers, 0)
+        self.assertLess(result.recommended_workers, 50)
+
+    def test_ceiling_caps_driver_recommendation(self):
+        """When both driver and ceiling found, ceiling caps recommended_workers."""
+        # KDP-like workflow with 10 segments × 3 periods
+        task_rows = []
+        ewma_durations = {}
+        for seg_idx in range(10):
+            for per_idx in range(3):
+                task_id = str(seg_idx * 3 + per_idx)
+                sig = f"sig_{seg_idx}_{per_idx}"
+                # S8, S9 are heavy
+                dur = 200.0 if seg_idx >= 8 else 15.0
+                task_rows.append(
+                    {
+                        "task_id": task_id,
+                        "task_signature": sig,
+                        "process": "TestProcess",
+                        "parameters": {"pSegment": f"S{seg_idx}", "pPeriod": f"P{per_idx}"},
+                    }
+                )
+                ewma_durations[sig] = [dur]
+
+        # Multi-run: 50w was slower than 20w
+        runs = [
+            {"run_id": "r2", "status": "Success", "max_workers": 20, "duration_seconds": 300.0},
+            {"run_id": "r1", "status": "Success", "max_workers": 50, "duration_seconds": 500.0},
+        ]
+
+        stats_db = self._create_mock_stats_db(task_rows, ewma_durations, runs=runs)
+
+        def get_task_stats(run_id):
+            if run_id == "r2":
+                return {"total_duration": 3000.0, "task_count": 30, "avg_duration": 100.0}
+            elif run_id == "r1":
+                return {"total_duration": 8000.0, "task_count": 30, "avg_duration": 266.7}
+            return None
+
+        stats_db.get_run_task_stats.side_effect = get_task_stats
+
+        result = analyze_contention(stats_db, "wf", sensitivity=1.5)
+
+        # Should have contention driver
+        self.assertEqual(result.contention_driver, "pSegment")
+        # Should also have ceiling
+        self.assertIsNotNone(result.concurrency_ceiling)
+        # Ceiling should cap the recommendation
+        self.assertLessEqual(result.recommended_workers, result.concurrency_ceiling)
+
+    def test_no_ceiling_no_driver(self):
+        """When neither driver nor ceiling → empty result with warnings."""
+        task_rows = []
+        ewma_durations = {}
+        for i in range(5):
+            sig = f"sig_{i}"
+            task_rows.append(
+                {
+                    "task_id": str(i),
+                    "task_signature": sig,
+                    "process": "TestProcess",
+                    "parameters": {"pYear": "2025"},
+                }
+            )
+            ewma_durations[sig] = [50.0]
+
+        stats_db = self._create_mock_stats_db(task_rows, ewma_durations)
+
+        result = analyze_contention(stats_db, "wf")
+
+        self.assertIsNone(result.contention_driver)
+        self.assertIsNone(result.concurrency_ceiling)
+        self.assertTrue(len(result.warnings) > 0)
