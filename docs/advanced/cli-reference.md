@@ -19,7 +19,7 @@ If no command is specified, `run` is assumed. This means `rushti --tasks tasks.j
 | `run` | Execute a task file (default) |
 | `resume` | Resume execution from a checkpoint |
 | `tasks` | Task file operations: export, push, expand, visualize, validate |
-| `stats` | Statistics queries: list, export, visualize, analyze |
+| `stats` | Statistics queries: list, export, visualize, analyze, optimize |
 | `build` | Create TM1 logging objects |
 | `db` | Database administration: list, clear, show, vacuum |
 
@@ -322,6 +322,32 @@ rushti stats analyze --workflow daily-etl --report report.json --ewma-alpha 0.5
 
 ---
 
+### rushti stats optimize
+
+Run contention-aware analysis on a workflow: detect resource contention patterns, identify heavy outlier groups, build predecessor chains, recommend optimal worker count, and generate an optimized task file with an HTML report.
+
+```bash
+rushti stats optimize --workflow daily-refresh
+rushti stats optimize --workflow daily-refresh --tasks daily-refresh.json --output optimized.json
+rushti stats optimize --workflow daily-refresh --sensitivity 15 --runs 20
+```
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--workflow` | `-W` | STR | *required* | Workflow name to analyze for contention patterns |
+| `--tasks` | `-t` | PATH | *(auto)* | Input task file (JSON). If omitted, uses the archived taskfile from the most recent run. |
+| `--output` | `-o` | PATH | *(auto)* | Output path for optimized task file. Default: `<taskfile>_optimized.json` |
+| `--sensitivity` | | FLOAT | `10.0` | IQR multiplier for outlier detection. Higher = more conservative (fewer heavy groups). |
+| `--runs` | `-n` | INT | `10` | Number of recent runs for EWMA estimation |
+| `--ewma-alpha` | | FLOAT | `0.3` | EWMA smoothing factor (0--1). Higher = more weight on recent runs. |
+| `--no-report` | | FLAG | `false` | Skip generating the HTML optimization report |
+| `--report-output` | | PATH | *(auto)* | Output path for HTML report. Default: alongside the optimized taskfile. |
+| `--settings` | `-s` | PATH | auto | Path to `settings.ini` |
+
+See [Self-Optimization: Contention-Aware](../features/optimization.md#contention-aware-optimization) for detailed algorithm description and examples.
+
+---
+
 ## rushti build
 
 Create TM1 dimensions and the rushti cube for execution logging and TM1 integration.
@@ -474,14 +500,35 @@ rushti resume --tasks production-etl.json
 # 1. Run several times to collect history
 rushti run --tasks workflow.json --max-workers 8
 
-# 2. Enable optimization on subsequent runs
+# 2. Enable runtime-based optimization on subsequent runs
 rushti run --tasks workflow.json --max-workers 8 --optimize shortest_first
 
-# 3. Analyze and generate optimized task file
+# 3. Analyze and generate optimized task file (duration-based reordering)
 rushti stats analyze --workflow workflow --tasks workflow.json --output optimized.json --runs 20
 
 # 4. Validate and compare
 rushti tasks validate --tasks optimized.json --skip-tm1-check
+```
+
+### Contention-Aware Optimization
+
+```bash
+# 1. Run at different worker levels to collect comparison data
+rushti run --tasks workflow.json --max-workers 4
+rushti run --tasks workflow.json --max-workers 8
+rushti run --tasks workflow.json --max-workers 16
+
+# 2. Run contention analysis (auto-resolves taskfile from archive)
+rushti stats optimize --workflow workflow
+
+# 3. Or specify input/output explicitly
+rushti stats optimize --workflow workflow --tasks workflow.json --output optimized.json
+
+# 4. Review the HTML report and validate
+rushti tasks validate --tasks optimized.json --skip-tm1-check
+
+# 5. Run with the optimized file
+rushti run --tasks optimized.json
 ```
 
 ---

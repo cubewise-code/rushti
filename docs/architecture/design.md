@@ -22,6 +22,7 @@ graph TB
         Parser["Task Parser<br/><code>taskfile.py · parsing.py</code>"]
         Scheduler["DAG Scheduler<br/><code>dag.py · task.py</code>"]
         Optimizer["EWMA Optimizer<br/><code>optimizer.py</code>"]
+        Contention["Contention Analyzer<br/><code>contention_analyzer.py</code>"]
         Engine["Execution Engine<br/><code>execution.py</code>"]
         CP["Checkpoint Manager<br/><code>checkpoint.py</code>"]
         Excl["Exclusive Lock<br/><code>exclusive.py</code>"]
@@ -46,6 +47,7 @@ graph TB
 
     Parser --> Scheduler
     Optimizer -.->|"sorts ready queue<br/>by chosen algorithm"| Scheduler
+    Contention -.->|"analyzes contention<br/>recommends workers"| Optimizer
     Scheduler --> Engine
 
     Engine --> TM1py
@@ -74,6 +76,7 @@ graph TB
     style Engine fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
     style CP fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
     style Excl fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
+    style Contention fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
 
     style TM1py fill:#ccfccc,stroke:#4ad94a,color:#1a1a1a
     style Pool fill:#ccfccc,stroke:#4ad94a,color:#1a1a1a
@@ -180,6 +183,30 @@ EWMA (Exponentially Weighted Moving Average) based on historical execution data
 to sort ready tasks by estimated runtime using a configurable scheduling
 algorithm (`longest_first` or `shortest_first`), improving parallel efficiency
 while preserving dependency order.
+
+### `contention_analyzer.py` -- Contention-Aware Optimization
+
+Analyzes workflow execution history to detect resource contention patterns.
+The main entry point is `analyze_contention()`, which performs a multi-step
+analysis:
+
+1. Compute EWMA durations from historical runs.
+2. Identify which task parameter drives duration variance (contention driver).
+3. Group tasks by the contention driver and detect heavy outliers using IQR.
+4. Build predecessor chains to serialize heavy groups.
+5. Recommend `max_workers` based on the chain structure.
+6. Detect concurrency ceiling or scale-up opportunities from multi-run data.
+
+Returns a `ContentionAnalysisResult` dataclass with all analysis outputs.
+Also provides `write_optimized_taskfile()` to generate new task files with
+predecessor chains and embedded `max_workers`.
+
+### `optimization_report.py` -- HTML Optimization Report
+
+Generates self-contained HTML reports for contention-aware optimization
+results. Includes summary tables, contention driver charts, IQR statistics,
+chain structure visualization, and concurrency ceiling/scale-up analysis.
+Built with embedded CSS and Chart.js — no external dependencies.
 
 ### `dashboard.py` -- HTML Dashboard
 
@@ -351,6 +378,8 @@ graph TB
     stats["stats.py"]
     tm1_build["tm1_build.py"]
     optimizer["optimizer.py"]
+    contention["contention_analyzer.py"]
+    opt_report["optimization_report.py"]
     execution["execution.py"]
     checkpoint["checkpoint.py"]
     exclusive["exclusive.py"]
@@ -365,6 +394,8 @@ graph TB
     commands --> taskfile_ops
     commands --> stats
     commands --> tm1_build
+    commands --> contention
+    commands --> opt_report
 
     taskfile_ops --> taskfile
     taskfile_ops --> execution
@@ -380,6 +411,8 @@ graph TB
     execution --> tm1_integration
 
     optimizer --> stats
+    contention --> stats
+    opt_report --> contention
     stats --> dashboard
 
     tm1_build --> tm1_assets
@@ -394,6 +427,8 @@ graph TB
     style dag fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
     style taskfile_ops fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
     style optimizer fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
+    style contention fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
+    style opt_report fill:#fce4cc,stroke:#d9944a,color:#1a1a1a
 
     style execution fill:#fdd0d0,stroke:#d94a4a,color:#1a1a1a
     style checkpoint fill:#fdd0d0,stroke:#d94a4a,color:#1a1a1a

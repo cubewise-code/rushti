@@ -1,0 +1,125 @@
+{
+  "version": "2.0",
+  "metadata": {
+    "workflow": "test-stage-workers",
+    "name": "Stage Workers Integration Test",
+    "description": "Tests per-stage concurrency limiting. With max_workers=4 and stage_workers as configured: extract (6 tasks, limit 4) ~4s, transform (4 tasks, limit 2) ~4s, load (4 tasks, limit 1) ~8s. Total ~16s. Without stage_workers the same DAG would complete in ~8s."
+  },
+  "tasks": [
+    {
+      "id": "e1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "extract"
+    },
+    {
+      "id": "e2",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "extract"
+    },
+    {
+      "id": "e3",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "extract"
+    },
+    {
+      "id": "e4",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "extract"
+    },
+    {
+      "id": "e5",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "extract"
+    },
+    {
+      "id": "e6",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "extract"
+    },
+    {
+      "id": "t1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "transform",
+      "predecessors": ["e1", "e2"]
+    },
+    {
+      "id": "t2",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "transform",
+      "predecessors": ["e3", "e4"]
+    },
+    {
+      "id": "t3",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "transform",
+      "predecessors": ["e5", "e6"]
+    },
+    {
+      "id": "t4",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "transform",
+      "predecessors": ["e1", "e3", "e5"]
+    },
+    {
+      "id": "l1",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "load",
+      "predecessors": ["t1", "t2"]
+    },
+    {
+      "id": "l2",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "load",
+      "predecessors": ["t2", "t3"]
+    },
+    {
+      "id": "l3",
+      "instance": "tm1srv01",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "load",
+      "predecessors": ["t3", "t4"]
+    },
+    {
+      "id": "l4",
+      "instance": "tm1srv02",
+      "process": "}bedrock.server.wait",
+      "parameters": {"pWaitSec": "2"},
+      "stage": "load",
+      "predecessors": ["t1", "t4"]
+    }
+  ],
+  "settings": {
+    "max_workers": 2,
+    "stage_order": ["extract", "transform", "load"],
+    "stage_workers": {
+      "extract": 4,
+      "transform": 2,
+      "load": 1
+    }
+  }
+}

@@ -83,19 +83,13 @@ CLI `--optimize` overrides the JSON taskfile setting. Omitting both means no opt
 
 ---
 
-### [logging]
+### Logging
 
-Controls RushTI's application-level logging. These settings are separate from the `logging_config.ini` file, which provides full Python `logging.config.fileConfig` control.
+Logging is configured exclusively through `config/logging_config.ini`, which uses Python's standard `logging.config.fileConfig` format. This file controls log level, handlers, formatters, and file rotation.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `level` | str | `INFO` | Log level. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
-| `format` | str | `%(asctime)s %(levelname)s %(message)s` | Python logging format string. Uses standard `logging` format tokens. |
-| `file` | str | *(none)* | Log file path. If not set, logs are written to console only. |
-| `max_file_size_mb` | int | `10` | Maximum size of the log file in megabytes before rotation occurs. |
-| `backup_count` | int | `5` | Number of rotated log file backups to retain. |
+By default, RushTI writes `rushti.log` to the application root directory (next to the executable or under `RUSHTI_DIR`). The log level can be overridden at runtime with `--log-level` / `-L`.
 
-**Overridable via CLI:** `--log-level` / `-L`
+See `config/logging_config.ini` for the full configuration.
 
 !!! tip "Choosing a Log Level"
     - **DEBUG**: Full worker activity, task scheduling decisions, connection details. Use for troubleshooting.
@@ -263,30 +257,6 @@ Copy this template to `config/settings.ini` and uncomment the settings you want 
 # cache_duration_hours = 24
 
 # ------------------------------------------------------------------------------
-# [logging] - Enhanced logging settings
-# ------------------------------------------------------------------------------
-[logging]
-
-# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-# Default: INFO
-# level = INFO
-
-# Log format (Python logging format string)
-# Default: %(asctime)s %(levelname)s %(message)s
-# format = %(asctime)s %(levelname)s %(message)s
-
-# Log file path (if not set, logs only to console)
-# file = /var/log/rushti/rushti.log
-
-# Maximum log file size in MB before rotation
-# Default: 10
-# max_file_size_mb = 10
-
-# Number of backup log files to keep
-# Default: 5
-# backup_count = 5
-
-# ------------------------------------------------------------------------------
 # [tm1_integration] - TM1 integration for reading taskfiles and logging results
 # ------------------------------------------------------------------------------
 [tm1_integration]
@@ -409,7 +379,7 @@ export RUSHTI_DIR=/opt/rushti/prod/
 
 rushti run --tasks daily-etl.json
 # Config:         /opt/rushti/prod/config/config.ini, settings.ini, logging_config.ini
-# Logs:           /opt/rushti/prod/logs/rushti.log
+# Logs:           /opt/rushti/prod/rushti.log
 # Stats DB:       /opt/rushti/prod/data/rushti_stats.db
 # Checkpoints:    /opt/rushti/prod/checkpoints/
 # Archives:       /opt/rushti/prod/archive/{workflow}/{run_id}.json

@@ -340,28 +340,6 @@ class DAG:
                 for prev_task_id in prev_stage_tasks:
                     self.add_dependency(curr_task_id, prev_task_id)
 
-    def get_stage_workers(
-        self, stage_workers: Dict[str, int], default_workers: int
-    ) -> Dict[str, int]:
-        """Get the max_workers limit for each stage.
-
-        :param stage_workers: Per-stage worker limits
-        :param default_workers: Default max_workers if stage not specified
-        :return: Dictionary mapping stage to max_workers
-        """
-        result = {}
-        stages_in_dag = set()
-
-        for task_list in self._tasks.values():
-            for task in task_list:
-                if hasattr(task, "stage") and task.stage:
-                    stages_in_dag.add(task.stage)
-
-        for stage in stages_in_dag:
-            result[stage] = stage_workers.get(stage, default_workers)
-
-        return result
-
 
 def convert_norm_to_dag(tasks_and_waits: List[Any]) -> DAG:
     """Convert a norm-mode task list (with Wait markers) to a DAG structure.

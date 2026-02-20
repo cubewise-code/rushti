@@ -139,7 +139,7 @@ def ensure_sample_data(tm1: TM1Service, **tm1_names) -> bool:
 
     # Check if sample data already exists by reading one cell
     try:
-        value = tm1.cells.get_value(cube_name, "Sample_Optimal_Mode,1,Input,instance")
+        value = tm1.cells.get_value(cube_name, "Sample_Optimal_Mode,Input,1,instance")
         if value:
             logger.debug("Sample data already exists in cube")
             return False

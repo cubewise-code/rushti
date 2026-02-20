@@ -100,16 +100,16 @@ When `push_results` is enabled, RushTI exports a CSV file from the local SQLite 
 
 Open the `rushti` cube and enter values like this:
 
-| workflow | task_id | run_id | measure | value |
-|-------------|---------|--------|---------|-------|
-| `daily-refresh` | `1` | `Input` | `instance` | `tm1srv01` |
-| `daily-refresh` | `1` | `Input` | `process` | `}bedrock.server.wait` |
-| `daily-refresh` | `1` | `Input` | `parameters` | `{"pWaitSec": "2"}` |
-| `daily-refresh` | `1` | `Input` | `predecessors` | |
-| `daily-refresh` | `2` | `Input` | `instance` | `tm1srv01` |
-| `daily-refresh` | `2` | `Input` | `process` | `}bedrock.server.wait` |
-| `daily-refresh` | `2` | `Input` | `parameters` | `{"pWaitSec": "5"}` |
-| `daily-refresh` | `2` | `Input` | `predecessors` | `1` |
+| workflow | run_id | task_id | measure | value |
+|-------------|--------|---------|---------|-------|
+| `daily-refresh` | `Input` | `1` | `instance` | `tm1srv01` |
+| `daily-refresh` | `Input` | `1` | `process` | `}bedrock.server.wait` |
+| `daily-refresh` | `Input` | `1` | `parameters` | `{"pWaitSec": "2"}` |
+| `daily-refresh` | `Input` | `1` | `predecessors` | |
+| `daily-refresh` | `Input` | `2` | `instance` | `tm1srv01` |
+| `daily-refresh` | `Input` | `2` | `process` | `}bedrock.server.wait` |
+| `daily-refresh` | `Input` | `2` | `parameters` | `{"pWaitSec": "5"}` |
+| `daily-refresh` | `Input` | `2` | `predecessors` | `1` |
 
 ### From a TI Process
 
@@ -120,16 +120,16 @@ Automate task creation with a TI process:
 # Parameters: pWorkflow (String)
 
 # Task 1: Wait 2 seconds
-CellPutS('tm1srv01', 'rushti', pWorkflow, '1', 'Input', 'instance');
-CellPutS('}bedrock.server.wait', 'rushti', pWorkflow, '1', 'Input', 'process');
-CellPutS('{"pWaitSec": "2"}', 'rushti', pWorkflow, '1', 'Input', 'parameters');
-CellPutS('', 'rushti', pWorkflow, '1', 'Input', 'predecessors');
+CellPutS('tm1srv01', 'rushti', pWorkflow, 'Input', '1', 'instance');
+CellPutS('}bedrock.server.wait', 'rushti', pWorkflow, 'Input', '1', 'process');
+CellPutS('{"pWaitSec": "2"}', 'rushti', pWorkflow, 'Input', '1', 'parameters');
+CellPutS('', 'rushti', pWorkflow, 'Input', '1', 'predecessors');
 
 # Task 2: Wait 5 seconds (depends on task 1)
-CellPutS('tm1srv01', 'rushti', pWorkflow, '2', 'Input', 'instance');
-CellPutS('}bedrock.server.wait', 'rushti', pWorkflow, '2', 'Input', 'process');
-CellPutS('{"pWaitSec": "5"}', 'rushti', pWorkflow, '2', 'Input', 'parameters');
-CellPutS('1', 'rushti', pWorkflow, '2', 'Input', 'predecessors');
+CellPutS('tm1srv01', 'rushti', pWorkflow, 'Input', '2', 'instance');
+CellPutS('}bedrock.server.wait', 'rushti', pWorkflow, 'Input', '2', 'process');
+CellPutS('{"pWaitSec": "5"}', 'rushti', pWorkflow, 'Input', '2', 'parameters');
+CellPutS('1', 'rushti', pWorkflow, 'Input', '2', 'predecessors');
 ```
 
 !!! tip "Parameters as JSON"
