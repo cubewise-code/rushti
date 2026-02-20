@@ -814,6 +814,8 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
 
             tm1_source = connect_to_tm1_instance(tm1_instance, CONFIG)
             try:
+                # Resolve execution mode for TM1 read (affects predecessor parsing)
+                tm1_mode = "opt" if cli_args.get("execution_mode") == ExecutionMode.OPT else "norm"
                 tm1_taskfile = read_taskfile_from_tm1(
                     tm1_source,
                     workflow,
@@ -822,6 +824,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                     dim_task=settings.tm1_integration.default_task_id_dim,
                     dim_run=settings.tm1_integration.default_run_id_dim,
                     dim_measure=settings.tm1_integration.default_measure_dim,
+                    mode=tm1_mode,
                 )
                 logger.info(f"Loaded {len(tm1_taskfile.tasks)} tasks from TM1")
             finally:
@@ -1114,9 +1117,11 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
 
         # Initialize checkpoint manager
         if checkpoint_enabled:
+            # Use archived taskfile path for TM1 sources (no physical taskfile)
+            checkpoint_taskfile_path = tasks_file_path or archived_taskfile_path
             checkpoint_manager = CheckpointManager(
                 checkpoint_dir=settings.resume.checkpoint_dir,
-                taskfile_path=tasks_file_path,
+                taskfile_path=checkpoint_taskfile_path,
                 workflow=workflow,
                 task_ids=all_task_ids,
                 checkpoint_interval=settings.resume.checkpoint_interval,
