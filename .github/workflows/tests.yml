@@ -15,7 +15,7 @@ name: Tests
 
 on:
   push:
-    branches: [master, main, rushti2dot0, rushti2dot0-demo]
+    branches: [master, main]
     paths:
       - 'src/**'
       - 'tests/**'
@@ -25,7 +25,7 @@ on:
       - 'config/**'
       - '.github/workflows/tests.yml'
   pull_request:
-    branches: [master, main, rushti2dot0, rushti2dot0-demo]
+    branches: [master, main]
     paths:
       - 'src/**'
       - 'tests/**'

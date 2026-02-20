@@ -1,13 +1,24 @@
-# RushTI Build Workflow
+# RushTI Build & Release Workflow
 #
-# Builds Windows executable when Python/application code changes.
-# Only triggers after tests pass or on manual dispatch.
+# Triggers:
+#   - PR to master: Build validation (runs in parallel with Tests)
+#   - After Tests pass on master push: Full pipeline (build + release + publish)
+#   - Manual dispatch: On-demand build for any branch
+#
+# Release flow (master push only, requires PR labels):
+#   Tests pass → Build exe → Check PR labels → Bump version → Create release → Publish to PyPI
+#
+# When no release label is present on master push:
+#   Tests pass → Build exe → Attach build to latest existing release
+#
+# PR labels: release:major, release:minor, release:patch
 
 name: Build
 
 on:
-  push:
-    branches: [master, rushti2dot0]
+  # PR to master: build validation (parallel with Tests)
+  pull_request:
+    branches: [master]
     paths:
       - 'src/**'
       - 'pyproject.toml'
@@ -16,24 +27,27 @@ on:
       - 'config/**'
       - 'assets/**'
       - '.github/workflows/build.yml'
-  workflow_dispatch:  # Allow manual triggering
+
+  # After Tests pass on master push: full pipeline
   workflow_run:
     workflows: ["Tests"]
     types: [completed]
-    branches: [master, rushti2dot0]
+    branches: [master]
+
+  # On-demand build for any branch
+  workflow_dispatch:
 
 jobs:
   build-windows:
     name: Build Windows Executable
     runs-on: windows-latest
-    # Only build if:
-    # - Tests workflow succeeded, OR
-    # - Manually triggered, OR
-    # - Direct push (tests will run in parallel via path filter)
-    if: |
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+    # Run for: PR, manual dispatch, or workflow_run (only if Tests passed on a push event)
+    if: >
+      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push'
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
 
     steps:
       - name: Checkout code
@@ -52,8 +66,7 @@ jobs:
         shell: bash
 
       - name: Build executable
-        run: |
-          pyinstaller rushti.spec --clean
+        run: pyinstaller rushti.spec --clean
         shell: bash
 
       - name: Verify build
@@ -68,9 +81,9 @@ jobs:
           echo "Testing rushti.exe..."
           dist/rushti/rushti.exe --help
           if [ $? -eq 0 ]; then
-            echo "✓ Executable runs successfully"
+            echo "Executable runs successfully"
           else
-            echo "✗ Executable failed to run"
+            echo "Executable failed to run"
             exit 1
           fi
         shell: bash
@@ -78,14 +91,8 @@ jobs:
       - name: Create release package
         run: |
           mkdir -p release/rushti-windows
-
-          # Copy the entire onedir distribution (includes exe and all dependencies)
           cp -r dist/rushti/* release/rushti-windows/
-
-          # Create config directory structure
           mkdir -p release/rushti-windows/config
-
-          # Copy configuration templates if they exist
           if [ -f "config/config.ini.template" ]; then
             cp config/config.ini.template release/rushti-windows/config/
           fi
@@ -95,22 +102,16 @@ jobs:
           if [ -f "config/settings.ini.template" ]; then
             cp config/settings.ini.template release/rushti-windows/config/
           fi
-
-          # Copy assets directory (required for 'build' command to create TM1 objects)
-          # Note: Assets are also bundled in the distribution, but including them in the
-          # release allows users to customize the TM1 object definitions if needed
           if [ -d "assets" ]; then
             cp -r assets release/rushti-windows/
           fi
-
-          # Copy README and LICENSE
           cp README.md release/rushti-windows/ || true
           cp LICENSE release/rushti-windows/ || true
 
-          # Create a build info file
+          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/rushti/__init__.py)
           echo "RushTI Windows Build" > release/rushti-windows/BUILD_INFO.txt
-          echo "Version: 2.0.0" >> release/rushti-windows/BUILD_INFO.txt
-          echo "Build: Complete build with all features including DAG visualization (onedir mode for fast startup)" >> release/rushti-windows/BUILD_INFO.txt
+          echo "Version: $VERSION" >> release/rushti-windows/BUILD_INFO.txt
+          echo "Build: Complete build with all features (onedir mode for fast startup)" >> release/rushti-windows/BUILD_INFO.txt
           echo "Built: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> release/rushti-windows/BUILD_INFO.txt
           echo "Python: $(python --version)" >> release/rushti-windows/BUILD_INFO.txt
           echo "Commit: ${{ github.sha }}" >> release/rushti-windows/BUILD_INFO.txt
@@ -123,84 +124,207 @@ jobs:
           path: release/rushti-windows
           retention-days: 30
 
-  create-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
+  check-release:
+    name: Check if release needed
     needs: build-windows
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    # Only check for releases on master push (not PRs or manual dispatch)
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      new_version: ${{ steps.check.outputs.new_version }}
+      bump_type: ${{ steps.check.outputs.bump_type }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Download all artifacts
+      - name: Get merged PR labels
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "Checking commit: $COMMIT_SHA"
+
+          # Find the PR associated with this commit
+          PR_DATA=$(gh api repos/${{ github.repository }}/commits/$COMMIT_SHA/pulls --jq '.[0]')
+
+          if [ -z "$PR_DATA" ] || [ "$PR_DATA" = "null" ]; then
+            echo "No PR found for commit, skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number')
+          echo "Found PR #$PR_NUMBER"
+
+          # Get PR labels
+          LABELS=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.labels[].name')
+          echo "Labels: $LABELS"
+
+          # Determine bump type based on labels
+          BUMP_TYPE=""
+          if echo "$LABELS" | grep -q "release:major"; then
+            BUMP_TYPE="major"
+          elif echo "$LABELS" | grep -q "release:minor"; then
+            BUMP_TYPE="minor"
+          elif echo "$LABELS" | grep -q "release:patch"; then
+            BUMP_TYPE="patch"
+          fi
+
+          if [ -z "$BUMP_TYPE" ]; then
+            echo "No release label found, skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Bump type: $BUMP_TYPE"
+
+          # Get current version from source
+          CURRENT_VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/rushti/__init__.py)
+          echo "Current version: $CURRENT_VERSION"
+
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+
+          # Calculate new version
+          case $BUMP_TYPE in
+            major) NEW_VERSION="$((MAJOR + 1)).0.0" ;;
+            minor) NEW_VERSION="$MAJOR.$((MINOR + 1)).0" ;;
+            patch) NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+          esac
+
+          echo "New version: $NEW_VERSION"
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+  create-release:
+    name: Create Release
+    needs: [build-windows, check-release]
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update version in code
+        run: |
+          NEW_VERSION="${{ needs.check-release.outputs.new_version }}"
+          sed -i "s/__version__ = \"[^\"]*\"/__version__ = \"$NEW_VERSION\"/" src/rushti/__init__.py
+          sed -i "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+
+      - name: Commit version bump
+        run: |
+          git add src/rushti/__init__.py pyproject.toml
+          git commit -m "Bump version to ${{ needs.check-release.outputs.new_version }}"
+          git push
+
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: rushti-windows
+          path: artifacts/rushti-windows
 
       - name: Create release archive
         run: |
           cd artifacts/rushti-windows
           zip -r ../rushti-windows.zip .
-          cd ..
-          ls -la
 
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/rushti/__init__.py)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: RushTI v${{ steps.version.outputs.version }}
-          body: |
-            ## RushTI v${{ steps.version.outputs.version }}
-
-            ### Windows Build
-
-            **rushti-windows.zip** - Complete build with all features:
-            - Full TM1 integration and asset management
-            - Database admin utilities
-            - Statistics and logging
-            - DAG visualization support
-            - Parallel process execution engine
-            - Fast startup (onedir distribution - no temp extraction delay)
-
-            ### Installation
-
-            1. Download **rushti-windows.zip**
-            2. Extract to your desired location (keeps directory structure intact)
-            3. Copy `config/config.ini.template` to `config.ini` and configure your TM1 connections
-            4. (Optional) Copy `config/settings.ini.template` to `settings.ini` for custom defaults
-            5. Run `rushti.exe` from command line
-
-            > **Note:** This build uses PyInstaller's onedir mode for fast cold starts.
-            > Keep all files in the extracted directory together - the exe requires the bundled libraries.
-
-            ### Requirements
-
-            - Windows 10/11 or Windows Server 2016+
-
-            ### Quick Start
-
-            ```bash
-            # Run a task file
-            rushti.exe --tasks tasks.txt
-
-            # Visualize DAG (interactive HTML)
-            rushti.exe visualize --tasks tasks.txt --output dag.html
-
-            # Get help
-            rushti.exe --help
-            ```
-
-            See [README.md](https://github.com/cubewise-code/rushti/blob/master/README.md) for complete documentation.
-          files: |
-            artifacts/*.zip
-          draft: false
-          prerelease: false
+      - name: Create tag and release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-release.outputs.new_version }}"
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" \
+            --title "RushTI v$VERSION" \
+            --generate-notes \
+            "artifacts/rushti-windows.zip#rushti-windows.zip"
+
+  update-release-assets:
+    name: Update Latest Release Assets
+    needs: [build-windows, check-release]
+    # Run when: check-release succeeded but no release label was found
+    if: >
+      always() &&
+      needs.build-windows.result == 'success' &&
+      needs.check-release.result == 'success' &&
+      needs.check-release.outputs.should_release != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rushti-windows
+          path: artifacts/rushti-windows
+
+      - name: Create release archive
+        run: |
+          cd artifacts/rushti-windows
+          zip -r ../rushti-windows.zip .
+
+      - name: Update latest release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name' 2>/dev/null)
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No existing release found, skipping asset update"
+            exit 0
+          fi
+
+          echo "Updating assets for release $LATEST_TAG"
+          gh release upload "$LATEST_TAG" "artifacts/rushti-windows.zip" --clobber
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: create-release
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

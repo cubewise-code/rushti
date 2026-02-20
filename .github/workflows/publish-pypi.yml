@@ -1,13 +1,23 @@
+# RushTI PyPI Publish Workflow (Manual Fallback)
+#
+# This is a manual fallback for publishing to PyPI.
+# The primary publish flow is handled by build.yml (after creating a release).
+#
+# Use this workflow to manually publish the current version on master to PyPI,
+# e.g. if the automated publish failed and needs to be retried.
+
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build package
+  publish:
+    name: Build and Publish to PyPI
     runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
 
     steps:
       - uses: actions/checkout@v6
@@ -22,27 +32,6 @@ jobs:
 
       - name: Build package
         run: python -m build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: dist
-          path: dist/
-
-  publish:
-    name: Publish to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v6
-        with:
-          name: dist
-          path: dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

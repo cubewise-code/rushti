@@ -7,7 +7,7 @@ name: Deploy Website
 
 on:
   push:
-    branches: [master, main, rushti2dot0]
+    branches: [master, main]
     paths:
       - 'site/**'
       - 'docs/**'
