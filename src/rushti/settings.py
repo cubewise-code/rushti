@@ -51,17 +51,6 @@ class OptimizationSettings:
 
 
 @dataclass
-class LoggingSettings:
-    """Enhanced logging settings."""
-
-    level: str = "INFO"
-    format: str = "%(asctime)s %(levelname)s %(message)s"
-    file: Optional[str] = None
-    max_file_size_mb: int = 10
-    backup_count: int = 5
-
-
-@dataclass
 class TM1IntegrationSettings:
     """TM1 integration settings for reading taskfiles and pushing results.
 
@@ -132,7 +121,6 @@ class Settings:
 
     defaults: DefaultsSettings = field(default_factory=DefaultsSettings)
     optimization: OptimizationSettings = field(default_factory=OptimizationSettings)
-    logging: LoggingSettings = field(default_factory=LoggingSettings)
     tm1_integration: TM1IntegrationSettings = field(default_factory=TM1IntegrationSettings)
     exclusive_mode: ExclusiveModeSettings = field(default_factory=ExclusiveModeSettings)
     resume: ResumeSettings = field(default_factory=ResumeSettings)
@@ -152,13 +140,6 @@ SETTINGS_SCHEMA = {
         "time_of_day_weighting": bool,
         "min_samples": int,
         "cache_duration_hours": int,
-    },
-    "logging": {
-        "level": str,
-        "format": str,
-        "file": str,
-        "max_file_size_mb": int,
-        "backup_count": int,
     },
     "tm1_integration": {
         "push_results": bool,

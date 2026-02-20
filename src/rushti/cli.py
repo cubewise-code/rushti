@@ -167,7 +167,7 @@ if os.path.isfile(LOGGING_CONFIG):
     # application directory. We need to close the handler and reopen it at the correct path.
     from rushti.utils import ensure_shared_file, makedirs_shared, resolve_app_path
 
-    log_file_path = os.path.normpath(os.path.abspath(resolve_app_path("logs/rushti.log")))
+    log_file_path = os.path.normpath(os.path.abspath(resolve_app_path("rushti.log")))
 
     for handler in logging.root.handlers:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
@@ -1164,6 +1164,17 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                     "is disabled. Enable [stats] enabled = true to use optimization."
                 )
 
+        # Resolve per-stage worker limits
+        stage_workers = taskfile.settings.stage_workers if taskfile else None
+        if stage_workers:
+            logger.info(f"Per-stage worker limits: {stage_workers}")
+            for stage_name, stage_limit in stage_workers.items():
+                if stage_limit > max_workers:
+                    logger.warning(
+                        f"Global max_workers ({max_workers}) overrides "
+                        f"stage_workers for '{stage_name}' ({stage_limit})"
+                    )
+
         # Execute using DAG-based scheduler
         event_loop = asyncio.new_event_loop()
         results = event_loop.run_until_complete(
@@ -1175,6 +1186,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 tm1_service_by_instance,
                 checkpoint_manager=checkpoint_manager,
                 task_optimizer=task_optimizer,
+                stage_workers=stage_workers,
             )
         )
         success = True

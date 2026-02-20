@@ -6,7 +6,7 @@ Beyond basic tasks and dependencies, RushTI JSON task files support stages, time
 
 ## Stages
 
-Stages group tasks into logical pipeline phases. All tasks within a stage run in parallel (up to `max_workers` or `stage_max_workers`), and stages execute sequentially -- all tasks in stage N must complete before any task in stage N+1 begins.
+Stages group tasks into logical pipeline phases. All tasks within a stage run in parallel (up to `max_workers` or the stage's `stage_workers` limit), and stages execute sequentially -- all tasks in stage N must complete before any task in stage N+1 begins.
 
 ### How Stages Work
 
@@ -53,7 +53,7 @@ Here, task `5` is in the transform stage but only starts after tasks `1` and `4`
 
 ### Limiting Concurrency per Stage
 
-Use `stage_max_workers` in the settings section to cap parallelism for resource-intensive stages:
+Use `stage_workers` in the settings section to cap parallelism for resource-intensive stages:
 
 ```json
 {
@@ -70,6 +70,9 @@ Use `stage_max_workers` in the settings section to cap parallelism for resource-
 ```
 
 This runs up to 16 extracts in parallel, but limits transforms to 8 concurrent workers and loads to 4, preventing TM1 write contention.
+
+!!! note "Global max_workers Cap"
+    The global `max_workers` setting defines the TM1 session connection pool size and acts as an absolute ceiling. If a `stage_workers` value exceeds `max_workers`, the global limit still applies and a warning is logged. For example, with `max_workers: 8` and `stage_workers: {"extract": 16}`, at most 8 extract tasks run concurrently.
 
 ### Finance Close Example
 

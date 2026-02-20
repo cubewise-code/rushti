@@ -265,6 +265,16 @@ Stages provide a second level of concurrency control beyond `max_workers`. Use `
 
 Use a `critical` stage with low concurrency for tasks that modify shared dimensions or control cubes, and a `normal` stage for everything else.
 
+### Global max_workers Cap
+
+The `max_workers` setting defines the TM1 session connection pool size, which is set at connection time and cannot be resized at runtime. This means `max_workers` always acts as an absolute ceiling for all stages. If a `stage_workers` value exceeds the global `max_workers`, the global limit still applies and a warning is emitted:
+
+```
+WARNING: Global max_workers (8) overrides stage_workers for 'extract' (16)
+```
+
+To take full advantage of `stage_workers`, ensure `max_workers` is at least as high as the largest per-stage limit.
+
 ---
 
 ## Timeout Strategies

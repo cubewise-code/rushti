@@ -47,17 +47,18 @@ v2.0 introduces a structured CLI with command groups. The old positional syntax 
 
 ### Settings: New config/settings.ini
 
-v1.x had no settings file. v2.0 introduces `config/settings.ini` with seven sections:
+v1.x had no settings file. v2.0 introduces `config/settings.ini` with six sections:
 
 | Section | Purpose |
 |---------|---------|
 | `[defaults]` | `max_workers`, `retries`, `result_file`, `mode` |
 | `[optimization]` | EWMA self-optimization |
-| `[logging]` | Log level, format, file rotation |
 | `[tm1_integration]` | TM1 read/write integration |
 | `[exclusive_mode]` | Concurrent execution prevention |
 | `[resume]` | Checkpoint and resume |
 | `[stats]` | SQLite execution history |
+
+Logging is configured separately via `config/logging_config.ini` (Python's standard `logging.config.fileConfig` format).
 
 All settings have sensible defaults. You do not need to create a `settings.ini` to use v2.0 -- it works with built-in defaults.
 
@@ -328,7 +329,7 @@ rushti run --tasks tasks.json
     # Expected structure:
     #   /etc/rushti/config/     - config.ini, settings.ini, logging_config.ini
     #   /etc/rushti/data/       - rushti_stats.db
-    #   /etc/rushti/logs/       - rushti.log
+    #   /etc/rushti/rushti.log
     #   /etc/rushti/checkpoints/
     #   /etc/rushti/visualizations/
     ```

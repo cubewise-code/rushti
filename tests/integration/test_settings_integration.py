@@ -66,12 +66,6 @@ time_of_day_weighting = true
 min_samples = 5
 cache_duration_hours = 48
 
-[logging]
-level = DEBUG
-file = rushti.log
-max_file_size_mb = 20
-backup_count = 10
-
 [stats]
 enabled = true
 db_path = /tmp/rushti/custom_stats.db
@@ -96,8 +90,6 @@ timeout = 1200
         self.assertEqual(settings.defaults.mode, "opt")
         self.assertEqual(settings.optimization.lookback_runs, 15)
         self.assertTrue(settings.optimization.time_of_day_weighting)
-        self.assertEqual(settings.logging.level, "DEBUG")
-        self.assertEqual(settings.logging.max_file_size_mb, 20)
         self.assertTrue(settings.stats.enabled)
         self.assertEqual(settings.stats.db_path, "/tmp/rushti/custom_stats.db")
         self.assertEqual(settings.stats.retention_days, 60)

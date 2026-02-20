@@ -554,6 +554,7 @@ async def work_through_tasks_dag(
     tm1_services: dict,
     checkpoint_manager: "CheckpointManager" = None,
     task_optimizer: "TaskOptimizer" = None,
+    stage_workers: Optional[Dict[str, int]] = None,
 ) -> List[bool]:
     """Execute tasks using DAG-based scheduling.
 
@@ -563,6 +564,10 @@ async def work_through_tasks_dag(
     When task_optimizer is provided, ready tasks are sorted using the
     configured scheduling algorithm to improve parallel efficiency.
 
+    When stage_workers is provided, per-stage concurrency limits are enforced
+    in addition to the global max_workers ceiling. The global max_workers
+    always takes precedence as the absolute cap.
+
     :param ctx: The current execution context
     :param dag: DAG containing tasks and their dependencies
     :param max_workers: Maximum number of concurrent workers
@@ -570,6 +575,7 @@ async def work_through_tasks_dag(
     :param tm1_services: Dictionary of TM1Service instances
     :param checkpoint_manager: Optional CheckpointManager for resume support
     :param task_optimizer: Optional TaskOptimizer for runtime-based scheduling
+    :param stage_workers: Optional per-stage worker limits (e.g. {"extract": 8, "load": 4})
     :return: List of execution outcomes (True/False for each task)
     """
     outcomes = []
@@ -585,6 +591,10 @@ async def work_through_tasks_dag(
 
             If task_optimizer is provided, sorts ready tasks using the
             configured scheduling algorithm before submission.
+
+            If stage_workers is provided, per-stage concurrency limits are
+            enforced. Tasks whose stage is at capacity are skipped (not
+            broken out of), allowing tasks from other stages to submit.
             """
             ready_tasks = dag.get_ready_tasks()
 
@@ -592,9 +602,25 @@ async def work_through_tasks_dag(
             if task_optimizer and ready_tasks:
                 ready_tasks = task_optimizer.sort_tasks(ready_tasks)
 
+            # Count running tasks per stage for per-stage limiting
+            running_per_stage: Dict[str, int] = {}
+            if stage_workers:
+                for pending_task in pending_futures.values():
+                    stage = getattr(pending_task, "stage", None)
+                    if stage:
+                        running_per_stage[stage] = running_per_stage.get(stage, 0) + 1
+
             for task in ready_tasks:
                 if len(pending_futures) >= max_workers:
                     break
+
+                # Enforce per-stage concurrency limit
+                if stage_workers:
+                    task_stage = getattr(task, "stage", None)
+                    if task_stage and task_stage in stage_workers:
+                        if running_per_stage.get(task_stage, 0) >= stage_workers[task_stage]:
+                            continue
+
                 # Mark as running before submitting
                 dag.mark_running(task)
                 task_start_times[str(task.id)] = datetime.now()
@@ -607,6 +633,12 @@ async def work_through_tasks_dag(
                     executor, execute_task, ctx, task, retries, tm1_services
                 )
                 pending_futures[future] = task
+
+                # Update running_per_stage after submission
+                if stage_workers:
+                    task_stage = getattr(task, "stage", None)
+                    if task_stage:
+                        running_per_stage[task_stage] = running_per_stage.get(task_stage, 0) + 1
 
         # Initial submission of ready tasks
         submit_ready_tasks()
