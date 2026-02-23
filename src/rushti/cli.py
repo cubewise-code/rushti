@@ -1262,11 +1262,6 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                                     results_df,
                                 )
 
-                                logger.info(
-                                    f"Results uploaded to TM1: Applications/rushti/{workflow}/"
-                                    f"{ctx.execution_logger.run_id if ctx.execution_logger else ''}.log"
-                                )
-
                                 # Optionally call }rushti.load.results to load CSV into cube
                                 if settings.tm1_integration.auto_load_results:
                                     # include .blb file extension for TM1 versions < 12 for process source files
