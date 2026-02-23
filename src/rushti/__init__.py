@@ -5,7 +5,7 @@ This package provides tools for executing TM1 TI processes in parallel
 with dependency management, checkpoint/resume support, and execution logging.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __app_name__ = "RushTI"
 
 # Core exports for programmatic use
