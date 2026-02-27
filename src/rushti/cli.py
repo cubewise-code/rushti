@@ -9,6 +9,7 @@ This module provides the command-line interface for RushTI, including:
 
 import argparse
 import asyncio
+import configparser
 import csv
 import logging
 import logging.handlers
@@ -157,41 +158,86 @@ from rushti.messages import (  # noqa: E402
     LOG_LEVELS,
 )
 
+
+def _resolve_logging_config(config_path: str) -> configparser.ConfigParser:
+    """Pre-process logging config to resolve relative file handler paths.
+
+    Python's fileConfig() resolves relative paths in handler args against the
+    current working directory. When rushti is invoked from TM1's ExecuteCommand,
+    CWD is often C:\\windows\\system32, causing PermissionError.
+
+    This reads the logging config into a ConfigParser, resolves any relative
+    file paths in file handler args against the application directory, and
+    returns the modified ConfigParser. Absolute paths are left unchanged.
+
+    Since Python 3.4, fileConfig() accepts a ConfigParser instance directly.
+    """
+    from rushti.utils import resolve_app_path, makedirs_shared
+
+    cp = configparser.ConfigParser()
+    cp.read(config_path)
+
+    file_handler_classes = {
+        "FileHandler",
+        "logging.FileHandler",
+        "handlers.RotatingFileHandler",
+        "logging.handlers.RotatingFileHandler",
+        "handlers.TimedRotatingFileHandler",
+        "logging.handlers.TimedRotatingFileHandler",
+    }
+
+    for section in cp.sections():
+        if not section.startswith("handler_"):
+            continue
+        handler_class = cp.get(section, "class", fallback="")
+        if handler_class not in file_handler_classes:
+            continue
+        args_str = cp.get(section, "args", fallback="")
+        if not args_str:
+            continue
+
+        # Extract the first string argument (the filename) from the args tuple.
+        # The args value looks like: ('rushti.log', 'a', 5*1024*1024, 10, 'utf-8')
+        # We can't use ast.literal_eval due to expressions like 5*1024*1024,
+        # so we find the first quoted string and do a targeted replacement.
+        for quote_char in ("'", '"'):
+            start_idx = args_str.find(quote_char)
+            if start_idx == -1:
+                continue
+            end_idx = args_str.find(quote_char, start_idx + 1)
+            if end_idx == -1:
+                continue
+            file_path = args_str[start_idx + 1 : end_idx]
+            if not file_path:
+                continue
+
+            if not os.path.isabs(file_path):
+                resolved = resolve_app_path(file_path)
+                # Use forward slashes — Python handles them on all platforms,
+                # and avoids backslash escaping issues inside the args string
+                resolved_fwd = resolved.replace("\\", "/")
+                # Ensure the target directory exists and is writable
+                makedirs_shared(os.path.dirname(resolved))
+                # Replace only the filename portion in the args string
+                new_args = args_str[: start_idx + 1] + resolved_fwd + args_str[end_idx:]
+                cp.set(section, "args", new_args)
+            break  # Only process the first string (the filename)
+
+    return cp
+
+
 # Initialize logging if config exists
 if os.path.isfile(LOGGING_CONFIG):
-    fileConfig(LOGGING_CONFIG)
+    resolved_config = _resolve_logging_config(LOGGING_CONFIG)
+    fileConfig(resolved_config)
 
-    # Fix file handler paths to use application directory
-    # When fileConfig() parses the logging config, relative paths like 'rushti.log' are resolved
-    # against the current working directory (where the command was invoked from), not the
-    # application directory. We need to close the handler and reopen it at the correct path.
-    from rushti.utils import ensure_shared_file, makedirs_shared, resolve_app_path
-
-    log_file_path = os.path.normpath(os.path.abspath(resolve_app_path("rushti.log")))
+    # Ensure log files and directories are writable by all OS users
+    from rushti.utils import ensure_shared_file, makedirs_shared
 
     for handler in logging.root.handlers:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
-            old_path = os.path.normpath(os.path.abspath(handler.baseFilename))
-            # Check if the handler was opened at a different location than the app directory
-            if old_path != log_file_path:
-                # Close the old handler and its stream
-                handler.close()
-
-                # Try to remove the incorrectly created empty log file
-                try:
-                    if os.path.isfile(old_path) and os.path.getsize(old_path) == 0:
-                        os.remove(old_path)
-                except OSError:
-                    pass  # Ignore errors - file might be in use or permissions issue
-
-                # Update to correct path and reopen
-                makedirs_shared(os.path.dirname(log_file_path))
-                handler.baseFilename = log_file_path
-                handler.stream = handler._open()
-
-            # Ensure log file and directory are writable by all users
-            makedirs_shared(os.path.dirname(log_file_path))
-            ensure_shared_file(log_file_path)
+            makedirs_shared(os.path.dirname(handler.baseFilename))
+            ensure_shared_file(handler.baseFilename)
 
 logger = logging.getLogger()
 
