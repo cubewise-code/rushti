@@ -91,6 +91,18 @@ By default, RushTI writes `rushti.log` to the application root directory (next t
 
 See `config/logging_config.ini` for the full configuration.
 
+#### Log File Path Resolution
+
+Relative file paths in `logging_config.ini` (e.g., `'rushti.log'`) are automatically resolved against the **application directory** — not the current working directory. This means the log file is always created in the expected location, even when RushTI is invoked from a different directory (e.g., via TM1's `ExecuteCommand` where the working directory is typically `C:\windows\system32`).
+
+The application directory is determined by:
+
+1. `RUSHTI_DIR` environment variable (if set)
+2. The directory containing the executable (for standalone `.exe` builds)
+3. The project root (for pip-installed scripts)
+
+If you specify an **absolute path** in `logging_config.ini` (e.g., `'E:/logs/rushti.log'`), it is used as-is.
+
 !!! tip "Choosing a Log Level"
     - **DEBUG**: Full worker activity, task scheduling decisions, connection details. Use for troubleshooting.
     - **INFO**: Normal operations -- task starts/completions, run summary. Default for production.

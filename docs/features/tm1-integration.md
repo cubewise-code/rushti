@@ -315,6 +315,9 @@ ExecuteCommand(cmd, 1);
     - **Always use `cmd /c`** — TM1's `ExecuteCommand` does not invoke a shell by default. Wrapping with `cmd /c` ensures the command runs in a proper shell environment.
     - **Use `ExecuteCommand(cmd, 1)`** — The second parameter `1` makes TM1 wait for RushTI to complete before continuing the TI process.
 
+!!! note "Log File Location"
+    When launched from `ExecuteCommand`, the process working directory is typically `C:\windows\system32`. RushTI automatically resolves relative log file paths (configured in `logging_config.ini`) against the application directory (`RUSHTI_DIR` or the exe directory), so `rushti.log` is created in the correct location regardless of the working directory. See [Logging](../advanced/settings-reference.md#logging) for details.
+
 ---
 
 ## Customize Further
