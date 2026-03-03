@@ -12,7 +12,6 @@ import asyncio
 import configparser
 import csv
 import logging
-import logging.handlers
 import os
 import sys
 from datetime import datetime, timedelta
@@ -172,7 +171,7 @@ def _resolve_logging_config(config_path: str) -> configparser.ConfigParser:
 
     Since Python 3.4, fileConfig() accepts a ConfigParser instance directly.
     """
-    from rushti.utils import resolve_app_path, makedirs_shared
+    from rushti.utils import resolve_app_path
 
     cp = configparser.ConfigParser()
     cp.read(config_path)
@@ -216,8 +215,6 @@ def _resolve_logging_config(config_path: str) -> configparser.ConfigParser:
                 # Use forward slashes — Python handles them on all platforms,
                 # and avoids backslash escaping issues inside the args string
                 resolved_fwd = resolved.replace("\\", "/")
-                # Ensure the target directory exists and is writable
-                makedirs_shared(os.path.dirname(resolved))
                 # Replace only the filename portion in the args string
                 new_args = args_str[: start_idx + 1] + resolved_fwd + args_str[end_idx:]
                 cp.set(section, "args", new_args)
@@ -235,7 +232,7 @@ if os.path.isfile(LOGGING_CONFIG):
     from rushti.utils import ensure_shared_file, makedirs_shared
 
     for handler in logging.root.handlers:
-        if isinstance(handler, logging.handlers.RotatingFileHandler):
+        if isinstance(handler, logging.FileHandler):
             makedirs_shared(os.path.dirname(handler.baseFilename))
             ensure_shared_file(handler.baseFilename)
 
