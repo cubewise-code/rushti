@@ -167,6 +167,7 @@ class TestExecutionV11(_BaseExecutionTest):
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
+@pytest.mark.v12
 class TestExecutionV12(_BaseExecutionTest):
     """Execution tests on TM1 v12 (tm1srv02)."""
 

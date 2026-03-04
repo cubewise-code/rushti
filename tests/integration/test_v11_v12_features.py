@@ -148,6 +148,7 @@ class TestStatsDBV11(_BaseFeatureTest):
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
+@pytest.mark.v12
 class TestStatsDBV12(_BaseFeatureTest):
     """Stats DB tests on v12."""
 
@@ -278,6 +279,7 @@ class TestExclusiveModeV11(_BaseFeatureTest):
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
+@pytest.mark.v12
 class TestExclusiveModeV12(_BaseFeatureTest):
     """Exclusive mode tests on v12."""
 

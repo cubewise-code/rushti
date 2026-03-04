@@ -137,6 +137,7 @@ class TestBuildOnV11(unittest.TestCase):
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
+@pytest.mark.v12
 class TestBuildOnV12(unittest.TestCase):
     """Build command tests for TM1 v12 (tm1srv02)."""
 

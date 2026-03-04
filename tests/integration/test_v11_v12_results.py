@@ -135,6 +135,7 @@ class TestResultPushV11(unittest.TestCase):
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
+@pytest.mark.v12
 class TestResultPushV12(unittest.TestCase):
     """Result push tests for TM1 v12 (tm1srv02)."""
 

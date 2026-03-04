@@ -78,6 +78,7 @@ markers = [
     "requires_tm1: marks tests as requiring TM1 connection (deselect with '-m \"not requires_tm1\"')",
     "slow: marks tests as slow running",
     "integration: marks tests as integration tests",
+    "v12: marks tests targeting TM1 v12 instances (may be unstable, non-blocking in CI)",
 ]
 asyncio_mode = "auto"
 
