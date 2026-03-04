@@ -992,7 +992,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         if tm1_taskfile:
             # Use TM1 taskfile directly - convert to DAG
             dag = convert_json_to_dag(
-                tm1_taskfile, expand=False, tm1_services=tm1_service_by_instance
+                tm1_taskfile, expand=True, tm1_services=tm1_service_by_instance
             )
             dag.validate()
             taskfile = tm1_taskfile
