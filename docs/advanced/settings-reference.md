@@ -184,12 +184,22 @@ Controls checkpoint saving and resume capability. When enabled, RushTI periodica
 
 ### [stats]
 
-Controls the SQLite statistics database that stores execution history. The stats database powers several features: EWMA optimization, the `rushti stats` commands, dashboard visualization, and historical analysis.
+Controls stats storage for execution history. RushTI supports two backends:
+- `sqlite` (default): local file storage
+- `dynamodb`: AWS DynamoDB tables
+
+Stats storage powers several features: EWMA optimization, the `rushti stats` commands, dashboard visualization, and historical analysis.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `enabled` | bool | `false` | Enable the SQLite stats database. When enabled, every run records task-level execution data (timing, status, errors). |
-| `retention_days` | int | `90` | Days to keep execution history. Records older than this value are deleted at startup. Valid range: 1--365. Use `0` to keep data indefinitely. |
+| `enabled` | bool | `false` | Enable stats storage. When enabled, every run records task-level execution data (timing, status, errors). |
+| `backend` | str | `sqlite` | Storage backend: `sqlite` or `dynamodb`. |
+| `db_path` | str | `data/rushti_stats.db` | SQLite file path (used when `backend = sqlite`). |
+| `dynamodb_region` | str | `` | AWS region for DynamoDB (used when `backend = dynamodb`). |
+| `dynamodb_runs_table` | str | `rushti_runs` | DynamoDB table name for run-level records. |
+| `dynamodb_task_results_table` | str | `rushti_task_results` | DynamoDB table name for task-level records. |
+| `dynamodb_endpoint_url` | str | `` | Optional custom endpoint URL (for local testing tools such as LocalStack). |
+| `retention_days` | int | `90` | Days to keep execution history. Records older than this value are deleted at startup. Valid range: 1-365. Use `0` to keep data indefinitely. |
 
 **Required by:** `[optimization]`, `rushti stats` commands, `rushti stats visualize`
 
@@ -353,7 +363,7 @@ Copy this template to `config/settings.ini` and uncomment the settings you want 
 # auto_resume = false
 
 # ------------------------------------------------------------------------------
-# [stats] - SQLite stats database for execution history
+# [stats] - Execution history storage (SQLite or DynamoDB)
 # ------------------------------------------------------------------------------
 [stats]
 
@@ -365,10 +375,30 @@ Copy this template to `config/settings.ini` and uncomment the settings you want 
 # Default: false
 # enabled = false
 
+# Storage backend: sqlite or dynamodb
+# Default: sqlite
+# backend = sqlite
+
 # Path to the SQLite database file
 # Relative paths are resolved from the application directory
 # Default: data/rushti_stats.db
 # db_path = data/rushti_stats.db
+
+# AWS region for DynamoDB backend (required when backend = dynamodb)
+# Example: eu-west-1
+# dynamodb_region = eu-west-1
+
+# DynamoDB runs table name (backend = dynamodb)
+# Default: rushti_runs
+# dynamodb_runs_table = rushti_runs
+
+# DynamoDB task results table name (backend = dynamodb)
+# Default: rushti_task_results
+# dynamodb_task_results_table = rushti_task_results
+
+# Optional custom DynamoDB endpoint URL (for LocalStack/testing)
+# Example: http://localhost:4566
+# dynamodb_endpoint_url =
 
 # Number of days to retain execution history
 # Valid range: 1-365

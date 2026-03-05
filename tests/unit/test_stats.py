@@ -334,6 +334,11 @@ class TestCreateStatsDatabase(TestCase):
             self.assertIsNone(db2.get_run_info("old_run"))
             db2.close()
 
+    def test_factory_invalid_backend_raises(self):
+        """Factory should reject unsupported storage backends."""
+        with self.assertRaises(ValueError):
+            create_stats_database(enabled=True, backend="unknown_backend")
+
 
 class TestStatsDatabaseContextManager(TestCase):
     """Tests for context manager protocol."""

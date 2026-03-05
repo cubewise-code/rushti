@@ -76,6 +76,7 @@ class TestResultPushV11(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
 
+        stats_db = None
         try:
             stats_db = StatsDatabase(db_path=db_path, enabled=True)
             run_id = "test_push_v11_" + datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -119,9 +120,9 @@ class TestResultPushV11(unittest.TestCase):
                 self.tm1.files.delete(actual_name)
             except Exception:
                 pass
-
-            stats_db.close()
         finally:
+            if stats_db is not None:
+                stats_db.close()
             os.unlink(db_path)
 
     def test_execute_with_return(self):
@@ -164,6 +165,7 @@ class TestResultPushV12(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
 
+        stats_db = None
         try:
             stats_db = StatsDatabase(db_path=db_path, enabled=True)
             run_id = "test_push_v12_" + datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -203,9 +205,9 @@ class TestResultPushV12(unittest.TestCase):
                 self.tm1.files.delete(file_name)
             except Exception:
                 pass
-
-            stats_db.close()
         finally:
+            if stats_db is not None:
+                stats_db.close()
             os.unlink(db_path)
 
     def test_execute_with_return(self):
@@ -221,6 +223,7 @@ class TestResultPushV12(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
 
+        stats_db = None
         try:
             stats_db = StatsDatabase(db_path=db_path, enabled=True)
             run_id = "test_autoload_v12_" + datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -284,9 +287,9 @@ class TestResultPushV12(unittest.TestCase):
                 self.tm1.files.delete(file_name)
             except Exception:
                 pass
-
-            stats_db.close()
         finally:
+            if stats_db is not None:
+                stats_db.close()
             os.unlink(db_path)
 
 

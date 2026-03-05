@@ -196,22 +196,42 @@
 # auto_resume = false
 
 # ------------------------------------------------------------------------------
-# [stats] - SQLite stats database for execution history
+# [stats] - Execution history storage (SQLite or DynamoDB)
 # ------------------------------------------------------------------------------
 [stats]
 
 # Enable the stats database for storing execution history
-# The stats database stores execution statistics for:
+# Stats storage stores execution statistics for:
 # - Optimization features (EWMA runtime estimation)
 # - TM1 cube logging data source
 # - Historical analysis via 'rushti db' commands
 # Default: false
 # enabled = false
 
+# Storage backend: sqlite or dynamodb
+# Default: sqlite
+# backend = sqlite
+
 # Path to the SQLite database file
 # Relative paths are resolved from the application directory
 # Default: data/rushti_stats.db
 # db_path = data/rushti_stats.db
+
+# AWS region for DynamoDB backend (required when backend = dynamodb)
+# Example: eu-west-1
+# dynamodb_region = eu-west-1
+
+# DynamoDB runs table name (backend = dynamodb)
+# Default: rushti_runs
+# dynamodb_runs_table = rushti_runs
+
+# DynamoDB task results table name (backend = dynamodb)
+# Default: rushti_task_results
+# dynamodb_task_results_table = rushti_task_results
+
+# Optional custom DynamoDB endpoint URL (for LocalStack/testing)
+# Example: http://localhost:4566
+# dynamodb_endpoint_url =
 
 # Number of days to retain execution history
 # Valid range: 1-365

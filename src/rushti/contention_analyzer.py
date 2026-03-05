@@ -128,29 +128,33 @@ def _get_task_parameters(
     :param workflow: Workflow name
     :return: List of dicts with task_id, task_signature, process, parameters (parsed)
     """
-    cursor = stats_db._conn.cursor()
-    cursor.execute(
-        """
-        SELECT task_id, task_signature, process, parameters
-        FROM task_results
-        WHERE run_id = (
-            SELECT run_id FROM runs
-            WHERE workflow = ? AND status = 'Success'
-            ORDER BY start_time DESC LIMIT 1
-        )
-        ORDER BY CAST(task_id AS INTEGER)
-        """,
-        (workflow,),
-    )
+    runs = stats_db.get_runs_for_workflow(workflow)
+    successful_run = next((r for r in runs if r.get("status") == "Success"), None)
+    if not successful_run:
+        return []
+
+    run_id = successful_run.get("run_id")
+    if not run_id:
+        return []
+
+    run_results = stats_db.get_run_results(run_id)
+
+    def _task_sort_key(result: Dict[str, Any]) -> Any:
+        task_id = str(result.get("task_id", ""))
+        if task_id.isdigit():
+            return int(task_id)
+        return task_id
+
+    run_results.sort(key=_task_sort_key)
 
     results = []
-    for row in cursor.fetchall():
-        params = json.loads(row["parameters"]) if row["parameters"] else {}
+    for row in run_results:
+        params = json.loads(row["parameters"]) if row.get("parameters") else {}
         results.append(
             {
-                "task_id": row["task_id"],
-                "task_signature": row["task_signature"],
-                "process": row["process"],
+                "task_id": row.get("task_id"),
+                "task_signature": row.get("task_signature"),
+                "process": row.get("process"),
                 "parameters": params,
             }
         )
@@ -883,18 +887,14 @@ def get_archived_taskfile_path(
     :param workflow: Workflow name
     :return: Path to archived JSON taskfile, or None if no successful runs exist
     """
-    cursor = stats_db._conn.cursor()
-    cursor.execute(
-        """
-        SELECT taskfile_path FROM runs
-        WHERE workflow = ? AND status = 'Success'
-        ORDER BY start_time DESC LIMIT 1
-        """,
-        (workflow,),
-    )
-    row = cursor.fetchone()
-    if row and row["taskfile_path"]:
-        return row["taskfile_path"]
+    runs = stats_db.get_runs_for_workflow(workflow)
+    successful_run = next((r for r in runs if r.get("status") == "Success"), None)
+    if successful_run:
+        run_id = successful_run.get("run_id")
+        if run_id:
+            run_info = stats_db.get_run_info(run_id)
+            if run_info and run_info.get("taskfile_path"):
+                return run_info["taskfile_path"]
     return None
 
 

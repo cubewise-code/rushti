@@ -23,7 +23,7 @@ RushTI transforms sequential TurboIntegrator execution into intelligent, paralle
 - **Self-Optimization** — EWMA-based learning reorders tasks from historical performance
 - **Checkpoint & Resume** — Automatic progress saving with failure recovery
 - **Exclusive Mode** — Prevents concurrent runs on shared TM1 servers
-- **SQLite Statistics** — Persistent execution history with dashboards and analysis
+- **Statistics Storage (SQLite or DynamoDB)** — Persistent execution history with dashboards and analysis
 - **TM1 Integration** — Read tasks from and write results to a TM1 cube
 - **100% Backwards Compatible** — Legacy TXT task files work without changes
 

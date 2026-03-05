@@ -1149,11 +1149,18 @@ def _stats_export(args) -> None:
 
         # Import here to avoid circular imports
         from rushti.tm1_integration import export_results_to_csv
+        from rushti.stats import get_db_path
 
         # Create stats database connection
         stats_db = create_stats_database(
             enabled=True,
             retention_days=settings.stats.retention_days,
+            backend=settings.stats.backend,
+            db_path=get_db_path(settings),
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
         )
 
         try:
@@ -1195,12 +1202,21 @@ def _stats_analyze(args) -> None:
     try:
         # Load settings
         from rushti.settings import load_settings
-        from rushti.stats import StatsDatabase, get_db_path
+        from rushti.stats import create_stats_database, get_db_path
 
         settings = load_settings(args.settings_file)
 
         # Initialize stats database
-        stats_db = StatsDatabase(db_path=get_db_path(settings), enabled=settings.stats.enabled)
+        stats_db = create_stats_database(
+            enabled=settings.stats.enabled,
+            retention_days=settings.stats.retention_days,
+            backend=settings.stats.backend,
+            db_path=get_db_path(settings),
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
 
         # Run analysis
         report = analyze_runs(
@@ -1276,7 +1292,7 @@ def _stats_optimize(args) -> None:
             write_optimized_taskfile,
         )
         from rushti.settings import load_settings
-        from rushti.stats import StatsDatabase, get_db_path
+        from rushti.stats import create_stats_database, get_db_path
         from rushti.utils import resolve_app_path
 
         settings = load_settings(args.settings_file)
@@ -1287,7 +1303,16 @@ def _stats_optimize(args) -> None:
             sys.exit(1)
 
         # Initialize stats database
-        stats_db = StatsDatabase(db_path=get_db_path(settings), enabled=True)
+        stats_db = create_stats_database(
+            enabled=True,
+            retention_days=settings.stats.retention_days,
+            backend=settings.stats.backend,
+            db_path=get_db_path(settings),
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
 
         try:
             # Resolve taskfile: explicit --tasks flag, or auto-resolve from archive
@@ -1592,10 +1617,13 @@ def _stats_visualize(args) -> None:
     from rushti.dashboard import generate_dashboard
     from rushti.db_admin import get_visualization_data
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path
+    from rushti.stats import get_db_path, get_stats_backend
     from rushti.utils import resolve_app_path
 
     settings = load_settings(getattr(args, "settings_file", None))
+    if get_stats_backend(settings) != "sqlite":
+        print("Error: 'stats visualize' currently supports only [stats] backend = sqlite")
+        sys.exit(1)
     db_path = get_db_path(settings)
 
     try:
@@ -1693,9 +1721,13 @@ def _stats_list(args) -> None:
     """
     from rushti.db_admin import list_runs, list_tasks
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path
+    from rushti.stats import get_db_path, get_stats_backend
 
     settings = load_settings(getattr(args, "settings_file", None))
+    if get_stats_backend(settings) != "sqlite":
+        print("Error: 'stats list' currently supports only [stats] backend = sqlite")
+        print("For DynamoDB-backed stats, use 'stats analyze' or 'stats export'.")
+        sys.exit(1)
     db_path = get_db_path(settings)
 
     try:
@@ -1778,7 +1810,7 @@ def run_db_command(argv: list) -> None:
         show_task_history,
     )
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path
+    from rushti.stats import get_db_path, get_stats_backend
 
     # Check for help flag or no subcommand
     if len(argv) < 3 or (len(argv) == 3 and argv[2] in ("--help", "-h")):
@@ -1848,6 +1880,9 @@ Note: For statistics, exports, and analysis, use '{APP_NAME} stats' command.
 
     # Get database path from settings
     settings = load_settings(args.settings_file)
+    if get_stats_backend(settings) != "sqlite":
+        print("Error: 'db' command currently supports only [stats] backend = sqlite")
+        sys.exit(1)
     db_path = get_db_path(settings)
 
     try:

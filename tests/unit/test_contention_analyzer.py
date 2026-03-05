@@ -562,19 +562,20 @@ class TestAnalyzeContention(TestCase):
         stats_db = Mock()
         stats_db.enabled = True
 
-        # Mock _conn.cursor() for _get_task_parameters
-        mock_cursor = Mock()
-        mock_rows = []
-        for row in task_rows:
-            mock_row = {
+        # Mock get_runs_for_workflow: one successful run with no ceiling data
+        stats_db.get_runs_for_workflow.return_value = [{"run_id": "run1", "status": "Success"}]
+
+        # Mock get_run_results for _get_task_parameters
+        mock_rows = [
+            {
                 "task_id": row["task_id"],
                 "task_signature": row["task_signature"],
                 "process": row["process"],
                 "parameters": json.dumps(row["parameters"]),
             }
-            mock_rows.append(mock_row)
-        mock_cursor.fetchall.return_value = mock_rows
-        stats_db._conn.cursor.return_value = mock_cursor
+            for row in task_rows
+        ]
+        stats_db.get_run_results.return_value = mock_rows
 
         # Mock get_workflow_signatures
         stats_db.get_workflow_signatures.return_value = list(ewma_durations.keys())
@@ -585,8 +586,9 @@ class TestAnalyzeContention(TestCase):
 
         stats_db.get_task_durations.side_effect = get_durations
 
-        # Mock ceiling-detection methods (default: no runs for ceiling analysis)
-        stats_db.get_runs_for_workflow.return_value = []
+        # Ceiling detection: no stats or concurrent data by default
+        stats_db.get_run_task_stats.return_value = None
+        stats_db.get_concurrent_task_counts.return_value = []
 
         return stats_db
 
@@ -923,9 +925,8 @@ class TestGetArchivedTaskfilePath(TestCase):
     def test_returns_path_for_successful_run(self):
         """Returns taskfile_path from the most recent successful run."""
         stats_db = Mock()
-        mock_cursor = Mock()
-        mock_cursor.fetchone.return_value = {"taskfile_path": "/archive/my_workflow/run123.json"}
-        stats_db._conn.cursor.return_value = mock_cursor
+        stats_db.get_runs_for_workflow.return_value = [{"run_id": "run123", "status": "Success"}]
+        stats_db.get_run_info.return_value = {"taskfile_path": "/archive/my_workflow/run123.json"}
 
         result = get_archived_taskfile_path(stats_db, "my_workflow")
         self.assertEqual(result, "/archive/my_workflow/run123.json")
@@ -933,9 +934,7 @@ class TestGetArchivedTaskfilePath(TestCase):
     def test_returns_none_when_no_runs(self):
         """Returns None when no successful runs exist."""
         stats_db = Mock()
-        mock_cursor = Mock()
-        mock_cursor.fetchone.return_value = None
-        stats_db._conn.cursor.return_value = mock_cursor
+        stats_db.get_runs_for_workflow.return_value = []
 
         result = get_archived_taskfile_path(stats_db, "empty_workflow")
         self.assertIsNone(result)
@@ -943,9 +942,8 @@ class TestGetArchivedTaskfilePath(TestCase):
     def test_returns_none_when_path_is_null(self):
         """Returns None when taskfile_path is NULL in the database."""
         stats_db = Mock()
-        mock_cursor = Mock()
-        mock_cursor.fetchone.return_value = {"taskfile_path": None}
-        stats_db._conn.cursor.return_value = mock_cursor
+        stats_db.get_runs_for_workflow.return_value = [{"run_id": "run123", "status": "Success"}]
+        stats_db.get_run_info.return_value = {"taskfile_path": None}
 
         result = get_archived_taskfile_path(stats_db, "workflow_with_null")
         self.assertIsNone(result)
@@ -1340,19 +1338,21 @@ class TestCeilingIntegration(TestCase):
         stats_db = Mock()
         stats_db.enabled = True
 
-        # Mock _conn.cursor() for _get_task_parameters
-        mock_cursor = Mock()
-        mock_rows = []
-        for row in task_rows:
-            mock_row = {
+        # If no runs provided, use a minimal successful run (no ceiling data)
+        effective_runs = runs if runs is not None else [{"run_id": "run1", "status": "Success"}]
+        stats_db.get_runs_for_workflow.return_value = effective_runs
+
+        # Mock get_run_results for _get_task_parameters
+        mock_rows = [
+            {
                 "task_id": row["task_id"],
                 "task_signature": row["task_signature"],
                 "process": row["process"],
                 "parameters": json.dumps(row["parameters"]),
             }
-            mock_rows.append(mock_row)
-        mock_cursor.fetchall.return_value = mock_rows
-        stats_db._conn.cursor.return_value = mock_cursor
+            for row in task_rows
+        ]
+        stats_db.get_run_results.return_value = mock_rows
 
         # Mock get_workflow_signatures
         stats_db.get_workflow_signatures.return_value = list(ewma_durations.keys())
@@ -1363,8 +1363,7 @@ class TestCeilingIntegration(TestCase):
 
         stats_db.get_task_durations.side_effect = get_durations
 
-        # Mock ceiling-detection methods
-        stats_db.get_runs_for_workflow.return_value = runs or []
+        # Ceiling detection defaults
         stats_db.get_run_task_stats.return_value = None
         stats_db.get_concurrent_task_counts.return_value = []
 

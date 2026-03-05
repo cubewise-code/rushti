@@ -23,7 +23,7 @@ logger = logging.getLogger()
 # Context field format patterns
 RUSHTI_CONTEXT_PREFIX = "RushTI"
 RUSHTI_EXCLUSIVE_PREFIX = "RushTIX"
-CONTEXT_PATTERN = re.compile(r"^RushTI(X?)(.*)$")
+CONTEXT_PATTERN = re.compile(r"^RushTI(X?)_(.*)$")
 
 # TM1 context field maximum length (64 characters)
 TM1_CONTEXT_MAX_LENGTH = 64
@@ -50,10 +50,10 @@ def build_session_context(workflow: str = "", exclusive: bool = False) -> str:
     :param workflow: The workflow name (may be empty)
     :param exclusive: Whether this is an exclusive mode session
     :return: Context string (e.g., "RushTI_daily-etl" or "RushTIX_daily-etl",
-             or "RushTI" / "RushTIX" when workflow is empty)
+             or "RushTI_" / "RushTIX_" when workflow is empty)
     """
     prefix = RUSHTI_EXCLUSIVE_PREFIX if exclusive else RUSHTI_CONTEXT_PREFIX
-    context = f"{prefix}_{workflow}" if workflow else prefix
+    context = f"{prefix}_{workflow}"
 
     # Truncate if exceeds TM1 limit
     if len(context) > TM1_CONTEXT_MAX_LENGTH:
