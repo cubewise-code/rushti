@@ -109,7 +109,7 @@ class TestExclusiveModeIntegration(unittest.TestCase):
 
         # Our session should not appear in results (even if it has RushTI context)
         for session in sessions:
-            self.assertNotEqual(session.workflow, "_test-exclusive")
+            self.assertNotEqual(session.workflow, "test-exclusive")
 
     def test_wait_for_exclusive_no_blocking(self):
         """Test wait_for_exclusive_access proceeds when no blocking sessions."""

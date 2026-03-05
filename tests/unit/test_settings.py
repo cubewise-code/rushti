@@ -87,6 +87,44 @@ class TestSettingsLoading(unittest.TestCase):
         finally:
             os.unlink(settings_path)
 
+    def test_load_settings_stats_dynamodb_fields(self):
+        """Test loading DynamoDB-specific stats settings."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
+            f.write("[stats]\n")
+            f.write("enabled = true\n")
+            f.write("backend = dynamodb\n")
+            f.write("dynamodb_region = eu-west-1\n")
+            f.write("dynamodb_runs_table = custom_runs\n")
+            f.write("dynamodb_task_results_table = custom_task_results\n")
+            f.write("dynamodb_endpoint_url = http://localhost:4566\n")
+            f.flush()
+            settings_path = f.name
+
+        try:
+            settings = load_settings(settings_path)
+            self.assertEqual(settings.stats.backend, "dynamodb")
+            self.assertEqual(settings.stats.dynamodb_region, "eu-west-1")
+            self.assertEqual(settings.stats.dynamodb_runs_table, "custom_runs")
+            self.assertEqual(settings.stats.dynamodb_task_results_table, "custom_task_results")
+            self.assertEqual(settings.stats.dynamodb_endpoint_url, "http://localhost:4566")
+        finally:
+            os.unlink(settings_path)
+
+    def test_load_settings_stats_invalid_backend(self):
+        """Test invalid stats backend raises ValueError."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
+            f.write("[stats]\n")
+            f.write("backend = postgresql\n")
+            f.flush()
+            settings_path = f.name
+
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                load_settings(settings_path)
+            self.assertIn("backend", str(ctx.exception))
+        finally:
+            os.unlink(settings_path)
+
 
 class TestSettingsValidation(unittest.TestCase):
     """Tests for settings validation"""

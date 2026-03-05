@@ -102,9 +102,13 @@ class ResumeSettings:
 
 @dataclass
 class StatsSettings:
-    """SQLite stats database settings.
+    """Stats storage settings.
 
-    The stats database stores execution statistics for:
+    Supported backends:
+    - sqlite (default): local SQLite file
+    - dynamodb: AWS DynamoDB tables
+
+    Stats storage stores execution statistics for:
     - Optimization features (EWMA runtime estimation)
     - TM1 cube logging data source
     - Historical analysis
@@ -112,7 +116,12 @@ class StatsSettings:
 
     enabled: bool = False
     retention_days: int = 90
+    backend: str = "sqlite"
     db_path: str = ""
+    dynamodb_region: str = ""
+    dynamodb_runs_table: str = "rushti_runs"
+    dynamodb_task_results_table: str = "rushti_task_results"
+    dynamodb_endpoint_url: str = ""
 
 
 @dataclass
@@ -165,7 +174,12 @@ SETTINGS_SCHEMA = {
     "stats": {
         "enabled": bool,
         "retention_days": int,
+        "backend": str,
         "db_path": str,
+        "dynamodb_region": str,
+        "dynamodb_runs_table": str,
+        "dynamodb_task_results_table": str,
+        "dynamodb_endpoint_url": str,
     },
 }
 
@@ -173,6 +187,7 @@ SETTINGS_SCHEMA = {
 VALID_VALUES = {
     "mode": ["norm", "opt"],
     "level": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    "backend": ["sqlite", "dynamodb"],
 }
 
 

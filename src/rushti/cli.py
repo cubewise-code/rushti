@@ -960,12 +960,17 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     results = list()
 
     # Initialize stats database if enabled
-    from rushti.stats import get_db_path
+    from rushti.stats import get_db_path, get_stats_backend
 
     db_kwargs = dict(
         enabled=settings.stats.enabled,
         retention_days=settings.stats.retention_days,
+        backend=get_stats_backend(settings),
         db_path=get_db_path(settings),
+        dynamodb_region=settings.stats.dynamodb_region or None,
+        dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+        dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+        dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
     )
     ctx = ExecutionContext(
         stats_db=create_stats_database(**db_kwargs),
