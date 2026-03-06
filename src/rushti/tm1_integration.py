@@ -416,6 +416,86 @@ def build_results_dataframe(
     return df
 
 
+def summarize_expanded_tasks(df: pd.DataFrame) -> pd.DataFrame:
+    """Summarize expanded task results so each task_id has exactly one row.
+
+    Expanded tasks (from MDX wildcards) share the same task_id, which causes
+    "last row wins" when loaded into the TM1 cube. This function aggregates
+    duplicate task_id rows into a single summary row per task_id.
+
+    Non-expanded tasks (single row per task_id) pass through unchanged.
+
+    :param df: DataFrame with task results (may have duplicate task_ids)
+    :return: DataFrame with one row per task_id
+    """
+    if df.empty:
+        return df
+
+    # Check if any task_id appears more than once
+    task_id_counts = df["task_id"].value_counts()
+    if (task_id_counts <= 1).all():
+        return df
+
+    summary_rows = []
+    for task_id, group in df.groupby("task_id", sort=False):
+        if len(group) == 1:
+            summary_rows.append(group.iloc[0].to_dict())
+            continue
+
+        # Start with first row as base (shared fields: instance, process, predecessors, stage, etc.)
+        summary = group.iloc[0].to_dict()
+        count = len(group)
+
+        # Status: summarize success/fail counts
+        success_count = (group["status"] == "Success").sum()
+        fail_count = count - success_count
+        if fail_count == 0:
+            summary["status"] = "Success"
+        elif success_count == 0:
+            summary["status"] = "Fail"
+        else:
+            summary["status"] = f"Partial ({success_count}/{count} Success)"
+
+        # Time: earliest start, latest end
+        summary["start_time"] = group["start_time"].min()
+        summary["end_time"] = group["end_time"].max()
+
+        # Duration: wall clock from earliest start to latest end
+        try:
+            start = pd.to_datetime(summary["start_time"])
+            end = pd.to_datetime(summary["end_time"])
+            summary["duration_seconds"] = round((end - start).total_seconds(), 3)
+        except (ValueError, TypeError):
+            summary["duration_seconds"] = group["duration_seconds"].sum()
+
+        # Parameters: collect all individual parameter sets
+        param_list = []
+        for params_str in group["parameters"]:
+            try:
+                param_list.append(json.loads(params_str))
+            except (json.JSONDecodeError, TypeError):
+                param_list.append(params_str)
+        summary["parameters"] = json.dumps({"expanded": count, "parameters": param_list})
+
+        # Error messages: concatenate non-empty errors
+        errors = [e for e in group["error_message"] if e]
+        summary["error_message"] = "; ".join(errors)
+
+        # Retries: sum across all expanded tasks
+        summary["retry_count"] = int(group["retry_count"].sum())
+        summary["retries"] = summary["retry_count"]
+
+        summary_rows.append(summary)
+
+    result = pd.DataFrame(summary_rows)
+    summarized_count = (task_id_counts > 1).sum()
+    logger.info(
+        f"Summarized {summarized_count} expanded task(s) for TM1 upload "
+        f"({len(df)} rows -> {len(result)} rows)"
+    )
+    return result
+
+
 def export_results_to_csv(
     stats_db: StatsDatabase,
     workflow: str,

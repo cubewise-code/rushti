@@ -1283,6 +1283,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                         upload_results_to_tm1,
                         connect_to_tm1_instance,
                         build_results_dataframe,
+                        summarize_expanded_tasks,
                     )
 
                     tm1_instance = settings.tm1_integration.default_tm1_instance
@@ -1297,6 +1298,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                                 workflow,
                                 ctx.execution_logger.run_id if ctx.execution_logger else "",
                             )
+                            results_df = summarize_expanded_tasks(results_df)
                             if not results_df.empty:
                                 file_name = upload_results_to_tm1(
                                     tm1_upload,
