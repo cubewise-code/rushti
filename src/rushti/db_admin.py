@@ -15,9 +15,29 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from rushti.stats import DEFAULT_DB_PATH
+from rushti.stats import DEFAULT_DB_PATH  # used by SQLite-only admin functions
 
 logger = logging.getLogger(__name__)
+
+
+def _to_float(value: Any) -> Optional[float]:
+    """Best-effort numeric conversion used by backend dispatch helpers."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value: Any) -> Optional[int]:
+    """Best-effort integer conversion used by backend dispatch helpers."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def get_db_stats(db_path: str = DEFAULT_DB_PATH) -> Dict[str, Any]:
@@ -209,109 +229,250 @@ def list_workflows(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
 
 
 def list_runs(
-    workflow: str, db_path: str = DEFAULT_DB_PATH, limit: int = 20
+    workflow: str,
+    backend: Any = DEFAULT_DB_PATH,
+    limit: int = 20,
 ) -> List[Dict[str, Any]]:
     """List runs for a specific workflow.
 
     :param workflow: Workflow name to query
-    :param db_path: Path to SQLite database
+    :param backend: Stats backend (StatsDatabase or DynamoDBStatsDatabase), or SQLite db path
     :param limit: Maximum number of runs to return
     :return: List of run summaries
     """
-    if not Path(db_path).exists():
-        return []
+    if isinstance(backend, str):
+        db_path = backend
+        if not Path(db_path).exists():
+            return []
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
 
-    # Query from runs table for run-level data, with task stats from task_results
-    cursor.execute(
-        """
-        SELECT
-            r.run_id,
-            r.start_time,
-            r.end_time,
-            r.duration_seconds,
-            r.task_count,
-            r.success_count,
-            (SELECT SUM(duration_seconds) FROM task_results WHERE run_id = r.run_id) as total_task_duration
-        FROM runs r
-        WHERE r.workflow = ?
-        ORDER BY r.start_time DESC
-        LIMIT ?
-    """,
-        (workflow, limit),
-    )
+        cursor.execute(
+            """
+            SELECT
+                r.run_id,
+                r.start_time,
+                r.end_time,
+                r.duration_seconds,
+                r.task_count,
+                r.success_count,
+                (SELECT SUM(duration_seconds) FROM task_results WHERE run_id = r.run_id) as total_duration
+            FROM runs r
+            WHERE r.workflow = ?
+            ORDER BY r.start_time DESC
+            LIMIT ?
+        """,
+            (workflow, limit),
+        )
 
-    runs = []
-    for row in cursor.fetchall():
-        task_count = row[4] or 0
-        success_count = row[5] or 0
+        runs = []
+        for row in cursor.fetchall():
+            task_count = row[4] or 0
+            success_count = row[5] or 0
+            success_rate = (success_count / task_count * 100) if task_count > 0 else 0
+            total_duration = round(row[6], 2) if row[6] else 0
+            runs.append(
+                {
+                    "run_id": row[0],
+                    "start_time": row[1],
+                    "end_time": row[2],
+                    "duration_seconds": round(row[3], 2) if row[3] else None,
+                    "task_count": task_count,
+                    "success_count": success_count,
+                    "success_rate": round(success_rate, 1),
+                    "total_duration": total_duration,
+                    "total_task_duration": total_duration,
+                }
+            )
+
+        conn.close()
+        return runs
+
+    runs_summary = backend.get_runs_for_workflow(workflow) or []
+    if limit > 0:
+        runs_summary = runs_summary[:limit]
+
+    runs: List[Dict[str, Any]] = []
+    for run in runs_summary:
+        run_id = run.get("run_id")
+        task_count = _to_int(run.get("task_count")) or 0
+        success_count = _to_int(run.get("success_count"))
+
+        run_results = backend.get_run_results(run_id) if run_id else []
+        total_duration = 0.0
+        computed_success = 0
+
+        for result in run_results:
+            duration = _to_float(result.get("duration_seconds"))
+            if duration is not None:
+                total_duration += duration
+            if result.get("status") == "Success":
+                computed_success += 1
+
+        if success_count is None:
+            success_count = computed_success
+
+        # Fall back to observed task results when run metadata is incomplete.
+        if task_count == 0 and run_results:
+            task_count = len(run_results)
+
         success_rate = (success_count / task_count * 100) if task_count > 0 else 0
+
+        duration_seconds = _to_float(run.get("duration_seconds"))
         runs.append(
             {
-                "run_id": row[0],
-                "start_time": row[1],
-                "end_time": row[2],
-                "duration_seconds": round(row[3], 2) if row[3] else None,
+                "run_id": run_id,
+                "start_time": run.get("start_time"),
+                "end_time": run.get("end_time"),
+                "duration_seconds": (
+                    round(duration_seconds, 2) if duration_seconds is not None else None
+                ),
                 "task_count": task_count,
                 "success_count": success_count,
                 "success_rate": round(success_rate, 1),
-                "total_task_duration": round(row[6], 2) if row[6] else 0,
+                "total_duration": round(total_duration, 2),
+                # Keep legacy key for compatibility with older callers.
+                "total_task_duration": round(total_duration, 2),
             }
         )
 
-    conn.close()
     return runs
 
 
-def list_tasks(workflow: str, db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+def list_tasks(
+    workflow: str,
+    backend: Any = DEFAULT_DB_PATH,
+) -> List[Dict[str, Any]]:
     """List unique tasks for a specific workflow.
 
     :param workflow: Workflow name to query
-    :param db_path: Path to SQLite database
+    :param backend: Stats backend (StatsDatabase or DynamoDBStatsDatabase), or SQLite db path
     :return: List of task summaries
     """
-    if not Path(db_path).exists():
-        return []
+    if isinstance(backend, str):
+        db_path = backend
+        if not Path(db_path).exists():
+            return []
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
-            task_signature,
-            task_id,
-            instance,
-            process,
-            COUNT(*) as run_count,
-            AVG(duration_seconds) as avg_duration,
-            COUNT(CASE WHEN status = 'Success' THEN 1 END) as success_count
-        FROM task_results
-        WHERE workflow = ?
-        GROUP BY task_signature
-        ORDER BY task_id
-    """,
-        (workflow,),
-    )
+        cursor.execute(
+            """
+            SELECT
+                task_signature,
+                task_id,
+                instance,
+                process,
+                COUNT(*) as run_count,
+                AVG(duration_seconds) as avg_duration,
+                COUNT(CASE WHEN status = 'Success' THEN 1 END) as success_count
+            FROM task_results
+            WHERE workflow = ?
+            GROUP BY task_signature
+            ORDER BY task_id
+        """,
+            (workflow,),
+        )
 
-    tasks = []
-    for row in cursor.fetchall():
-        success_rate = (row[6] / row[4] * 100) if row[4] > 0 else 0
+        tasks = []
+        for row in cursor.fetchall():
+            success_rate = (row[6] / row[4] * 100) if row[4] > 0 else 0
+            tasks.append(
+                {
+                    "task_signature": row[0],
+                    "task_id": row[1],
+                    "instance": row[2],
+                    "process": row[3],
+                    "run_count": row[4],
+                    "execution_count": row[4],
+                    "avg_duration": round(row[5], 2) if row[5] else 0,
+                    "success_rate": round(success_rate, 1),
+                }
+            )
+
+        conn.close()
+        return tasks
+
+    signatures = backend.get_workflow_signatures(workflow) or []
+    runs = backend.get_runs_for_workflow(workflow) or []
+
+    tasks_by_signature: Dict[str, Dict[str, Any]] = {
+        sig: {
+            "task_signature": sig,
+            "task_id": "",
+            "instance": "",
+            "process": "",
+            "run_count": 0,
+            "success_count": 0,
+            "duration_total": 0.0,
+            "duration_count": 0,
+        }
+        for sig in signatures
+    }
+
+    for run in runs:
+        run_id = run.get("run_id")
+        if not run_id:
+            continue
+        for result in backend.get_run_results(run_id):
+            signature = result.get("task_signature")
+            if not signature:
+                continue
+
+            entry = tasks_by_signature.setdefault(
+                signature,
+                {
+                    "task_signature": signature,
+                    "task_id": "",
+                    "instance": "",
+                    "process": "",
+                    "run_count": 0,
+                    "success_count": 0,
+                    "duration_total": 0.0,
+                    "duration_count": 0,
+                },
+            )
+
+            if not entry["task_id"]:
+                entry["task_id"] = result.get("task_id") or ""
+            if not entry["instance"]:
+                entry["instance"] = result.get("instance") or ""
+            if not entry["process"]:
+                entry["process"] = result.get("process") or ""
+
+            entry["run_count"] += 1
+            if result.get("status") == "Success":
+                entry["success_count"] += 1
+
+            duration = _to_float(result.get("duration_seconds"))
+            if duration is not None:
+                entry["duration_total"] += duration
+                entry["duration_count"] += 1
+
+    tasks: List[Dict[str, Any]] = []
+    for signature, row in tasks_by_signature.items():
+        run_count = row["run_count"]
+        success_rate = (row["success_count"] / run_count * 100) if run_count > 0 else 0
+        avg_duration = (
+            row["duration_total"] / row["duration_count"] if row["duration_count"] > 0 else 0
+        )
         tasks.append(
             {
-                "task_signature": row[0],
-                "task_id": row[1],
-                "instance": row[2],
-                "process": row[3],
-                "run_count": row[4],
-                "avg_duration": round(row[5], 2) if row[5] else 0,
+                "task_signature": signature,
+                "task_id": row["task_id"],
+                "instance": row["instance"],
+                "process": row["process"],
+                "run_count": run_count,
+                # Keep CLI-facing alias expected by current commands output.
+                "execution_count": run_count,
+                "avg_duration": round(avg_duration, 2),
                 "success_rate": round(success_rate, 1),
             }
         )
 
-    conn.close()
+    tasks.sort(key=lambda t: t["task_id"])
     return tasks
 
 
@@ -695,76 +856,169 @@ def show_task_history(
     }
 
 
-def get_visualization_data(workflow: str, db_path: str = DEFAULT_DB_PATH) -> Dict[str, Any]:
+def get_visualization_data(
+    workflow: str,
+    backend: Any = DEFAULT_DB_PATH,
+) -> Dict[str, Any]:
     """Get all data needed for the HTML dashboard visualization.
 
-    Returns all runs and their task results for a workflow in a single
-    efficient query batch.
+    Returns all runs and their task results for a workflow.
 
     :param workflow: Workflow name to query
-    :param db_path: Path to SQLite database
+    :param backend: Stats backend (StatsDatabase or DynamoDBStatsDatabase), or SQLite db path
     :return: Dictionary with 'runs' and 'task_results' lists, or error info
     """
-    if not Path(db_path).exists():
-        return {"exists": False, "message": f"Database not found: {db_path}"}
+    if isinstance(backend, str):
+        db_path = backend
+        if not Path(db_path).exists():
+            return {"exists": False, "message": f"Database not found: {db_path}"}
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
 
-    # Get all runs for this taskfile
-    cursor.execute(
-        """
-        SELECT run_id, workflow, taskfile_path, start_time, end_time,
-               duration_seconds, status, task_count, success_count, failure_count,
-               taskfile_name, taskfile_description, taskfile_author,
-               max_workers, retries, result_file, exclusive, optimize
-        FROM runs
-        WHERE workflow = ?
-        ORDER BY start_time DESC
-        """,
-        (workflow,),
-    )
-    runs_rows = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT run_id, workflow, taskfile_path, start_time, end_time,
+                   duration_seconds, status, task_count, success_count, failure_count,
+                   taskfile_name, taskfile_description, taskfile_author,
+                   max_workers, retries, result_file, exclusive, optimize
+            FROM runs
+            WHERE workflow = ?
+            ORDER BY start_time DESC
+            """,
+            (workflow,),
+        )
+        runs_rows = cursor.fetchall()
 
-    if not runs_rows:
+        if not runs_rows:
+            conn.close()
+            return {
+                "exists": False,
+                "message": f"No runs found for workflow: {workflow}",
+            }
+
+        runs = []
+        run_ids = []
+        for row in runs_rows:
+            run = dict(row)
+            for field in ["exclusive", "optimize"]:
+                if field in run and run[field] is not None:
+                    run[field] = bool(run[field])
+            runs.append(run)
+            run_ids.append(run["run_id"])
+
+        placeholders = ",".join("?" * len(run_ids))
+        cursor.execute(
+            f"""
+            SELECT run_id, task_id, task_signature, instance, process, parameters,
+                   status, start_time, end_time, duration_seconds, retry_count,
+                   error_message, predecessors, stage
+            FROM task_results
+            WHERE run_id IN ({placeholders})
+            ORDER BY run_id, id
+            """,
+            run_ids,
+        )
+
+        task_results = [dict(row) for row in cursor.fetchall()]
+
         conn.close()
+
+        return {
+            "exists": True,
+            "workflow": workflow,
+            "runs": runs,
+            "task_results": task_results,
+        }
+
+    runs_summary = backend.get_runs_for_workflow(workflow) or []
+    if not runs_summary:
         return {
             "exists": False,
             "message": f"No runs found for workflow: {workflow}",
         }
 
-    runs = []
-    run_ids = []
-    for row in runs_rows:
-        run = dict(row)
-        # Convert SQLite integers to Python booleans
-        for field in ["exclusive", "optimize"]:
-            if field in run and run[field] is not None:
-                run[field] = bool(run[field])
+    runs: List[Dict[str, Any]] = []
+    task_results: List[Dict[str, Any]] = []
+
+    for summary in runs_summary:
+        run_id = summary.get("run_id")
+        if not run_id:
+            continue
+
+        run_info = backend.get_run_info(run_id) or {}
+        run = {
+            "run_id": run_id,
+            "workflow": run_info.get("workflow") or summary.get("workflow") or workflow,
+            "taskfile_path": run_info.get("taskfile_path"),
+            "start_time": run_info.get("start_time") or summary.get("start_time"),
+            "end_time": run_info.get("end_time") or summary.get("end_time"),
+            "duration_seconds": _to_float(
+                run_info.get("duration_seconds")
+                if run_info.get("duration_seconds") is not None
+                else summary.get("duration_seconds")
+            ),
+            "status": run_info.get("status") or summary.get("status"),
+            "task_count": _to_int(
+                run_info.get("task_count")
+                if run_info.get("task_count") is not None
+                else summary.get("task_count")
+            ),
+            "success_count": _to_int(
+                run_info.get("success_count")
+                if run_info.get("success_count") is not None
+                else summary.get("success_count")
+            ),
+            "failure_count": _to_int(
+                run_info.get("failure_count")
+                if run_info.get("failure_count") is not None
+                else summary.get("failure_count")
+            ),
+            "taskfile_name": run_info.get("taskfile_name"),
+            "taskfile_description": run_info.get("taskfile_description"),
+            "taskfile_author": run_info.get("taskfile_author"),
+            "max_workers": _to_int(
+                run_info.get("max_workers")
+                if run_info.get("max_workers") is not None
+                else summary.get("max_workers")
+            ),
+            "retries": _to_int(run_info.get("retries")),
+            "result_file": run_info.get("result_file"),
+            "exclusive": (
+                bool(run_info["exclusive"]) if run_info.get("exclusive") is not None else None
+            ),
+            "optimize": (
+                bool(run_info["optimize"]) if run_info.get("optimize") is not None else None
+            ),
+        }
         runs.append(run)
-        run_ids.append(run["run_id"])
 
-    # Get all task results for these runs
-    placeholders = ",".join("?" * len(run_ids))
-    cursor.execute(
-        f"""
-        SELECT run_id, task_id, task_signature, instance, process, parameters,
-               status, start_time, end_time, duration_seconds, retry_count,
-               error_message, predecessors, stage
-        FROM task_results
-        WHERE run_id IN ({placeholders})
-        ORDER BY run_id, id
-        """,
-        run_ids,
-    )
+        for result in backend.get_run_results(run_id):
+            task_results.append(
+                {
+                    "run_id": run_id,
+                    "task_id": result.get("task_id"),
+                    "task_signature": result.get("task_signature"),
+                    "instance": result.get("instance"),
+                    "process": result.get("process"),
+                    "parameters": result.get("parameters"),
+                    "status": result.get("status"),
+                    "start_time": result.get("start_time"),
+                    "end_time": result.get("end_time"),
+                    "duration_seconds": _to_float(result.get("duration_seconds")),
+                    "retry_count": _to_int(result.get("retry_count")) or 0,
+                    "error_message": result.get("error_message"),
+                    "predecessors": result.get("predecessors"),
+                    "stage": result.get("stage"),
+                }
+            )
 
-    task_results = []
-    for row in cursor.fetchall():
-        result = dict(row)
-        task_results.append(result)
-
-    conn.close()
+    if not runs:
+        return {
+            "exists": False,
+            "message": f"No runs found for workflow: {workflow}",
+        }
 
     return {
         "exists": True,

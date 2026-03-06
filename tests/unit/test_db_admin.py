@@ -6,10 +6,13 @@ clearing records, and maintenance operations.
 """
 
 import os
-import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta
+from decimal import Decimal
+from unittest.mock import MagicMock
+
+from rushti.stats import StatsDatabase
 
 from rushti.db_admin import (
     clear_all,
@@ -18,10 +21,11 @@ from rushti.db_admin import (
     clear_workflow,
     export_to_csv,
     get_db_stats,
+    get_visualization_data,
     get_workflow_stats,
     list_runs,
-    list_workflows,
     list_tasks,
+    list_workflows,
     show_run_details,
     show_task_history,
     vacuum_database,
@@ -37,48 +41,32 @@ class TestDatabaseAdminUtilities(unittest.TestCase):
         self.temp_db.close()
         self.db_path = self.temp_db.name
 
-        # Create database schema
-        conn = sqlite3.connect(self.db_path)
+        # Use StatsDatabase to create the full schema and open a managed connection.
+        self.stats_db = StatsDatabase(db_path=self.db_path, enabled=True)
+        conn = self.stats_db._conn
         cursor = conn.cursor()
-
-        # Create task_results table
-        cursor.execute("""
-            CREATE TABLE task_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id TEXT NOT NULL,
-                workflow TEXT NOT NULL,
-                task_id TEXT NOT NULL,
-                task_signature TEXT NOT NULL,
-                instance TEXT NOT NULL,
-                process TEXT NOT NULL,
-                parameters TEXT,
-                status TEXT NOT NULL,
-                start_time TEXT NOT NULL,
-                end_time TEXT NOT NULL,
-                duration_seconds REAL,
-                retry_count INTEGER DEFAULT 0,
-                error_message TEXT
-            )
-        """)
-
-        # Create runs table
-        cursor.execute("""
-            CREATE TABLE runs (
-                run_id TEXT PRIMARY KEY,
-                workflow TEXT NOT NULL,
-                start_time TEXT NOT NULL,
-                end_time TEXT,
-                duration_seconds REAL,
-                task_count INTEGER,
-                success_count INTEGER,
-                failure_count INTEGER
-            )
-        """)
 
         # Insert sample data
         now = datetime.now()
         yesterday = now - timedelta(days=1)
         week_ago = now - timedelta(days=7)
+
+        # Insert runs first (task_results has a FK on run_id)
+        run_data = [
+            ("run1", "taskfile1", week_ago.isoformat(), week_ago.isoformat(), 3.5, 2, 2, 0),
+            ("run2", "taskfile1", yesterday.isoformat(), yesterday.isoformat(), 1.0, 1, 0, 1),
+            ("run3", "taskfile2", now.isoformat(), now.isoformat(), 3.0, 1, 1, 0),
+        ]
+
+        cursor.executemany(
+            """
+            INSERT INTO runs
+            (run_id, workflow, start_time, end_time, duration_seconds,
+             task_count, success_count, failure_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            run_data,
+        )
 
         # Sample task results
         sample_data = [
@@ -154,30 +142,15 @@ class TestDatabaseAdminUtilities(unittest.TestCase):
             sample_data,
         )
 
-        # Sample runs
-        run_data = [
-            ("run1", "taskfile1", week_ago.isoformat(), week_ago.isoformat(), 3.5, 2, 2, 0),
-            ("run2", "taskfile1", yesterday.isoformat(), yesterday.isoformat(), 1.0, 1, 0, 1),
-            ("run3", "taskfile2", now.isoformat(), now.isoformat(), 3.0, 1, 1, 0),
-        ]
-
-        cursor.executemany(
-            """
-            INSERT INTO runs
-            (run_id, workflow, start_time, end_time, duration_seconds,
-             task_count, success_count, failure_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            run_data,
-        )
-
         conn.commit()
-        conn.close()
 
     def tearDown(self):
         """Remove temporary database."""
-        if os.path.exists(self.db_path):
-            os.unlink(self.db_path)
+        self.stats_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = self.db_path + suffix
+            if os.path.exists(path):
+                os.unlink(path)
 
     def test_get_db_stats(self):
         """Test retrieving overall database statistics."""
@@ -224,7 +197,7 @@ class TestDatabaseAdminUtilities(unittest.TestCase):
 
     def test_list_runs(self):
         """Test listing runs for a workflow."""
-        runs = list_runs("taskfile1", self.db_path)
+        runs = list_runs("taskfile1", self.stats_db)
 
         self.assertEqual(len(runs), 2)
         self.assertEqual(runs[0]["task_count"], 1)  # Most recent first
@@ -232,7 +205,7 @@ class TestDatabaseAdminUtilities(unittest.TestCase):
 
     def test_list_tasks(self):
         """Test listing unique tasks for a workflow."""
-        tasks = list_tasks("taskfile1", self.db_path)
+        tasks = list_tasks("taskfile1", self.stats_db)
 
         self.assertEqual(len(tasks), 2)
         task_ids = [t["task_id"] for t in tasks]
@@ -364,6 +337,303 @@ class TestDatabaseAdminUtilities(unittest.TestCase):
 
         self.assertFalse(history["exists"])
         self.assertIn("message", history)
+
+
+class TestDatabaseAdminUtilitiesDDB(unittest.TestCase):
+    """Tests for db_admin functions using a mock DynamoDB stats_db.
+
+    These are symmetric with TestDatabaseAdminUtilities but exercise the
+    DDB dispatch path in list_runs, list_tasks, and get_visualization_data.
+    """
+
+    def _make_mock_stats_db(self):
+        """Return a MagicMock that mimics DynamoDBStatsDatabase method returns."""
+        now = datetime.now()
+        yesterday = now - timedelta(days=1)
+        week_ago = now - timedelta(days=7)
+
+        mock_db = MagicMock()
+
+        # Two runs for taskfile1 ordered most-recent-first (as get_runs_for_workflow returns)
+        mock_db.get_runs_for_workflow.return_value = [
+            {
+                "run_id": "run2",
+                "start_time": yesterday.isoformat(),
+                "end_time": yesterday.isoformat(),
+                "duration_seconds": 1.0,
+                "status": "Success",
+                "task_count": 1,
+                "success_count": 0,
+                "failure_count": 1,
+                "max_workers": 2,
+            },
+            {
+                "run_id": "run1",
+                "start_time": week_ago.isoformat(),
+                "end_time": week_ago.isoformat(),
+                "duration_seconds": 3.5,
+                "status": "Success",
+                "task_count": 2,
+                "success_count": 2,
+                "failure_count": 0,
+                "max_workers": 2,
+            },
+        ]
+
+        # Distinct signatures for taskfile1
+        mock_db.get_workflow_signatures.return_value = ["sig1", "sig2"]
+
+        _run1_tasks = [
+            {
+                "task_id": "task1",
+                "task_signature": "sig1",
+                "workflow": "taskfile1",
+                "instance": "inst1",
+                "process": "proc1",
+                "parameters": "{}",
+                "status": "Success",
+                "start_time": week_ago.isoformat(),
+                "end_time": week_ago.isoformat(),
+                "duration_seconds": 1.5,
+                "retry_count": 0,
+                "error_message": None,
+                "predecessors": None,
+                "stage": None,
+                "safe_retry": None,
+                "timeout": None,
+                "cancel_at_timeout": None,
+                "require_predecessor_success": None,
+                "succeed_on_minor_errors": None,
+            },
+            {
+                "task_id": "task2",
+                "task_signature": "sig2",
+                "workflow": "taskfile1",
+                "instance": "inst1",
+                "process": "proc2",
+                "parameters": "{}",
+                "status": "Success",
+                "start_time": week_ago.isoformat(),
+                "end_time": week_ago.isoformat(),
+                "duration_seconds": 2.0,
+                "retry_count": 0,
+                "error_message": None,
+                "predecessors": None,
+                "stage": None,
+                "safe_retry": None,
+                "timeout": None,
+                "cancel_at_timeout": None,
+                "require_predecessor_success": None,
+                "succeed_on_minor_errors": None,
+            },
+        ]
+        _run2_tasks = [
+            {
+                "task_id": "task1",
+                "task_signature": "sig1",
+                "workflow": "taskfile1",
+                "instance": "inst1",
+                "process": "proc1",
+                "parameters": "{}",
+                "status": "Fail",
+                "start_time": yesterday.isoformat(),
+                "end_time": yesterday.isoformat(),
+                "duration_seconds": 1.0,
+                "retry_count": 1,
+                "error_message": "Error message",
+                "predecessors": None,
+                "stage": None,
+                "safe_retry": None,
+                "timeout": None,
+                "cancel_at_timeout": None,
+                "require_predecessor_success": None,
+                "succeed_on_minor_errors": None,
+            },
+        ]
+        mock_db.get_run_results.side_effect = lambda run_id: {
+            "run1": _run1_tasks,
+            "run2": _run2_tasks,
+        }.get(run_id, [])
+
+        # get_run_info returns raw DDB items (with Decimal numerics)
+        mock_db.get_run_info.side_effect = lambda run_id: {
+            "run1": {
+                "run_id": "run1",
+                "workflow": "taskfile1",
+                "taskfile_path": "/path/tasks.txt",
+                "start_time": week_ago.isoformat(),
+                "end_time": week_ago.isoformat(),
+                "duration_seconds": Decimal("3.5"),
+                "status": "Success",
+                "task_count": Decimal("2"),
+                "success_count": Decimal("2"),
+                "failure_count": Decimal("0"),
+                "taskfile_name": "Daily Load",
+                "taskfile_description": None,
+                "taskfile_author": None,
+                "max_workers": Decimal("2"),
+                "retries": Decimal("0"),
+                "result_file": None,
+                "exclusive": None,
+                "optimize": None,
+            },
+            "run2": {
+                "run_id": "run2",
+                "workflow": "taskfile1",
+                "taskfile_path": "/path/tasks.txt",
+                "start_time": yesterday.isoformat(),
+                "end_time": yesterday.isoformat(),
+                "duration_seconds": Decimal("1.0"),
+                "status": "Success",
+                "task_count": Decimal("1"),
+                "success_count": Decimal("0"),
+                "failure_count": Decimal("1"),
+                "taskfile_name": "Daily Load",
+                "taskfile_description": None,
+                "taskfile_author": None,
+                "max_workers": Decimal("2"),
+                "retries": Decimal("0"),
+                "result_file": None,
+                "exclusive": None,
+                "optimize": None,
+            },
+        }.get(run_id)
+
+        return mock_db
+
+    # ------------------------------------------------------------------
+    # list_runs DDB path
+    # ------------------------------------------------------------------
+
+    def test_list_runs_returns_correct_count(self):
+        runs = list_runs("taskfile1", self._make_mock_stats_db())
+        self.assertEqual(len(runs), 2)
+
+    def test_list_runs_most_recent_first(self):
+        runs = list_runs("taskfile1", self._make_mock_stats_db())
+        self.assertEqual(runs[0]["run_id"], "run2")
+        self.assertEqual(runs[1]["run_id"], "run1")
+
+    def test_list_runs_task_count(self):
+        runs = list_runs("taskfile1", self._make_mock_stats_db())
+        self.assertEqual(runs[0]["task_count"], 1)
+        self.assertEqual(runs[1]["task_count"], 2)
+
+    def test_list_runs_success_rate(self):
+        runs = list_runs("taskfile1", self._make_mock_stats_db())
+        self.assertAlmostEqual(runs[0]["success_rate"], 0.0)  # run2: 0/1
+        self.assertAlmostEqual(runs[1]["success_rate"], 100.0)  # run1: 2/2
+
+    def test_list_runs_total_duration_sums_task_results(self):
+        runs = list_runs("taskfile1", self._make_mock_stats_db())
+        # run2: 1 task × 1.0 s
+        self.assertAlmostEqual(runs[0]["total_duration"], 1.0)
+        # run1: 1.5 s + 2.0 s = 3.5 s
+        self.assertAlmostEqual(runs[1]["total_duration"], 3.5)
+
+    def test_list_runs_respects_limit(self):
+        runs = list_runs("taskfile1", self._make_mock_stats_db(), limit=1)
+        self.assertEqual(len(runs), 1)
+
+    def test_list_runs_returns_required_keys(self):
+        runs = list_runs("taskfile1", self._make_mock_stats_db())
+        required = {"run_id", "start_time", "task_count", "success_rate", "total_duration"}
+        self.assertTrue(required.issubset(runs[0].keys()))
+
+    def test_list_runs_empty_when_no_runs(self):
+        mock_db = MagicMock()
+        mock_db.get_runs_for_workflow.return_value = []
+        runs = list_runs("missing", mock_db)
+        self.assertEqual(runs, [])
+
+    # ------------------------------------------------------------------
+    # list_tasks DDB path
+    # ------------------------------------------------------------------
+
+    def test_list_tasks_returns_unique_signatures(self):
+        tasks = list_tasks("taskfile1", self._make_mock_stats_db())
+        signatures = {t["task_signature"] for t in tasks}
+        self.assertIn("sig1", signatures)
+        self.assertIn("sig2", signatures)
+
+    def test_list_tasks_aggregates_across_all_runs(self):
+        tasks = list_tasks("taskfile1", self._make_mock_stats_db())
+        sig1 = next(t for t in tasks if t["task_signature"] == "sig1")
+        # sig1 appears in both run1 and run2
+        self.assertEqual(sig1["execution_count"], 2)
+
+    def test_list_tasks_success_rate(self):
+        tasks = list_tasks("taskfile1", self._make_mock_stats_db())
+        sig1 = next(t for t in tasks if t["task_signature"] == "sig1")
+        self.assertAlmostEqual(sig1["success_rate"], 50.0)  # 1 of 2
+        sig2 = next(t for t in tasks if t["task_signature"] == "sig2")
+        self.assertAlmostEqual(sig2["success_rate"], 100.0)  # 1 of 1
+
+    def test_list_tasks_avg_duration(self):
+        tasks = list_tasks("taskfile1", self._make_mock_stats_db())
+        sig1 = next(t for t in tasks if t["task_signature"] == "sig1")
+        # (1.5 + 1.0) / 2 = 1.25
+        self.assertAlmostEqual(sig1["avg_duration"], 1.25)
+
+    def test_list_tasks_returns_required_keys(self):
+        tasks = list_tasks("taskfile1", self._make_mock_stats_db())
+        required = {"task_signature", "execution_count", "success_rate", "avg_duration"}
+        self.assertTrue(required.issubset(tasks[0].keys()))
+
+    def test_list_tasks_empty_when_no_runs(self):
+        mock_db = MagicMock()
+        mock_db.get_runs_for_workflow.return_value = []
+        mock_db.get_workflow_signatures.return_value = []
+        tasks = list_tasks("missing", mock_db)
+        self.assertEqual(tasks, [])
+
+    # ------------------------------------------------------------------
+    # get_visualization_data DDB path
+    # ------------------------------------------------------------------
+
+    def test_get_visualization_data_exists(self):
+        data = get_visualization_data("taskfile1", self._make_mock_stats_db())
+        self.assertTrue(data["exists"])
+
+    def test_get_visualization_data_run_count(self):
+        data = get_visualization_data("taskfile1", self._make_mock_stats_db())
+        self.assertEqual(len(data["runs"]), 2)
+
+    def test_get_visualization_data_task_result_count(self):
+        data = get_visualization_data("taskfile1", self._make_mock_stats_db())
+        # run1 has 2 tasks, run2 has 1 task
+        self.assertEqual(len(data["task_results"]), 3)
+
+    def test_get_visualization_data_task_results_have_run_id(self):
+        data = get_visualization_data("taskfile1", self._make_mock_stats_db())
+        for tr in data["task_results"]:
+            self.assertIn("run_id", tr)
+
+    def test_get_visualization_data_converts_decimal_duration_to_float(self):
+        data = get_visualization_data("taskfile1", self._make_mock_stats_db())
+        for run in data["runs"]:
+            if run.get("duration_seconds") is not None:
+                self.assertIsInstance(run["duration_seconds"], float)
+
+    def test_get_visualization_data_converts_decimal_task_count_to_int(self):
+        data = get_visualization_data("taskfile1", self._make_mock_stats_db())
+        for run in data["runs"]:
+            if run.get("task_count") is not None:
+                self.assertIsInstance(run["task_count"], int)
+
+    def test_get_visualization_data_includes_run_metadata_from_run_info(self):
+        data = get_visualization_data("taskfile1", self._make_mock_stats_db())
+        run1 = next(r for r in data["runs"] if r["run_id"] == "run1")
+        self.assertEqual(run1["taskfile_name"], "Daily Load")
+        self.assertEqual(run1["taskfile_path"], "/path/tasks.txt")
+        self.assertEqual(run1["workflow"], "taskfile1")
+
+    def test_get_visualization_data_not_exists_when_no_runs(self):
+        mock_db = MagicMock()
+        mock_db.get_runs_for_workflow.return_value = []
+        data = get_visualization_data("missing", mock_db)
+        self.assertFalse(data["exists"])
+        self.assertIn("message", data)
 
 
 if __name__ == "__main__":
