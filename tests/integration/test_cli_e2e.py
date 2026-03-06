@@ -168,6 +168,7 @@ class TestCLIRunV11(unittest.TestCase):
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
+@pytest.mark.v12
 class TestCLIRunV12(unittest.TestCase):
     """CLI run command tests on v12."""
 

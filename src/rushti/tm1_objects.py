@@ -277,7 +277,9 @@ PROCESS_EPILOG = r"""###########################################################
 
 ### If required delete the source file
 if(pDeleteSourceFile=1);
-  ASCIIDelete(pSourceFile);
+  Sleep(1000);
+  cmd = 'cmd /c del /f /q "' | pSourceFile | '"';
+  ExecuteCommand(cmd,0);
 endif;
 
 ### If required switch transaction logging back on

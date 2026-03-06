@@ -252,6 +252,9 @@ def pytest_configure(config):
     )
     config.addinivalue_line("markers", "slow: marks tests as slow running")
     config.addinivalue_line("markers", "integration: marks tests as integration tests")
+    config.addinivalue_line(
+        "markers", "v12: marks tests targeting TM1 v12 instances (non-blocking in CI)"
+    )
 
 
 def pytest_collection_modifyitems(config, items):

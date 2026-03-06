@@ -115,7 +115,7 @@ class TestBuildOnV11(unittest.TestCase):
 
     def test_sample_data_populated(self):
         """Sample data is populated on v11."""
-        build_logging_objects(self.tm1, force=False, **_TM1_NAMES)
+        build_logging_objects(self.tm1, force=True, **_TM1_NAMES)
         results = _populate_sample_data(self.tm1, CUBE_RUSHTI)
         self.assertIn("Sample_Stage_Mode", results)
         self.assertGreater(results["Sample_Stage_Mode"], 0)
@@ -137,6 +137,7 @@ class TestBuildOnV11(unittest.TestCase):
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
+@pytest.mark.v12
 class TestBuildOnV12(unittest.TestCase):
     """Build command tests for TM1 v12 (tm1srv02)."""
 

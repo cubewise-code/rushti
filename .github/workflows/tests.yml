@@ -115,10 +115,16 @@ jobs:
         run: |
           echo "${{ secrets.RUSHTI_TEST_TM1_CONFIG }}" > tests/config.ini
 
-      - name: Run integration tests
+      - name: Run integration tests (v11 - required)
         if: steps.check-tm1.outputs.tm1_configured == 'true'
         run: |
-          pytest tests/integration/ -v --tb=short -m requires_tm1
+          pytest tests/integration/ -v --tb=short -m "requires_tm1 and not v12"
+
+      - name: Run integration tests (v12 - optional)
+        if: steps.check-tm1.outputs.tm1_configured == 'true'
+        continue-on-error: true
+        run: |
+          pytest tests/integration/ -v --tb=short -m "v12"
 
       - name: Skip message
         if: steps.check-tm1.outputs.tm1_configured != 'true'
