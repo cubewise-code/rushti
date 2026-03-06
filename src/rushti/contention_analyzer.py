@@ -19,9 +19,14 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 from rushti.stats import StatsDatabase
+
+if TYPE_CHECKING:
+    from rushti.stats import DynamoDBStatsDatabase
+
+AnyStatsDatabase = Union[StatsDatabase, "DynamoDBStatsDatabase"]
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +86,7 @@ class ContentionAnalysisResult:
 
 
 def _compute_ewma_durations(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
     lookback_runs: int = 10,
     alpha: float = 0.3,
@@ -119,7 +124,7 @@ def _compute_ewma_durations(
 
 
 def _get_task_parameters(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
 ) -> List[Dict[str, Any]]:
     """Get task_id, task_signature, process, and parameters for the most recent run.
@@ -128,29 +133,33 @@ def _get_task_parameters(
     :param workflow: Workflow name
     :return: List of dicts with task_id, task_signature, process, parameters (parsed)
     """
-    cursor = stats_db._conn.cursor()
-    cursor.execute(
-        """
-        SELECT task_id, task_signature, process, parameters
-        FROM task_results
-        WHERE run_id = (
-            SELECT run_id FROM runs
-            WHERE workflow = ? AND status = 'Success'
-            ORDER BY start_time DESC LIMIT 1
-        )
-        ORDER BY CAST(task_id AS INTEGER)
-        """,
-        (workflow,),
-    )
+    runs = stats_db.get_runs_for_workflow(workflow)
+    successful_run = next((r for r in runs if r.get("status") == "Success"), None)
+    if not successful_run:
+        return []
+
+    run_id = successful_run.get("run_id")
+    if not run_id:
+        return []
+
+    run_results = stats_db.get_run_results(run_id)
+
+    def _task_sort_key(result: Dict[str, Any]) -> Any:
+        task_id = str(result.get("task_id", ""))
+        if task_id.isdigit():
+            return int(task_id)
+        return task_id
+
+    run_results.sort(key=_task_sort_key)
 
     results = []
-    for row in cursor.fetchall():
-        params = json.loads(row["parameters"]) if row["parameters"] else {}
+    for row in run_results:
+        params = json.loads(row["parameters"]) if row.get("parameters") else {}
         results.append(
             {
-                "task_id": row["task_id"],
-                "task_signature": row["task_signature"],
-                "process": row["process"],
+                "task_id": row.get("task_id"),
+                "task_signature": row.get("task_signature"),
+                "process": row.get("process"),
                 "parameters": params,
             }
         )
@@ -429,7 +438,7 @@ def _round_to_5(value: float) -> int:
 
 
 def _detect_concurrency_ceiling(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
     min_correlation: float = 0.7,
     max_efficiency_ratio: float = 0.75,
@@ -655,7 +664,7 @@ def _detect_concurrency_ceiling(
 
 
 def analyze_contention(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
     task_params: Optional[List[Dict[str, Any]]] = None,
     sensitivity: float = 10.0,
@@ -870,7 +879,7 @@ def analyze_contention(
 
 
 def get_archived_taskfile_path(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
 ) -> Optional[str]:
     """Get the archived taskfile path from the most recent successful run.
@@ -883,18 +892,14 @@ def get_archived_taskfile_path(
     :param workflow: Workflow name
     :return: Path to archived JSON taskfile, or None if no successful runs exist
     """
-    cursor = stats_db._conn.cursor()
-    cursor.execute(
-        """
-        SELECT taskfile_path FROM runs
-        WHERE workflow = ? AND status = 'Success'
-        ORDER BY start_time DESC LIMIT 1
-        """,
-        (workflow,),
-    )
-    row = cursor.fetchone()
-    if row and row["taskfile_path"]:
-        return row["taskfile_path"]
+    runs = stats_db.get_runs_for_workflow(workflow)
+    successful_run = next((r for r in runs if r.get("status") == "Success"), None)
+    if successful_run:
+        run_id = successful_run.get("run_id")
+        if run_id:
+            run_info = stats_db.get_run_info(run_id)
+            if run_info and run_info.get("taskfile_path"):
+                return run_info["taskfile_path"]
     return None
 
 

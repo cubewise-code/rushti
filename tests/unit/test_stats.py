@@ -2,15 +2,26 @@
 
 import os
 import tempfile
+import unittest
 from datetime import datetime, timedelta
+from decimal import Decimal
 from unittest import TestCase
+from unittest.mock import MagicMock, patch
 
 
 from rushti.stats import (
+    DynamoDBStatsDatabase,
     StatsDatabase,
     calculate_task_signature,
     create_stats_database,
 )
+
+try:
+    import botocore.exceptions  # noqa: F401
+
+    BOTOCORE_AVAILABLE = True
+except ImportError:
+    BOTOCORE_AVAILABLE = False
 
 
 class TestTaskSignature(TestCase):
@@ -334,6 +345,11 @@ class TestCreateStatsDatabase(TestCase):
             self.assertIsNone(db2.get_run_info("old_run"))
             db2.close()
 
+    def test_factory_invalid_backend_raises(self):
+        """Factory should reject unsupported storage backends."""
+        with self.assertRaises(ValueError):
+            create_stats_database(enabled=True, backend="unknown_backend")
+
 
 class TestStatsDatabaseContextManager(TestCase):
     """Tests for context manager protocol."""
@@ -650,3 +666,335 @@ class TestStatsDatabaseTaskfileId(TestCase):
             self.assertEqual(results[0]["workflow"], "taskfile_xyz")
             self.assertEqual(results[1]["workflow"], "taskfile_xyz")
             db.close()
+
+
+# ---------------------------------------------------------------------------
+# DynamoDB backend tests
+# ---------------------------------------------------------------------------
+
+_MOCK_TASK_ITEM = {
+    "run_id": "run1",
+    "task_result_id": "tr1",
+    "task_id": "task1",
+    "task_signature": "sig1",
+    "workflow": "taskfile1",
+    "instance": "inst1",
+    "process": "proc1",
+    "parameters": '{"p1": "v1"}',
+    "status": "Success",
+    "start_time": "2024-01-01T10:00:00",
+    "end_time": "2024-01-01T10:00:05",
+    "duration_seconds": Decimal("5.123"),
+    "retry_count": Decimal("2"),
+    "error_message": None,
+    "predecessors": None,
+    "stage": None,
+    "safe_retry": None,
+    "timeout": None,
+    "cancel_at_timeout": None,
+    "require_predecessor_success": None,
+    "succeed_on_minor_errors": None,
+}
+
+_MOCK_RUN_ITEM = {
+    "run_id": "run1",
+    "workflow": "taskfile1",
+    "taskfile_path": "/path/tasks.txt",
+    "start_time": "2024-01-01T10:00:00",
+    "end_time": "2024-01-01T10:05:00",
+    "duration_seconds": Decimal("300.5"),
+    "status": "Success",
+    "task_count": Decimal("2"),
+    "success_count": Decimal("2"),
+    "failure_count": Decimal("0"),
+    "taskfile_name": "Daily Load",
+    "taskfile_description": None,
+    "taskfile_author": None,
+    "max_workers": Decimal("4"),
+    "retries": Decimal("0"),
+    "result_file": None,
+    "exclusive": None,
+    "optimize": None,
+}
+
+
+def _make_ddb(enabled=True):
+    """Create a DynamoDBStatsDatabase with _initialize_database patched out."""
+    with patch.object(DynamoDBStatsDatabase, "_initialize_database"):
+        db = DynamoDBStatsDatabase(enabled=enabled)
+    db._runs_table = MagicMock()
+    db._task_results_table = MagicMock()
+    return db
+
+
+class TestDynamoDBStatsDatabaseNormalization(TestCase):
+    """Tests for _normalize_task_item type conversion (Decimal → Python types)."""
+
+    def setUp(self):
+        self.db = _make_ddb()
+
+    def test_duration_seconds_converted_to_float(self):
+        result = self.db._normalize_task_item(_MOCK_TASK_ITEM)
+        self.assertIsInstance(result["duration_seconds"], float)
+        self.assertAlmostEqual(result["duration_seconds"], 5.123, places=3)
+
+    def test_retry_count_converted_to_int(self):
+        result = self.db._normalize_task_item(_MOCK_TASK_ITEM)
+        self.assertIsInstance(result["retry_count"], int)
+        self.assertEqual(result["retry_count"], 2)
+
+    def test_none_duration_stays_none(self):
+        item = dict(_MOCK_TASK_ITEM, duration_seconds=None)
+        result = self.db._normalize_task_item(item)
+        self.assertIsNone(result["duration_seconds"])
+
+    def test_none_retry_count_defaults_to_zero(self):
+        item = dict(_MOCK_TASK_ITEM, retry_count=None)
+        result = self.db._normalize_task_item(item)
+        self.assertEqual(result["retry_count"], 0)
+
+    def test_all_expected_keys_present(self):
+        result = self.db._normalize_task_item(_MOCK_TASK_ITEM)
+        expected_keys = {
+            "workflow",
+            "task_id",
+            "task_signature",
+            "instance",
+            "process",
+            "parameters",
+            "status",
+            "start_time",
+            "end_time",
+            "duration_seconds",
+            "retry_count",
+            "error_message",
+            "predecessors",
+            "stage",
+        }
+        self.assertTrue(expected_keys.issubset(result.keys()))
+
+
+class TestDynamoDBStatsDatabasePagination(TestCase):
+    """Tests for _query_all and _scan_all global Limit handling."""
+
+    def setUp(self):
+        self.db = _make_ddb()
+
+    def _items(self, n):
+        return [{"id": str(i)} for i in range(n)]
+
+    def test_query_all_paginates_to_exhaustion_without_limit(self):
+        table = MagicMock()
+        table.query.side_effect = [
+            {"Items": self._items(3), "LastEvaluatedKey": {"id": "2"}},
+            {"Items": self._items(3)},
+        ]
+        items = self.db._query_all(table)
+        self.assertEqual(len(items), 6)
+        self.assertEqual(table.query.call_count, 2)
+
+    def test_query_all_respects_limit_as_global_cap(self):
+        table = MagicMock()
+        table.query.side_effect = [
+            {"Items": self._items(3), "LastEvaluatedKey": {"id": "2"}},
+            {"Items": self._items(3)},
+        ]
+        items = self.db._query_all(table, Limit=4)
+        self.assertEqual(len(items), 4)
+
+    def test_query_all_does_not_forward_limit_to_dynamodb(self):
+        table = MagicMock()
+        table.query.return_value = {"Items": self._items(2)}
+        self.db._query_all(table, Limit=10, ScanIndexForward=False)
+        call_kwargs = table.query.call_args[1]
+        self.assertNotIn("Limit", call_kwargs)
+        self.assertIn("ScanIndexForward", call_kwargs)
+
+    def test_scan_all_respects_limit_as_global_cap(self):
+        table = MagicMock()
+        table.scan.side_effect = [
+            {"Items": self._items(3), "LastEvaluatedKey": {"id": "2"}},
+            {"Items": self._items(3)},
+        ]
+        items = self.db._scan_all(table, Limit=5)
+        self.assertEqual(len(items), 5)
+
+    def test_scan_all_does_not_forward_limit_to_dynamodb(self):
+        table = MagicMock()
+        table.scan.return_value = {"Items": self._items(2)}
+        self.db._scan_all(table, Limit=10)
+        call_kwargs = table.scan.call_args[1]
+        self.assertNotIn("Limit", call_kwargs)
+
+    def test_query_all_stops_when_no_last_evaluated_key(self):
+        table = MagicMock()
+        table.query.return_value = {"Items": self._items(3)}  # no continuation
+        items = self.db._query_all(table)
+        self.assertEqual(len(items), 3)
+        self.assertEqual(table.query.call_count, 1)
+
+
+@unittest.skipUnless(BOTOCORE_AVAILABLE, "botocore not installed")
+class TestDynamoDBStatsDatabaseFallback(TestCase):
+    """Tests for GSI-missing fallback in get_task_history and get_runs_for_workflow."""
+
+    def setUp(self):
+        self.db = _make_ddb()
+        # get_task_history / get_runs_for_workflow do `from boto3.dynamodb.conditions import Key`
+        # inside the try block. Without boto3 installed that import itself raises
+        # ModuleNotFoundError before our mock side_effect fires, so we inject a stub.
+        self._boto3_patch = patch.dict(
+            "sys.modules",
+            {
+                "boto3": MagicMock(),
+                "boto3.dynamodb": MagicMock(),
+                "boto3.dynamodb.conditions": MagicMock(),
+            },
+        )
+        self._boto3_patch.start()
+
+    def tearDown(self):
+        self._boto3_patch.stop()
+
+    def _client_error(self, code):
+        from botocore.exceptions import ClientError
+
+        return ClientError({"Error": {"Code": code, "Message": "test"}}, "Query")
+
+    def test_get_task_history_falls_back_to_scan_on_validation_exception(self):
+        self.db._task_results_table.query.side_effect = self._client_error("ValidationException")
+        self.db._task_results_table.scan.return_value = {"Items": []}
+        self.db.get_task_history("sig1")
+        self.db._task_results_table.scan.assert_called()
+
+    def test_get_task_history_falls_back_to_scan_on_resource_not_found(self):
+        self.db._task_results_table.query.side_effect = self._client_error(
+            "ResourceNotFoundException"
+        )
+        self.db._task_results_table.scan.return_value = {"Items": []}
+        self.db.get_task_history("sig1")
+        self.db._task_results_table.scan.assert_called()
+
+    def test_get_task_history_reraises_access_denied(self):
+        from botocore.exceptions import ClientError
+
+        self.db._task_results_table.query.side_effect = self._client_error("AccessDeniedException")
+        with self.assertRaises(ClientError):
+            self.db.get_task_history("sig1")
+
+    def test_get_runs_for_workflow_falls_back_to_scan_on_validation_exception(self):
+        self.db._runs_table.query.side_effect = self._client_error("ValidationException")
+        self.db._runs_table.scan.return_value = {"Items": []}
+        self.db.get_runs_for_workflow("wf1")
+        self.db._runs_table.scan.assert_called()
+
+    def test_get_runs_for_workflow_reraises_access_denied(self):
+        from botocore.exceptions import ClientError
+
+        self.db._runs_table.query.side_effect = self._client_error("AccessDeniedException")
+        with self.assertRaises(ClientError):
+            self.db.get_runs_for_workflow("wf1")
+
+
+class TestDynamoDBStatsDatabaseOperations(TestCase):
+    """Tests for DynamoDBStatsDatabase CRUD operations via mocked boto3 tables."""
+
+    def setUp(self):
+        self.db = _make_ddb()
+        # Several methods import from boto3.dynamodb.conditions lazily; stub it out.
+        self._boto3_patch = patch.dict(
+            "sys.modules",
+            {
+                "boto3": MagicMock(),
+                "boto3.dynamodb": MagicMock(),
+                "boto3.dynamodb.conditions": MagicMock(),
+            },
+        )
+        self._boto3_patch.start()
+
+    def tearDown(self):
+        self._boto3_patch.stop()
+
+    def test_disabled_database_does_not_call_put_item(self):
+        db = _make_ddb(enabled=False)
+        db.start_run("run1", "wf1")
+        db._runs_table.put_item.assert_not_called()
+
+    def test_disabled_methods_return_empty(self):
+        db = _make_ddb(enabled=False)
+        self.assertEqual(db.get_task_history("sig1"), [])
+        self.assertEqual(db.get_run_results("run1"), [])
+        self.assertIsNone(db.get_run_info("run1"))
+        self.assertEqual(db.get_runs_for_workflow("wf1"), [])
+
+    def test_start_run_puts_item_with_correct_fields(self):
+        self.db.start_run("run1", "taskfile1", "/path/tasks.txt", 5)
+        self.db._runs_table.put_item.assert_called_once()
+        item = self.db._runs_table.put_item.call_args[1]["Item"]
+        self.assertEqual(item["run_id"], "run1")
+        self.assertEqual(item["workflow"], "taskfile1")
+        self.assertEqual(item["task_count"], 5)
+
+    def test_complete_run_updates_item(self):
+        self.db.complete_run("run1", status="Success", success_count=3, failure_count=1)
+        self.db._runs_table.update_item.assert_called_once()
+        call_kwargs = self.db._runs_table.update_item.call_args[1]
+        self.assertEqual(call_kwargs["Key"], {"run_id": "run1"})
+        self.assertEqual(call_kwargs["ExpressionAttributeValues"][":status"], "Success")
+
+    def test_get_run_info_queries_by_run_id(self):
+        self.db._runs_table.get_item.return_value = {"Item": _MOCK_RUN_ITEM}
+        result = self.db.get_run_info("run1")
+        self.db._runs_table.get_item.assert_called_once_with(Key={"run_id": "run1"})
+        self.assertEqual(result["run_id"], "run1")
+
+    def test_get_run_info_returns_none_when_not_found(self):
+        self.db._runs_table.get_item.return_value = {}
+        result = self.db.get_run_info("missing")
+        self.assertIsNone(result)
+
+    def test_get_run_results_returns_float_duration_and_int_retry(self):
+        self.db._task_results_table.query.return_value = {"Items": [_MOCK_TASK_ITEM]}
+        results = self.db.get_run_results("run1")
+        self.assertEqual(len(results), 1)
+        self.assertIsInstance(results[0]["duration_seconds"], float)
+        self.assertAlmostEqual(results[0]["duration_seconds"], 5.123, places=3)
+        self.assertIsInstance(results[0]["retry_count"], int)
+        self.assertEqual(results[0]["retry_count"], 2)
+
+    def test_record_task_puts_item_with_correct_fields(self):
+        start = datetime(2024, 1, 1, 10, 0, 0)
+        end = start + timedelta(seconds=5)
+        self.db.record_task(
+            run_id="run1",
+            task_id="task1",
+            instance="inst1",
+            process="proc1",
+            parameters={"p": "v"},
+            success=True,
+            start_time=start,
+            end_time=end,
+        )
+        self.db._task_results_table.put_item.assert_called_once()
+        item = self.db._task_results_table.put_item.call_args[1]["Item"]
+        self.assertEqual(item["run_id"], "run1")
+        self.assertEqual(item["task_id"], "task1")
+        self.assertEqual(item["status"], "Success")
+
+    def test_record_failed_task_sets_fail_status(self):
+        start = datetime(2024, 1, 1, 10, 0, 0)
+        end = start + timedelta(seconds=1)
+        self.db.record_task(
+            run_id="run1",
+            task_id="task1",
+            instance="inst1",
+            process="proc1",
+            parameters={},
+            success=False,
+            start_time=start,
+            end_time=end,
+            error_message="Process failed",
+        )
+        item = self.db._task_results_table.put_item.call_args[1]["Item"]
+        self.assertEqual(item["status"], "Fail")
+        self.assertEqual(item["error_message"], "Process failed")

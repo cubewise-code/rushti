@@ -39,14 +39,14 @@ class TestBuildSessionContext(unittest.TestCase):
         self.assertTrue(context.startswith("RushTI_"))
 
     def test_build_context_empty_id(self):
-        """Test building context with empty workflow (no trailing underscore)."""
+        """Test building context with empty workflow."""
         context = build_session_context("", exclusive=False)
-        self.assertEqual(context, "RushTI")
+        self.assertEqual(context, "RushTI_")
 
     def test_build_context_empty_id_exclusive(self):
         """Test building context with empty workflow in exclusive mode."""
         context = build_session_context("", exclusive=True)
-        self.assertEqual(context, "RushTIX")
+        self.assertEqual(context, "RushTIX_")
 
     def test_build_context_special_characters(self):
         """Test context with special characters in workflow."""
@@ -63,7 +63,7 @@ class TestParseSessionContext(unittest.TestCase):
         self.assertIsNotNone(result)
         is_exclusive, workflow = result
         self.assertFalse(is_exclusive)
-        self.assertEqual(workflow, "_daily-etl")
+        self.assertEqual(workflow, "daily-etl")
 
     def test_parse_exclusive_mode_context(self):
         """Test parsing exclusive mode context."""
@@ -71,15 +71,12 @@ class TestParseSessionContext(unittest.TestCase):
         self.assertIsNotNone(result)
         is_exclusive, workflow = result
         self.assertTrue(is_exclusive)
-        self.assertEqual(workflow, "_daily-etl")
+        self.assertEqual(workflow, "daily-etl")
 
     def test_parse_context_without_underscore(self):
-        """Test parsing context without underscore (legacy format)."""
+        """Test that context without underscore separator is not a RushTI session."""
         result = parse_session_context("RushTIdaily-etl")
-        self.assertIsNotNone(result)
-        is_exclusive, workflow = result
-        self.assertFalse(is_exclusive)
-        self.assertEqual(workflow, "daily-etl")
+        self.assertIsNone(result)
 
     def test_parse_non_rushti_context(self):
         """Test parsing non-RushTI context returns None."""
@@ -97,12 +94,13 @@ class TestParseSessionContext(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_parse_rushti_prefix_only(self):
-        """Test parsing context with only RushTI prefix."""
+        """Test that bare 'RushTI' prefix (no underscore) is not a RushTI session.
+
+        Bare 'RushTI' can appear as a TM1py application_name and must not
+        be mistaken for a RushTI session context.
+        """
         result = parse_session_context("RushTI")
-        self.assertIsNotNone(result)
-        is_exclusive, workflow = result
-        self.assertFalse(is_exclusive)
-        self.assertEqual(workflow, "")
+        self.assertIsNone(result)
 
 
 class TestShouldWaitForSessions(unittest.TestCase):
@@ -305,7 +303,7 @@ class TestCheckActiveRushTISessions(unittest.TestCase):
 
         # Should only find the other session, not our own
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].workflow, "_other-task")
+        self.assertEqual(result[0].workflow, "other-task")
 
     def test_excludes_own_context(self):
         """Test that own session context is excluded when specified."""
@@ -328,7 +326,7 @@ class TestCheckActiveRushTISessions(unittest.TestCase):
 
         # Should only find the other-task context
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].workflow, "_other-task")
+        self.assertEqual(result[0].workflow, "other-task")
 
     def test_multiple_instances(self):
         """Test checking sessions across multiple TM1 instances."""

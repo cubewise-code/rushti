@@ -797,6 +797,72 @@ def validate_taskfile_full(
     return result
 
 
+def visualize_dag_from_db_results(
+    task_results: List[Dict[str, Any]],
+    output_path: str,
+    dashboard_url: Optional[str] = None,
+) -> str:
+    """Generate interactive HTML DAG visualization from DB task results.
+
+    Builds the DAG from task result records stored in the stats database,
+    so no taskfile on disk is required.
+
+    :param task_results: List of task result dicts for a single run (from get_visualization_data)
+    :param output_path: Path to output HTML file
+    :param dashboard_url: Optional relative URL back to the dashboard HTML
+    :return: Path to the generated HTML file
+    """
+    tasks_by_id: Dict[str, "TaskDefinition"] = {}
+    adjacency: Dict[str, List[str]] = {}
+
+    for tr in task_results:
+        task_id = tr.get("task_id")
+        if not task_id or task_id in tasks_by_id:
+            continue
+
+        params = tr.get("parameters")
+        if isinstance(params, str):
+            try:
+                params = json.loads(params)
+            except Exception:
+                params = {}
+        params = params or {}
+
+        predecessors = tr.get("predecessors")
+        if isinstance(predecessors, str):
+            try:
+                predecessors = json.loads(predecessors)
+            except Exception:
+                predecessors = []
+        predecessors = predecessors or []
+
+        tasks_by_id[task_id] = TaskDefinition(
+            id=task_id,
+            instance=tr.get("instance") or "",
+            process=tr.get("process") or "",
+            parameters=params,
+            predecessors=predecessors,
+            stage=tr.get("stage"),
+        )
+
+        for pred in predecessors:
+            if pred not in adjacency:
+                adjacency[pred] = []
+            adjacency[pred].append(task_id)
+
+    output_path_obj = Path(output_path)
+    output_base = (
+        str(output_path_obj.with_suffix("")) if output_path_obj.suffix else str(output_path_obj)
+    )
+
+    return _visualize_dag_html(
+        adjacency=adjacency,
+        tasks_by_id=tasks_by_id,
+        filename=output_base,
+        dashboard_url=dashboard_url,
+    )
+
+
 def _check_dag_cycles(tasks: List[TaskDefinition]) -> List[str]:
     """Check for cycles in task dependencies.
 

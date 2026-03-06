@@ -1149,11 +1149,18 @@ def _stats_export(args) -> None:
 
         # Import here to avoid circular imports
         from rushti.tm1_integration import export_results_to_csv
+        from rushti.stats import get_db_path
 
         # Create stats database connection
         stats_db = create_stats_database(
             enabled=True,
             retention_days=settings.stats.retention_days,
+            backend=settings.stats.backend,
+            db_path=get_db_path(settings),
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
         )
 
         try:
@@ -1195,12 +1202,21 @@ def _stats_analyze(args) -> None:
     try:
         # Load settings
         from rushti.settings import load_settings
-        from rushti.stats import StatsDatabase, get_db_path
+        from rushti.stats import create_stats_database, get_db_path
 
         settings = load_settings(args.settings_file)
 
         # Initialize stats database
-        stats_db = StatsDatabase(db_path=get_db_path(settings), enabled=settings.stats.enabled)
+        stats_db = create_stats_database(
+            enabled=settings.stats.enabled,
+            retention_days=settings.stats.retention_days,
+            backend=settings.stats.backend,
+            db_path=get_db_path(settings),
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
 
         # Run analysis
         report = analyze_runs(
@@ -1276,7 +1292,7 @@ def _stats_optimize(args) -> None:
             write_optimized_taskfile,
         )
         from rushti.settings import load_settings
-        from rushti.stats import StatsDatabase, get_db_path
+        from rushti.stats import create_stats_database, get_db_path
         from rushti.utils import resolve_app_path
 
         settings = load_settings(args.settings_file)
@@ -1287,7 +1303,16 @@ def _stats_optimize(args) -> None:
             sys.exit(1)
 
         # Initialize stats database
-        stats_db = StatsDatabase(db_path=get_db_path(settings), enabled=True)
+        stats_db = create_stats_database(
+            enabled=True,
+            retention_days=settings.stats.retention_days,
+            backend=settings.stats.backend,
+            db_path=get_db_path(settings),
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
 
         try:
             # Resolve taskfile: explicit --tasks flag, or auto-resolve from archive
@@ -1592,16 +1617,31 @@ def _stats_visualize(args) -> None:
     from rushti.dashboard import generate_dashboard
     from rushti.db_admin import get_visualization_data
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path
+    from rushti.stats import create_stats_database, get_db_path, get_stats_backend
     from rushti.utils import resolve_app_path
 
     settings = load_settings(getattr(args, "settings_file", None))
+    backend = get_stats_backend(settings)
     db_path = get_db_path(settings)
 
+    stats_db = None
     try:
-        print(f"Generating visualizations for workflow: {args.workflow}")
+        stats_db = create_stats_database(
+            enabled=True,
+            backend=backend,
+            db_path=db_path,
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
+        data = get_visualization_data(
+            args.workflow,
+            stats_db,
+            include_all_workflows=True,
+        )
 
-        data = get_visualization_data(args.workflow, db_path)
+        print(f"Generating visualizations for workflow: {args.workflow}")
         if not data.get("exists"):
             print(f"Error: {data.get('message')}")
             sys.exit(1)
@@ -1624,37 +1664,64 @@ def _stats_visualize(args) -> None:
 
         # --- Attempt DAG generation ---
         dag_generated = False
-        taskfile_path = None
 
-        # Find the first accessible taskfile_path from runs (most recent first)
+        # Prefer DB-based DAG (no taskfile on disk needed); fall back to taskfile if unavailable.
         runs = data["runs"]
-        for run in runs:
-            candidate = run.get("taskfile_path")
-            if candidate and not candidate.startswith("TM1:") and os.path.isfile(candidate):
-                taskfile_path = candidate
-                break
+        workflow_lower = args.workflow.lower()
+        workflow_runs = [r for r in runs if (r.get("workflow") or "").lower() == workflow_lower]
+        latest_run = workflow_runs[0] if workflow_runs else None
 
-        if taskfile_path:
+        dag_generated_from_db = False
+        if latest_run:
             try:
-                from rushti.taskfile_ops import visualize_dag
+                from rushti.taskfile_ops import visualize_dag_from_db_results
 
-                # Ensure output directory exists
-                Path(dag_path).parent.mkdir(parents=True, exist_ok=True)
+                latest_run_id = latest_run["run_id"]
+                latest_task_results = [
+                    tr for tr in data["task_results"] if tr["run_id"] == latest_run_id
+                ]
 
-                visualize_dag(
-                    source=taskfile_path,
-                    output_path=dag_path,
-                    dashboard_url=dashboard_filename,
-                )
-                dag_generated = True
-                print(f"DAG visualization generated: {dag_path}")
+                if latest_task_results:
+                    Path(dag_path).parent.mkdir(parents=True, exist_ok=True)
+                    visualize_dag_from_db_results(
+                        task_results=latest_task_results,
+                        output_path=dag_path,
+                        dashboard_url=dashboard_filename,
+                    )
+                    dag_generated = True
+                    dag_generated_from_db = True
+                    print(f"DAG visualization generated: {dag_path}")
             except Exception as e:
-                logger.warning(f"Could not generate DAG visualization: {e}")
-                print(f"Warning: DAG visualization skipped ({e})")
-        else:
-            print(
-                "Warning: No accessible taskfile found in run history, skipping DAG visualization"
-            )
+                logger.warning(f"Could not generate DAG from DB: {e}")
+
+        if not dag_generated_from_db:
+            # Fall back to taskfile on disk (most recent accessible one for this workflow)
+            taskfile_path = None
+            for run in workflow_runs:
+                candidate = run.get("taskfile_path")
+                if candidate and not candidate.startswith("TM1:") and os.path.isfile(candidate):
+                    taskfile_path = candidate
+                    break
+
+            if taskfile_path:
+                try:
+                    from rushti.taskfile_ops import visualize_dag
+
+                    Path(dag_path).parent.mkdir(parents=True, exist_ok=True)
+                    visualize_dag(
+                        source=taskfile_path,
+                        output_path=dag_path,
+                        dashboard_url=dashboard_filename,
+                    )
+                    dag_generated = True
+                    print(f"DAG visualization generated from taskfile: {dag_path}")
+                except Exception as e:
+                    logger.warning(f"Could not generate DAG visualization: {e}")
+                    print(f"Warning: DAG visualization skipped ({e})")
+            else:
+                print(
+                    "Warning: No DB task results or accessible taskfile found, skipping DAG visualization"
+                )
 
         # --- Generate dashboard ---
         output_file = generate_dashboard(
@@ -1682,6 +1749,9 @@ def _stats_visualize(args) -> None:
 
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        if stats_db is not None:
+            stats_db.close()
 
 
 def _stats_list(args) -> None:
@@ -1693,14 +1763,26 @@ def _stats_list(args) -> None:
     """
     from rushti.db_admin import list_runs, list_tasks
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path
+    from rushti.stats import create_stats_database, get_db_path, get_stats_backend
 
     settings = load_settings(getattr(args, "settings_file", None))
+    backend = get_stats_backend(settings)
     db_path = get_db_path(settings)
 
+    stats_db = None
     try:
+        stats_db = create_stats_database(
+            enabled=True,
+            backend=backend,
+            db_path=db_path,
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
+
         if args.list_type == "runs":
-            runs = list_runs(args.workflow, db_path, limit=args.limit)
+            runs = list_runs(args.workflow, stats_db, limit=args.limit)
             if not runs:
                 print(f"No runs found for workflow: {args.workflow}")
                 sys.exit(0)
@@ -1719,7 +1801,7 @@ def _stats_list(args) -> None:
                 )
 
         elif args.list_type == "tasks":
-            tasks = list_tasks(args.workflow, db_path)
+            tasks = list_tasks(args.workflow, stats_db)
             if not tasks:
                 print(f"No tasks found for workflow: {args.workflow}")
                 sys.exit(0)
@@ -1747,6 +1829,9 @@ def _stats_list(args) -> None:
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
+    finally:
+        if stats_db is not None:
+            stats_db.close()
 
 
 def run_db_command(argv: list) -> None:
@@ -1778,7 +1863,7 @@ def run_db_command(argv: list) -> None:
         show_task_history,
     )
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path
+    from rushti.stats import get_db_path, get_stats_backend
 
     # Check for help flag or no subcommand
     if len(argv) < 3 or (len(argv) == 3 and argv[2] in ("--help", "-h")):
@@ -1848,6 +1933,9 @@ Note: For statistics, exports, and analysis, use '{APP_NAME} stats' command.
 
     # Get database path from settings
     settings = load_settings(args.settings_file)
+    if get_stats_backend(settings) != "sqlite":
+        print("Error: 'db' command currently supports only [stats] backend = sqlite")
+        sys.exit(1)
     db_path = get_db_path(settings)
 
     try:
