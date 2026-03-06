@@ -1617,19 +1617,27 @@ def _stats_visualize(args) -> None:
     from rushti.dashboard import generate_dashboard
     from rushti.db_admin import get_visualization_data
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path, get_stats_backend
+    from rushti.stats import create_stats_database, get_db_path, get_stats_backend
     from rushti.utils import resolve_app_path
 
     settings = load_settings(getattr(args, "settings_file", None))
-    if get_stats_backend(settings) != "sqlite":
-        print("Error: 'stats visualize' currently supports only [stats] backend = sqlite")
-        sys.exit(1)
+    backend = get_stats_backend(settings)
     db_path = get_db_path(settings)
 
+    stats_db = None
     try:
-        print(f"Generating visualizations for workflow: {args.workflow}")
+        stats_db = create_stats_database(
+            enabled=True,
+            backend=backend,
+            db_path=db_path,
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
+        data = get_visualization_data(args.workflow, stats_db)
 
-        data = get_visualization_data(args.workflow, db_path)
+        print(f"Generating visualizations for workflow: {args.workflow}")
         if not data.get("exists"):
             print(f"Error: {data.get('message')}")
             sys.exit(1)
@@ -1710,6 +1718,9 @@ def _stats_visualize(args) -> None:
 
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        if stats_db is not None:
+            stats_db.close()
 
 
 def _stats_list(args) -> None:
@@ -1721,18 +1732,26 @@ def _stats_list(args) -> None:
     """
     from rushti.db_admin import list_runs, list_tasks
     from rushti.settings import load_settings
-    from rushti.stats import get_db_path, get_stats_backend
+    from rushti.stats import create_stats_database, get_db_path, get_stats_backend
 
     settings = load_settings(getattr(args, "settings_file", None))
-    if get_stats_backend(settings) != "sqlite":
-        print("Error: 'stats list' currently supports only [stats] backend = sqlite")
-        print("For DynamoDB-backed stats, use 'stats analyze' or 'stats export'.")
-        sys.exit(1)
+    backend = get_stats_backend(settings)
     db_path = get_db_path(settings)
 
+    stats_db = None
     try:
+        stats_db = create_stats_database(
+            enabled=True,
+            backend=backend,
+            db_path=db_path,
+            dynamodb_region=settings.stats.dynamodb_region or None,
+            dynamodb_runs_table=settings.stats.dynamodb_runs_table,
+            dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
+            dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
+        )
+
         if args.list_type == "runs":
-            runs = list_runs(args.workflow, db_path, limit=args.limit)
+            runs = list_runs(args.workflow, stats_db, limit=args.limit)
             if not runs:
                 print(f"No runs found for workflow: {args.workflow}")
                 sys.exit(0)
@@ -1751,7 +1770,7 @@ def _stats_list(args) -> None:
                 )
 
         elif args.list_type == "tasks":
-            tasks = list_tasks(args.workflow, db_path)
+            tasks = list_tasks(args.workflow, stats_db)
             if not tasks:
                 print(f"No tasks found for workflow: {args.workflow}")
                 sys.exit(0)
@@ -1779,6 +1798,9 @@ def _stats_list(args) -> None:
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
+    finally:
+        if stats_db is not None:
+            stats_db.close()
 
 
 def run_db_command(argv: list) -> None:
