@@ -19,9 +19,14 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 from rushti.stats import StatsDatabase
+
+if TYPE_CHECKING:
+    from rushti.stats import DynamoDBStatsDatabase
+
+AnyStatsDatabase = Union[StatsDatabase, "DynamoDBStatsDatabase"]
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +86,7 @@ class ContentionAnalysisResult:
 
 
 def _compute_ewma_durations(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
     lookback_runs: int = 10,
     alpha: float = 0.3,
@@ -119,7 +124,7 @@ def _compute_ewma_durations(
 
 
 def _get_task_parameters(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
 ) -> List[Dict[str, Any]]:
     """Get task_id, task_signature, process, and parameters for the most recent run.
@@ -433,7 +438,7 @@ def _round_to_5(value: float) -> int:
 
 
 def _detect_concurrency_ceiling(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
     min_correlation: float = 0.7,
     max_efficiency_ratio: float = 0.75,
@@ -659,7 +664,7 @@ def _detect_concurrency_ceiling(
 
 
 def analyze_contention(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
     task_params: Optional[List[Dict[str, Any]]] = None,
     sensitivity: float = 10.0,
@@ -874,7 +879,7 @@ def analyze_contention(
 
 
 def get_archived_taskfile_path(
-    stats_db: StatsDatabase,
+    stats_db: AnyStatsDatabase,
     workflow: str,
 ) -> Optional[str]:
     """Get the archived taskfile path from the most recent successful run.
