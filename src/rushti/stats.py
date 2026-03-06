@@ -20,7 +20,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from rushti.utils import ensure_shared_file, makedirs_shared, resolve_app_path
 
@@ -879,24 +879,28 @@ class DynamoDBStatsDatabase:
         )
 
     def _query_all(self, table, **kwargs) -> List[Dict[str, Any]]:
+        """Paginate a DynamoDB query, honoring Limit as a global item cap."""
+        limit = kwargs.pop("Limit", None)
         items: List[Dict[str, Any]] = []
         response = table.query(**kwargs)
         items.extend(response.get("Items", []))
-        while "LastEvaluatedKey" in response:
+        while "LastEvaluatedKey" in response and (limit is None or len(items) < limit):
             kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
             response = table.query(**kwargs)
             items.extend(response.get("Items", []))
-        return items
+        return items[:limit] if limit is not None else items
 
     def _scan_all(self, table, **kwargs) -> List[Dict[str, Any]]:
+        """Paginate a DynamoDB scan, honoring Limit as a global item cap."""
+        limit = kwargs.pop("Limit", None)
         items: List[Dict[str, Any]] = []
         response = table.scan(**kwargs)
         items.extend(response.get("Items", []))
-        while "LastEvaluatedKey" in response:
+        while "LastEvaluatedKey" in response and (limit is None or len(items) < limit):
             kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
             response = table.scan(**kwargs)
             items.extend(response.get("Items", []))
-        return items
+        return items[:limit] if limit is not None else items
 
     def _normalize_task_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -1149,7 +1153,17 @@ class DynamoDBStatsDatabase:
                 ScanIndexForward=False,
                 Limit=limit,
             )
-        except Exception:
+        except Exception as e:
+            from botocore.exceptions import ClientError
+
+            if isinstance(e, ClientError) and e.response["Error"]["Code"] not in (
+                "ValidationException",
+                "ResourceNotFoundException",
+            ):
+                raise
+            logger.warning(
+                "GSI 'signature-start_time-index' not available, falling back to scan: %s", e
+            )
             items = [
                 i
                 for i in self._scan_all(self._task_results_table)
@@ -1223,7 +1237,17 @@ class DynamoDBStatsDatabase:
                 KeyConditionExpression=Key("workflow").eq(workflow),
                 ScanIndexForward=False,
             )
-        except Exception:
+        except Exception as e:
+            from botocore.exceptions import ClientError
+
+            if isinstance(e, ClientError) and e.response["Error"]["Code"] not in (
+                "ValidationException",
+                "ResourceNotFoundException",
+            ):
+                raise
+            logger.warning(
+                "GSI 'workflow-start_time-index' not available, falling back to scan: %s", e
+            )
             items = [i for i in self._scan_all(self._runs_table) if i.get("workflow") == workflow]
             items.sort(key=lambda i: i.get("start_time", ""), reverse=True)
 
@@ -1338,19 +1362,35 @@ def create_stats_database(
     dynamodb_runs_table: str = DEFAULT_DYNAMODB_RUNS_TABLE,
     dynamodb_task_results_table: str = DEFAULT_DYNAMODB_TASK_RESULTS_TABLE,
     dynamodb_endpoint_url: Optional[str] = None,
-) -> Any:
-    """Factory function to create a StatsDatabase with configuration.
+) -> Union["StatsDatabase", "DynamoDBStatsDatabase"]:
+    """Factory function to create a stats database with the configured backend.
 
     :param enabled: Whether stats collection is enabled
-    :param db_path: Path to database file
-    :param retention_days: Data retention period in days
-    :return: Configured StatsDatabase instance
+    :param db_path: Path to SQLite database file (sqlite backend only)
+    :param retention_days: Data retention period in days; 0 keeps data indefinitely
+    :param backend: Storage backend — ``"sqlite"`` (default) or ``"dynamodb"``
+    :param dynamodb_region: AWS region for DynamoDB (required when backend is dynamodb
+        and AWS_DEFAULT_REGION / AWS_REGION env vars are not set)
+    :param dynamodb_runs_table: DynamoDB table name for run-level records
+    :param dynamodb_task_results_table: DynamoDB table name for task-level records
+    :param dynamodb_endpoint_url: Optional custom endpoint URL (e.g. LocalStack)
+    :return: Configured StatsDatabase or DynamoDBStatsDatabase instance
     """
     backend_normalized = (backend or DEFAULT_STATS_BACKEND).lower()
 
     if backend_normalized == "sqlite":
         db = StatsDatabase(db_path=db_path, enabled=enabled)
     elif backend_normalized == "dynamodb":
+        if (
+            enabled
+            and not dynamodb_region
+            and not os.environ.get("AWS_DEFAULT_REGION")
+            and not os.environ.get("AWS_REGION")
+        ):
+            raise ValueError(
+                "DynamoDB backend requires a region. Set 'dynamodb_region' in [stats] settings "
+                "or the AWS_DEFAULT_REGION / AWS_REGION environment variable."
+            )
         db = DynamoDBStatsDatabase(
             enabled=enabled,
             region_name=dynamodb_region,
