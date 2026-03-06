@@ -195,6 +195,7 @@ def _prepare_dashboard_data(
     runs: List[Dict[str, Any]],
     task_results: List[Dict[str, Any]],
     default_runs: int,
+    selected_workflow: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Prepare all data for the dashboard template.
 
@@ -330,16 +331,38 @@ def _prepare_dashboard_data(
             }
         )
 
-    # Taskfile metadata from the most recent run
-    latest = runs[0] if runs else {}
+    # Workflow metadata from the most recent run per workflow.
+    workflow_meta: Dict[str, Dict[str, Any]] = {}
+    for run in enriched_runs:
+        wf = run.get("workflow") or ""
+        if wf not in workflow_meta:
+            workflow_meta[wf] = {
+                "taskfile_name": run.get("taskfile_name", ""),
+                "taskfile_description": run.get("taskfile_description", ""),
+                "taskfile_author": run.get("taskfile_author", ""),
+                "run_count": 0,
+            }
+        workflow_meta[wf]["run_count"] += 1
+
+    workflows = list(workflow_meta.keys())
+    effective_workflow = selected_workflow if selected_workflow in workflow_meta else ""
+    if not effective_workflow and workflows:
+        effective_workflow = workflows[0]
+
+    workflow_run_count = workflow_meta.get(effective_workflow, {}).get("run_count", 0)
+    effective_default_runs = min(default_runs, workflow_run_count)
 
     return {
-        "workflow": latest.get("workflow", ""),
-        "taskfile_name": latest.get("taskfile_name", ""),
-        "taskfile_description": latest.get("taskfile_description", ""),
-        "taskfile_author": latest.get("taskfile_author", ""),
+        "workflow": effective_workflow,
+        "workflows": workflows,
+        "workflow_meta": workflow_meta,
+        "taskfile_name": workflow_meta.get(effective_workflow, {}).get("taskfile_name", ""),
+        "taskfile_description": workflow_meta.get(effective_workflow, {}).get(
+            "taskfile_description", ""
+        ),
+        "taskfile_author": workflow_meta.get(effective_workflow, {}).get("taskfile_author", ""),
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "default_runs": min(default_runs, len(runs)),
+        "default_runs": effective_default_runs,
         "total_runs": len(runs),
         "runs": enriched_runs,
         "task_results": slim_task_results,
@@ -367,7 +390,12 @@ def generate_dashboard(
     :param dag_url: Optional relative URL to the DAG visualization HTML
     :return: Path to the generated HTML file
     """
-    data = _prepare_dashboard_data(runs, task_results, default_runs)
+    data = _prepare_dashboard_data(
+        runs,
+        task_results,
+        default_runs,
+        selected_workflow=workflow,
+    )
     data_json = json.dumps(data, default=str)
 
     # Build conditional DAG link HTML
@@ -624,6 +652,10 @@ def generate_dashboard(
             <div class="header-right">
                 {dag_link_html}
                 <div class="run-selector">
+                    <label for="workflowSelect">Workflow</label>
+                    <select id="workflowSelect" onchange="onWorkflowChange()"></select>
+                </div>
+                <div class="run-selector">
                     <label for="runCount">Show last</label>
                     <select id="runCount" onchange="updateDashboard()"></select>
                     <label>runs</label>
@@ -758,16 +790,54 @@ def generate_dashboard(
     ];
 
     function init() {{
-        // Build run count selector options
+        // Build workflow selector first, then run selector for the selected workflow.
+        const workflowSel = document.getElementById('workflowSelect');
+        DATA.workflows.forEach(wf => {{
+            const opt = document.createElement('option');
+            const wfRunCount = (DATA.workflow_meta[wf] && DATA.workflow_meta[wf].run_count) || 0;
+            opt.value = wf;
+            opt.textContent = `${{wf}} (${{wfRunCount}})`;
+            workflowSel.appendChild(opt);
+        }});
+        if (DATA.workflow && DATA.workflows.includes(DATA.workflow)) {{
+            workflowSel.value = DATA.workflow;
+        }}
+
+        rebuildRunCountSelector(DATA.default_runs);
+
+        document.getElementById('generatedAt').textContent = 'Generated: ' + DATA.generated_at;
+        updateDashboard();
+    }}
+
+    function getSelectedWorkflow() {{
+        return document.getElementById('workflowSelect').value;
+    }}
+
+    function getRunsForWorkflow(workflow) {{
+        return DATA.runs.filter(r => (r.workflow || '') === workflow);
+    }}
+
+    function rebuildRunCountSelector(preferredCount) {{
         const sel = document.getElementById('runCount');
-        const total = DATA.total_runs;
+        const total = getRunsForWorkflow(getSelectedWorkflow()).length;
+        sel.innerHTML = '';
+
+        if (total === 0) {{
+            const opt = document.createElement('option');
+            opt.value = 0;
+            opt.textContent = '0';
+            sel.appendChild(opt);
+            sel.value = 0;
+            return;
+        }}
+
         const options = [];
         for (let i = 1; i <= Math.min(total, 5); i++) options.push(i);
         if (total > 5) options.push(5);
         if (total > 10) options.push(10);
         if (total > 20) options.push(20);
         if (total > 5) options.push(total);
-        // Deduplicate and sort
+
         const unique = [...new Set(options)].sort((a, b) => a - b);
         unique.forEach(n => {{
             const opt = document.createElement('option');
@@ -775,16 +845,23 @@ def generate_dashboard(
             opt.textContent = n === total ? `All (${{total}})` : n;
             sel.appendChild(opt);
         }});
-        sel.value = DATA.default_runs;
 
-        document.getElementById('generatedAt').textContent = 'Generated: ' + DATA.generated_at;
+        const defaultCount = preferredCount || DATA.default_runs || unique[0];
+        const boundedCount = Math.min(defaultCount, total);
+        sel.value = String(boundedCount);
+    }}
+
+    function onWorkflowChange() {{
+        rebuildRunCountSelector();
         updateDashboard();
     }}
 
     function getSelectedRuns() {{
         const n = parseInt(document.getElementById('runCount').value);
+        const workflowRuns = getRunsForWorkflow(getSelectedWorkflow());
+        if (!n) return [];
         // Runs are ordered DESC (newest first); take last N and reverse for chronological display
-        return DATA.runs.slice(0, n).reverse();
+        return workflowRuns.slice(0, n).reverse();
     }}
 
     function statusBadge(status) {{
@@ -815,17 +892,21 @@ def generate_dashboard(
 
     function updateDashboard() {{
         destroyCharts();
+        const selectedWorkflow = getSelectedWorkflow();
+        const selectedWorkflowMeta = DATA.workflow_meta[selectedWorkflow] || {{}};
+        const workflowTotalRuns = getRunsForWorkflow(selectedWorkflow).length;
         const runs = getSelectedRuns();
 
         // Header subtitle
         document.getElementById('headerSubtitle').textContent =
-            `${{DATA.workflow}}${{DATA.taskfile_name ? ' — ' + DATA.taskfile_name : ''}}`;
+            `${{selectedWorkflow}}${{selectedWorkflowMeta.taskfile_name ? ' - ' + selectedWorkflowMeta.taskfile_name : ''}}`;
 
         // Metadata
         const meta = document.getElementById('metadata');
         let metaHtml = '';
-        if (DATA.taskfile_description) metaHtml += `<span>${{DATA.taskfile_description}}</span>`;
-        if (DATA.taskfile_author) metaHtml += `<span>Author: <strong>${{DATA.taskfile_author}}</strong></span>`;
+        if (selectedWorkflowMeta.taskfile_description) metaHtml += `<span>${{selectedWorkflowMeta.taskfile_description}}</span>`;
+        if (selectedWorkflowMeta.taskfile_author) metaHtml += `<span>Author: <strong>${{selectedWorkflowMeta.taskfile_author}}</strong></span>`;
+        metaHtml += `<span>Workflow runs: <strong>${{workflowTotalRuns}}</strong></span>`;
         metaHtml += `<span>Total runs in DB: <strong>${{DATA.total_runs}}</strong></span>`;
         if (runs.length > 0) {{
             metaHtml += `<span>Date range: <strong>${{formatDate(runs[0].start_time)}} — ${{formatDate(runs[runs.length-1].start_time)}}</strong></span>`;
@@ -833,7 +914,7 @@ def generate_dashboard(
         meta.innerHTML = metaHtml;
 
         // Summary cards
-        updateSummaryCards(runs);
+        updateSummaryCards(runs, workflowTotalRuns);
 
         // Charts
         renderRunDurationChart(runs);
@@ -850,7 +931,7 @@ def generate_dashboard(
         updateConfigDetails(runs);
     }}
 
-    function updateSummaryCards(runs) {{
+    function updateSummaryCards(runs, workflowTotalRuns) {{
         const cards = document.getElementById('summaryCards');
         if (runs.length === 0) {{ cards.innerHTML = '<div class="no-data">No runs available</div>'; return; }}
 
@@ -866,7 +947,7 @@ def generate_dashboard(
             <div class="card">
                 <div class="card-label">Runs Shown</div>
                 <div class="card-value">${{runs.length}}</div>
-                <div class="card-sub">of ${{DATA.total_runs}} total</div>
+                <div class="card-sub">of ${{workflowTotalRuns}} in workflow</div>
             </div>
             <div class="card">
                 <div class="card-label">Tasks per Run</div>

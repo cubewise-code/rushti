@@ -213,6 +213,28 @@ class TestPrepareDashboardData(unittest.TestCase):
         data = _prepare_dashboard_data(runs, tasks, default_runs=5)
         self.assertEqual(data["task_results"][0]["stage"], "extract")
 
+    def test_workflow_metadata_with_multiple_workflows(self):
+        """Test workflow selector metadata is prepared for multiple workflows."""
+        runs = [
+            _make_run(run_id="run-a1", workflow="wf-a"),
+            _make_run(run_id="run-b1", workflow="wf-b"),
+            _make_run(run_id="run-a2", workflow="wf-a"),
+        ]
+        tasks = [
+            _make_task_result(run_id="run-a1", task_id="1", task_signature="a1"),
+            _make_task_result(run_id="run-b1", task_id="2", task_signature="b1"),
+            _make_task_result(run_id="run-a2", task_id="3", task_signature="a2"),
+        ]
+
+        data = _prepare_dashboard_data(runs, tasks, default_runs=5, selected_workflow="wf-a")
+
+        self.assertEqual(data["workflow"], "wf-a")
+        self.assertIn("wf-a", data["workflows"])
+        self.assertIn("wf-b", data["workflows"])
+        self.assertEqual(data["workflow_meta"]["wf-a"]["run_count"], 2)
+        self.assertEqual(data["workflow_meta"]["wf-b"]["run_count"], 1)
+        self.assertEqual(data["default_runs"], 2)
+
 
 class TestGenerateDashboard(unittest.TestCase):
     """Tests for generate_dashboard HTML generation."""
@@ -293,6 +315,15 @@ class TestGenerateDashboard(unittest.TestCase):
         # Should NOT contain old values
         self.assertNotIn('<option value="100">100</option>', content)
         self.assertNotIn('<option value="200">200</option>', content)
+
+    def test_html_contains_workflow_selector(self):
+        """Test that generated HTML includes workflow selector controls."""
+        output = os.path.join(self.temp_dir, "test_dashboard.html")
+        generate_dashboard("test_id", self.runs, self.tasks, output)
+        with open(output, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn('id="workflowSelect"', content)
+        self.assertIn("onWorkflowChange()", content)
 
     def test_dag_url_link_present(self):
         """Test that 'View DAG' link appears when dag_url is provided."""
