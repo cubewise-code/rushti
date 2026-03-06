@@ -1664,37 +1664,63 @@ def _stats_visualize(args) -> None:
 
         # --- Attempt DAG generation ---
         dag_generated = False
-        taskfile_path = None
 
-        # Find the first accessible taskfile_path from runs (most recent first)
+        # Prefer DB-based DAG (no taskfile on disk needed); fall back to taskfile if unavailable.
         runs = data["runs"]
-        for run in runs:
-            candidate = run.get("taskfile_path")
-            if candidate and not candidate.startswith("TM1:") and os.path.isfile(candidate):
-                taskfile_path = candidate
-                break
+        workflow_runs = [r for r in runs if (r.get("workflow") or "") == args.workflow]
+        latest_run = workflow_runs[0] if workflow_runs else None
 
-        if taskfile_path:
+        dag_generated_from_db = False
+        if latest_run:
             try:
-                from rushti.taskfile_ops import visualize_dag
+                from rushti.taskfile_ops import visualize_dag_from_db_results
 
-                # Ensure output directory exists
-                Path(dag_path).parent.mkdir(parents=True, exist_ok=True)
+                latest_run_id = latest_run["run_id"]
+                latest_task_results = [
+                    tr for tr in data["task_results"] if tr["run_id"] == latest_run_id
+                ]
 
-                visualize_dag(
-                    source=taskfile_path,
-                    output_path=dag_path,
-                    dashboard_url=dashboard_filename,
-                )
-                dag_generated = True
-                print(f"DAG visualization generated: {dag_path}")
+                if latest_task_results:
+                    Path(dag_path).parent.mkdir(parents=True, exist_ok=True)
+                    visualize_dag_from_db_results(
+                        task_results=latest_task_results,
+                        output_path=dag_path,
+                        dashboard_url=dashboard_filename,
+                    )
+                    dag_generated = True
+                    dag_generated_from_db = True
+                    print(f"DAG visualization generated: {dag_path}")
             except Exception as e:
-                logger.warning(f"Could not generate DAG visualization: {e}")
-                print(f"Warning: DAG visualization skipped ({e})")
-        else:
-            print(
-                "Warning: No accessible taskfile found in run history, skipping DAG visualization"
-            )
+                logger.warning(f"Could not generate DAG from DB: {e}")
+
+        if not dag_generated_from_db:
+            # Fall back to taskfile on disk (most recent accessible one for this workflow)
+            taskfile_path = None
+            for run in workflow_runs:
+                candidate = run.get("taskfile_path")
+                if candidate and not candidate.startswith("TM1:") and os.path.isfile(candidate):
+                    taskfile_path = candidate
+                    break
+
+            if taskfile_path:
+                try:
+                    from rushti.taskfile_ops import visualize_dag
+
+                    Path(dag_path).parent.mkdir(parents=True, exist_ok=True)
+                    visualize_dag(
+                        source=taskfile_path,
+                        output_path=dag_path,
+                        dashboard_url=dashboard_filename,
+                    )
+                    dag_generated = True
+                    print(f"DAG visualization generated from taskfile: {dag_path}")
+                except Exception as e:
+                    logger.warning(f"Could not generate DAG visualization: {e}")
+                    print(f"Warning: DAG visualization skipped ({e})")
+            else:
+                print(
+                    "Warning: No DB task results or accessible taskfile found, skipping DAG visualization"
+                )
 
         # --- Generate dashboard ---
         output_file = generate_dashboard(
