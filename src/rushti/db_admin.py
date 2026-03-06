@@ -921,7 +921,7 @@ def get_visualization_data(
                     run[field] = bool(run[field])
             runs.append(run)
             run_ids.append(run["run_id"])
-            if run.get("workflow") == workflow:
+            if (run.get("workflow") or "").lower() == workflow.lower():
                 has_selected_workflow = True
 
         if include_all_workflows and workflow and not has_selected_workflow:
@@ -976,7 +976,7 @@ def get_visualization_data(
 
         run_info = backend.get_run_info(run_id) or {}
         run_workflow = run_info.get("workflow") or summary.get("workflow") or workflow
-        if run_workflow == workflow:
+        if run_workflow.lower() == workflow.lower():
             has_selected_workflow = True
         run = {
             "run_id": run_id,

@@ -1667,7 +1667,8 @@ def _stats_visualize(args) -> None:
 
         # Prefer DB-based DAG (no taskfile on disk needed); fall back to taskfile if unavailable.
         runs = data["runs"]
-        workflow_runs = [r for r in runs if (r.get("workflow") or "") == args.workflow]
+        workflow_lower = args.workflow.lower()
+        workflow_runs = [r for r in runs if (r.get("workflow") or "").lower() == workflow_lower]
         latest_run = workflow_runs[0] if workflow_runs else None
 
         dag_generated_from_db = False

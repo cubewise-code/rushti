@@ -212,6 +212,10 @@ def _prepare_dashboard_data(
             tasks_by_run[run_id] = []
         tasks_by_run[run_id].append(tr)
 
+    # Normalize workflow names to lowercase for case-insensitive aggregation
+    if selected_workflow is not None:
+        selected_workflow = selected_workflow.lower()
+
     # Build enriched run data
     enriched_runs = []
     for run in runs:
@@ -222,6 +226,7 @@ def _prepare_dashboard_data(
         enriched_runs.append(
             {
                 **run,
+                "workflow": (run.get("workflow") or "").lower(),
                 "stats": run_stats,
                 "concurrency": concurrency,
                 "task_count_actual": len(run_tasks),
