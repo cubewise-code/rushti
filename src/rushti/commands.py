@@ -1635,7 +1635,11 @@ def _stats_visualize(args) -> None:
             dynamodb_task_results_table=settings.stats.dynamodb_task_results_table,
             dynamodb_endpoint_url=settings.stats.dynamodb_endpoint_url or None,
         )
-        data = get_visualization_data(args.workflow, stats_db)
+        data = get_visualization_data(
+            args.workflow,
+            stats_db,
+            include_all_workflows=True,
+        )
 
         print(f"Generating visualizations for workflow: {args.workflow}")
         if not data.get("exists"):

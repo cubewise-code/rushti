@@ -739,6 +739,23 @@ class StatsDatabase:
 
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_all_runs(self) -> List[Dict[str, Any]]:
+        """Get all runs across all workflows.
+
+        :return: List of run info dictionaries, ordered by start_time descending
+        """
+        if not self.enabled or not self._conn:
+            return []
+
+        cursor = self._conn.cursor()
+        cursor.execute("""
+            SELECT run_id, start_time, end_time, duration_seconds, status, task_count,
+                   success_count, failure_count, max_workers
+            FROM runs
+            ORDER BY start_time DESC
+            """)
+        return [dict(row) for row in cursor.fetchall()]
+
     def get_run_task_stats(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Get aggregate task statistics for a single run.
 
@@ -1251,6 +1268,29 @@ class DynamoDBStatsDatabase:
             items = [i for i in self._scan_all(self._runs_table) if i.get("workflow") == workflow]
             items.sort(key=lambda i: i.get("start_time", ""), reverse=True)
 
+        results: List[Dict[str, Any]] = []
+        for item in items:
+            results.append(
+                {
+                    "run_id": item.get("run_id"),
+                    "start_time": item.get("start_time"),
+                    "end_time": item.get("end_time"),
+                    "duration_seconds": self._to_float(item.get("duration_seconds")),
+                    "status": item.get("status"),
+                    "task_count": item.get("task_count"),
+                    "success_count": item.get("success_count"),
+                    "failure_count": item.get("failure_count"),
+                    "max_workers": item.get("max_workers"),
+                }
+            )
+        return results
+
+    def get_all_runs(self) -> List[Dict[str, Any]]:
+        if not self.enabled:
+            return []
+
+        items = list(self._scan_all(self._runs_table))
+        items.sort(key=lambda i: i.get("start_time", ""), reverse=True)
         results: List[Dict[str, Any]] = []
         for item in items:
             results.append(

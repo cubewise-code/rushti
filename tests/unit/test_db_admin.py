@@ -212,6 +212,34 @@ class TestDatabaseAdminUtilities(unittest.TestCase):
         self.assertIn("task1", task_ids)
         self.assertIn("task2", task_ids)
 
+    def test_get_visualization_data_include_all_workflows_sqlite(self):
+        """include_all_workflows should embed all workflows in one payload (SQLite path)."""
+        data = get_visualization_data(
+            "taskfile1",
+            self.db_path,
+            include_all_workflows=True,
+        )
+
+        self.assertTrue(data["exists"])
+        self.assertEqual(data["workflow"], "taskfile1")
+        self.assertEqual(len(data["runs"]), 3)
+        self.assertEqual(len(data["task_results"]), 4)
+
+        workflows = {r["workflow"] for r in data["runs"]}
+        self.assertIn("taskfile1", workflows)
+        self.assertIn("taskfile2", workflows)
+
+    def test_get_visualization_data_include_all_requires_selected_workflow(self):
+        """include_all_workflows still fails when selected workflow does not exist."""
+        data = get_visualization_data(
+            "missing-workflow",
+            self.db_path,
+            include_all_workflows=True,
+        )
+
+        self.assertFalse(data["exists"])
+        self.assertIn("No runs found for workflow", data["message"])
+
     def test_clear_workflow_dry_run(self):
         """Test dry run of clearing workflow data."""
         count = clear_workflow("taskfile1", self.db_path, dry_run=True)

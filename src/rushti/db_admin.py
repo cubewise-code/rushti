@@ -859,6 +859,7 @@ def show_task_history(
 def get_visualization_data(
     workflow: str,
     backend: Any = DEFAULT_DB_PATH,
+    include_all_workflows: bool = False,
 ) -> Dict[str, Any]:
     """Get all data needed for the HTML dashboard visualization.
 
@@ -866,6 +867,8 @@ def get_visualization_data(
 
     :param workflow: Workflow name to query
     :param backend: Stats backend (StatsDatabase or DynamoDBStatsDatabase), or SQLite db path
+    :param include_all_workflows: When True, return runs/tasks for all workflows
+        but keep workflow as the initial/default selection.
     :return: Dictionary with 'runs' and 'task_results' lists, or error info
     """
     if isinstance(backend, str):
@@ -877,18 +880,28 @@ def get_visualization_data(
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        cursor.execute(
-            """
-            SELECT run_id, workflow, taskfile_path, start_time, end_time,
-                   duration_seconds, status, task_count, success_count, failure_count,
-                   taskfile_name, taskfile_description, taskfile_author,
-                   max_workers, retries, result_file, exclusive, optimize
-            FROM runs
-            WHERE workflow = ?
-            ORDER BY start_time DESC
-            """,
-            (workflow,),
-        )
+        if include_all_workflows:
+            cursor.execute("""
+                SELECT run_id, workflow, taskfile_path, start_time, end_time,
+                       duration_seconds, status, task_count, success_count, failure_count,
+                       taskfile_name, taskfile_description, taskfile_author,
+                       max_workers, retries, result_file, exclusive, optimize
+                FROM runs
+                ORDER BY start_time DESC
+                """)
+        else:
+            cursor.execute(
+                """
+                SELECT run_id, workflow, taskfile_path, start_time, end_time,
+                       duration_seconds, status, task_count, success_count, failure_count,
+                       taskfile_name, taskfile_description, taskfile_author,
+                       max_workers, retries, result_file, exclusive, optimize
+                FROM runs
+                WHERE workflow = ?
+                ORDER BY start_time DESC
+                """,
+                (workflow,),
+            )
         runs_rows = cursor.fetchall()
 
         if not runs_rows:
@@ -900,6 +913,7 @@ def get_visualization_data(
 
         runs = []
         run_ids = []
+        has_selected_workflow = False
         for row in runs_rows:
             run = dict(row)
             for field in ["exclusive", "optimize"]:
@@ -907,6 +921,15 @@ def get_visualization_data(
                     run[field] = bool(run[field])
             runs.append(run)
             run_ids.append(run["run_id"])
+            if run.get("workflow") == workflow:
+                has_selected_workflow = True
+
+        if include_all_workflows and workflow and not has_selected_workflow:
+            conn.close()
+            return {
+                "exists": False,
+                "message": f"No runs found for workflow: {workflow}",
+            }
 
         placeholders = ",".join("?" * len(run_ids))
         cursor.execute(
@@ -932,7 +955,10 @@ def get_visualization_data(
             "task_results": task_results,
         }
 
-    runs_summary = backend.get_runs_for_workflow(workflow) or []
+    if include_all_workflows:
+        runs_summary = backend.get_all_runs() or []
+    else:
+        runs_summary = backend.get_runs_for_workflow(workflow) or []
     if not runs_summary:
         return {
             "exists": False,
@@ -941,6 +967,7 @@ def get_visualization_data(
 
     runs: List[Dict[str, Any]] = []
     task_results: List[Dict[str, Any]] = []
+    has_selected_workflow = False
 
     for summary in runs_summary:
         run_id = summary.get("run_id")
@@ -948,9 +975,12 @@ def get_visualization_data(
             continue
 
         run_info = backend.get_run_info(run_id) or {}
+        run_workflow = run_info.get("workflow") or summary.get("workflow") or workflow
+        if run_workflow == workflow:
+            has_selected_workflow = True
         run = {
             "run_id": run_id,
-            "workflow": run_info.get("workflow") or summary.get("workflow") or workflow,
+            "workflow": run_workflow,
             "taskfile_path": run_info.get("taskfile_path"),
             "start_time": run_info.get("start_time") or summary.get("start_time"),
             "end_time": run_info.get("end_time") or summary.get("end_time"),
@@ -1015,6 +1045,12 @@ def get_visualization_data(
             )
 
     if not runs:
+        return {
+            "exists": False,
+            "message": f"No runs found for workflow: {workflow}",
+        }
+
+    if include_all_workflows and workflow and not has_selected_workflow:
         return {
             "exists": False,
             "message": f"No runs found for workflow: {workflow}",
