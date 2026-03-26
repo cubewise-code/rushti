@@ -23,7 +23,6 @@ import logging
 import shlex
 from typing import Any, Dict, List, Optional
 
-import keyring
 import pandas as pd
 from TM1py import TM1Service
 
@@ -87,6 +86,8 @@ def resolve_tm1_params(config: configparser.ConfigParser, instance_name: str) ->
 
     use_keyring_flag = config.getboolean(instance_name, "use_keyring", fallback=False)
     if use_keyring_flag:
+        import keyring
+
         password = keyring.get_password(instance_name, params.get("user"))
         if password:
             params["password"] = password
