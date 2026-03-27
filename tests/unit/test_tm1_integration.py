@@ -124,6 +124,8 @@ class TestConnectToTM1Instance(unittest.TestCase):
             "user": "admin",
             "password": "apple",
         }
+        mock_config.getboolean.return_value = False
+        mock_config.get.return_value = None
         mock_config_parser.return_value = mock_config
 
         # Setup mock TM1Service

@@ -71,6 +71,39 @@ ALL_MEASURES = [
 ]
 
 
+def resolve_tm1_params(config: configparser.ConfigParser, instance_name: str) -> dict:
+    """Resolve TM1 connection params from config, handling use_keyring and cleanup.
+
+    Reads the raw config section, resolves the password via keyring if
+    ``use_keyring`` is enabled, and strips non-TM1Service params so the
+    result can be passed directly to ``TM1Service(**params)``.
+
+    :param config: Parsed ConfigParser with TM1 instance sections
+    :param instance_name: Section name in the config
+    :return: Clean dict of kwargs suitable for TM1Service
+    """
+    params = dict(config[instance_name])
+
+    use_keyring_flag = config.getboolean(instance_name, "use_keyring", fallback=False)
+    if use_keyring_flag:
+        import keyring
+
+        password = keyring.get_password(instance_name, params.get("user"))
+        if password:
+            params["password"] = password
+        else:
+            logger.warning(
+                f"use_keyring is enabled for '{instance_name}' but no password found in keyring"
+            )
+
+    # Remove params that are not TM1Service kwargs
+    params.pop("use_keyring", None)
+    params.pop("session_context", None)
+    params.pop("connection_file", None)
+
+    return params
+
+
 def connect_to_tm1_instance(
     instance_name: str,
     config_path: str,
@@ -96,8 +129,7 @@ def connect_to_tm1_instance(
         )
 
     try:
-        params = dict(config[instance_name])
-        params.pop("session_context", None)
+        params = resolve_tm1_params(config, instance_name)
         tm1 = TM1Service(**params)
         logger.info(f"Connected to TM1 instance: {instance_name}")
         return tm1

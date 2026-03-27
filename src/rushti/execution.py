@@ -22,12 +22,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
-import keyring
 from TM1py import TM1Service
 from TM1py.Exceptions import TM1pyTimeout
 
 from rushti.task import Task, OptimizedTask
 from rushti.dag import DAG
+from rushti.tm1_integration import resolve_tm1_params
 from rushti.messages import (
     MSG_PROCESS_EXECUTE,
     MSG_PROCESS_SUCCESS,
@@ -174,11 +174,6 @@ def setup_tm1_services(
         # handle default values from configparser
         if tm1_server_name != config.default_section:
             try:
-                use_keyring = config.getboolean(tm1_server_name, "use_keyring", fallback=False)
-                if use_keyring:
-                    password = keyring.get_password(tm1_server_name, params.get("user"))
-                    params["password"] = password
-
                 connection_file = config.get(tm1_server_name, "connection_file", fallback=None)
 
                 # restore connection from file. In practice faster than creating a new one
@@ -199,9 +194,9 @@ def setup_tm1_services(
 
                 # case no connection file provided or connection file expired
                 if tm1_server_name not in tm1_services:
-                    params.pop("session_context", None)
+                    resolved_params = resolve_tm1_params(config, tm1_server_name)
                     tm1_services[tm1_server_name] = TM1Service(
-                        **params,
+                        **resolved_params,
                         session_context=session_context,
                         connection_pool_size=max_workers,
                     )

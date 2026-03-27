@@ -22,6 +22,7 @@ from typing import Optional
 from TM1py import TM1Service
 
 from rushti.settings import load_settings
+from rushti.tm1_integration import resolve_tm1_params
 from rushti.stats import create_stats_database
 from rushti.taskfile import TaskfileSource
 from rushti.taskfile_ops import (
@@ -106,8 +107,7 @@ Examples:
 
     print(f"Connecting to TM1 instance: {args.tm1_instance}")
     try:
-        params = dict(config[args.tm1_instance])
-        params.pop("session_context", None)
+        params = resolve_tm1_params(config, args.tm1_instance)
         tm1 = TM1Service(**params)
     except Exception as e:
         print(f"Error connecting to TM1: {e}")
