@@ -129,16 +129,17 @@ class TestGetRemainingTasksByInstance(unittest.TestCase):
 class TestLogoutInstance(unittest.TestCase):
     """Tests for _logout_instance() helper."""
 
-    def test_logout_removes_from_services(self):
-        """Successful logout removes instance from tm1_services dict."""
+    def test_logout_calls_logout_and_returns_true(self):
+        """Successful logout calls logout on the service and returns True."""
         mock_tm1 = MagicMock()
         services = {"A": mock_tm1, "B": MagicMock()}
 
-        _logout_instance("A", services, {}, force=False)
+        result = _logout_instance("A", services, {}, force=False)
 
         mock_tm1.logout.assert_called_once()
-        self.assertNotIn("A", services)
-        self.assertIn("B", services)
+        self.assertTrue(result)
+        # Dict is NOT modified — caller tracks released instances separately
+        self.assertIn("A", services)
 
     def test_preserved_connection_skipped_without_force(self):
         """Preserved connections are not logged out without force."""
@@ -146,10 +147,10 @@ class TestLogoutInstance(unittest.TestCase):
         services = {"A": mock_tm1}
         preserve = {"A": True}
 
-        _logout_instance("A", services, preserve, force=False)
+        result = _logout_instance("A", services, preserve, force=False)
 
         mock_tm1.logout.assert_not_called()
-        self.assertIn("A", services)
+        self.assertFalse(result)
 
     def test_preserved_connection_forced(self):
         """Force mode logs out even preserved connections."""
@@ -157,27 +158,29 @@ class TestLogoutInstance(unittest.TestCase):
         services = {"A": mock_tm1}
         preserve = {"A": True}
 
-        _logout_instance("A", services, preserve, force=True)
+        result = _logout_instance("A", services, preserve, force=True)
 
         mock_tm1.logout.assert_called_once()
-        self.assertNotIn("A", services)
+        self.assertTrue(result)
 
     def test_nonexistent_instance_is_noop(self):
-        """Calling with a non-existent instance does nothing."""
+        """Calling with a non-existent instance returns False."""
         services = {"B": MagicMock()}
 
-        _logout_instance("A", services, {})
+        result = _logout_instance("A", services, {})
 
+        self.assertFalse(result)
         self.assertIn("B", services)
 
     def test_logout_exception_does_not_raise(self):
-        """Logout failure is caught and logged, not raised."""
+        """Logout failure is caught and logged, returns False."""
         mock_tm1 = MagicMock()
         mock_tm1.logout.side_effect = Exception("connection lost")
         services = {"A": mock_tm1}
 
-        # Should not raise
-        _logout_instance("A", services, {})
+        result = _logout_instance("A", services, {})
+
+        self.assertFalse(result)
 
 
 class TestEarlySessionRelease(unittest.TestCase):
@@ -252,11 +255,11 @@ class TestEarlySessionRelease(unittest.TestCase):
         self.assertTrue(all(results))
         # A should have been logged out early
         mock_a.logout.assert_called_once()
-        # A should have been removed from services dict
-        self.assertNotIn("A", services)
+        # Services dict is NOT modified (instances tracked via released_instances set)
+        self.assertIn("A", services)
 
-    def test_single_instance_no_early_release(self):
-        """All tasks on one instance: no early logout (final logout handles it)."""
+    def test_single_instance_early_release(self):
+        """All tasks on one instance: logout once all tasks complete."""
         dag = DAG()
         dag.add_task(_make_task("1", instance="A"))
         dag.add_task(_make_task("2", instance="A"))
@@ -267,9 +270,8 @@ class TestEarlySessionRelease(unittest.TestCase):
         results = self._run_dag_with_early_release(dag, services, max_workers=4)
 
         self.assertTrue(all(results))
-        # A is logged out on the last task completion (early release)
+        # A is logged out once after the last task completes
         mock_a.logout.assert_called_once()
-        self.assertNotIn("A", services)
 
     def test_preserved_connection_not_released_early(self):
         """Preserved connections are not released early without force."""
@@ -344,8 +346,6 @@ class TestEarlySessionRelease(unittest.TestCase):
         # Both should be released (early release is always active)
         mock_a.logout.assert_called_once()
         mock_b.logout.assert_called_once()
-        self.assertNotIn("A", services)
-        self.assertNotIn("B", services)
 
     def test_early_release_with_dependencies(self):
         """Early release works correctly with DAG dependencies.
@@ -373,7 +373,6 @@ class TestEarlySessionRelease(unittest.TestCase):
         self.assertEqual(len(results), 3)
         # A should have been released early after A1 completed
         mock_a.logout.assert_called_once()
-        self.assertNotIn("A", services)
 
 
 if __name__ == "__main__":

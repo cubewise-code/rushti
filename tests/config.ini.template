@@ -10,8 +10,15 @@
 #   1. RUSHTI_TEST_CONFIG environment variable (path to a config.ini file)
 #   2. tests/config.ini (this file, when copied and filled in)
 #
-# For CI/CD (GitHub Actions), set the RUSHTI_TEST_TM1_CONFIG secret to the
-# full content of a config.ini file. The CI workflow writes it to tests/config.ini.
+# For CI/CD (GitHub Actions), configure either:
+#
+#   Recommended: Variable + Secret (connection details visible, password protected)
+#     - Variable RUSHTI_TEST_TM1_CONFIG: config.ini content WITHOUT password
+#     - Secret RUSHTI_TEST_TM1_PASSWORD: the password value only
+#     The CI workflow merges them into tests/config.ini at runtime.
+#
+#   Legacy: Single secret (entire config opaque)
+#     - Secret RUSHTI_TEST_TM1_CONFIG: full config.ini content including password
 #
 # Multi-Instance Testing:
 #   You can define multiple TM1 instances. Tests that require a specific version

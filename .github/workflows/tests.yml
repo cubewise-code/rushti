@@ -6,10 +6,25 @@
 # Unit tests and linting run on every push and PR.
 # Integration tests only run on PRs to master (expensive, ~7 min).
 #
-# Required secrets for integration tests:
-#   RUSHTI_TEST_TM1_CONFIG - Full content of a config.ini file with TM1 connection details.
-#                            The file format follows the standard RushTI config.ini format.
-#                            See tests/config.ini.template for the expected structure.
+# Required configuration for integration tests:
+#
+#   Variable (non-sensitive connection details):
+#     RUSHTI_TEST_TM1_CONFIG - config.ini content WITHOUT passwords.
+#       Example:
+#         [tm1srv01]
+#         base_url = https://your-server/tm1/api/tm1
+#         user = your_user
+#         namespace = LDAP
+#         ssl = true
+#         verify = true
+#         async_requests_mode = true
+#
+#   Secret (sensitive credentials only):
+#     RUSHTI_TEST_TM1_PASSWORD - The password for tm1srv01.
+#
+#   Legacy (still supported):
+#     Secret: RUSHTI_TEST_TM1_CONFIG - Full config.ini content including password.
+#     If the variable + secret pair is configured, it takes precedence over the legacy secret.
 
 name: Tests
 
@@ -103,15 +118,25 @@ jobs:
       - name: Check TM1 configuration
         id: check-tm1
         run: |
-          if [ -n "${{ secrets.RUSHTI_TEST_TM1_CONFIG }}" ]; then
+          if [ -n "${{ vars.RUSHTI_TEST_TM1_CONFIG }}" ] && [ -n "${{ secrets.RUSHTI_TEST_TM1_PASSWORD }}" ]; then
             echo "tm1_configured=true" >> $GITHUB_OUTPUT
+            echo "config_source=variable" >> $GITHUB_OUTPUT
+          elif [ -n "${{ secrets.RUSHTI_TEST_TM1_CONFIG }}" ]; then
+            echo "tm1_configured=true" >> $GITHUB_OUTPUT
+            echo "config_source=legacy_secret" >> $GITHUB_OUTPUT
           else
             echo "tm1_configured=false" >> $GITHUB_OUTPUT
-            echo "::warning::TM1 config secret not configured. Integration tests will be skipped."
+            echo "::warning::TM1 config not configured. Integration tests will be skipped."
           fi
 
-      - name: Create TM1 config file
-        if: steps.check-tm1.outputs.tm1_configured == 'true'
+      - name: Create TM1 config file (from variable + secret)
+        if: steps.check-tm1.outputs.config_source == 'variable'
+        run: |
+          echo "${{ vars.RUSHTI_TEST_TM1_CONFIG }}" > tests/config.ini
+          echo "password = ${{ secrets.RUSHTI_TEST_TM1_PASSWORD }}" >> tests/config.ini
+
+      - name: Create TM1 config file (legacy - full secret)
+        if: steps.check-tm1.outputs.config_source == 'legacy_secret'
         run: |
           echo "${{ secrets.RUSHTI_TEST_TM1_CONFIG }}" > tests/config.ini
 
@@ -129,9 +154,15 @@ jobs:
       - name: Skip message
         if: steps.check-tm1.outputs.tm1_configured != 'true'
         run: |
-          echo "Integration tests skipped - TM1 config secret not configured"
-          echo "To enable, add the RUSHTI_TEST_TM1_CONFIG secret to your repository."
-          echo "The secret should contain the full config.ini content with TM1 connection details."
+          echo "Integration tests skipped - TM1 config not configured"
+          echo ""
+          echo "To enable (recommended):"
+          echo "  1. Add variable RUSHTI_TEST_TM1_CONFIG with connection details (no password)"
+          echo "  2. Add secret RUSHTI_TEST_TM1_PASSWORD with the TM1 password"
+          echo ""
+          echo "Legacy (still supported):"
+          echo "  Add secret RUSHTI_TEST_TM1_CONFIG with the full config.ini content"
+          echo ""
           echo "See tests/config.ini.template for the expected format."
 
   lint:

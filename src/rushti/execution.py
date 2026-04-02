@@ -586,6 +586,8 @@ async def work_through_tasks_dag(
     outcomes = []
     loop = asyncio.get_event_loop()
     task_start_times: Dict[str, datetime] = {}
+    # Track instances that have been early-released to avoid double-logout
+    released_instances: set = set()
 
     with ThreadPoolExecutor(int(max_workers)) as executor:
         # Map futures to tasks
@@ -685,13 +687,15 @@ async def work_through_tasks_dag(
             # Early session release: logout from instances with no remaining tasks
             remaining = dag.get_remaining_tasks_by_instance()
             for instance_name in list(tm1_services.keys()):
-                if instance_name not in remaining:
-                    _logout_instance(
+                if instance_name not in remaining and instance_name not in released_instances:
+                    released = _logout_instance(
                         instance_name,
                         tm1_services,
                         tm1_preserve_connections or {},
                         force_logout,
                     )
+                    if released:
+                        released_instances.add(instance_name)
 
             # Submit newly ready tasks
             submit_ready_tasks()
@@ -709,28 +713,32 @@ def _logout_instance(
     tm1_preserve_connections: Dict,
     force: bool = False,
 ):
-    """Logout from a single TM1 instance and remove it from the services dict.
+    """Logout from a single TM1 instance.
 
     Used for early session release when an instance has no remaining tasks.
+    Does NOT remove the instance from tm1_services — the caller tracks
+    which instances have been released to avoid double-release.
 
     :param instance_name: Name of the TM1 instance to logout from
-    :param tm1_services: Dictionary of TM1Service instances (modified in-place)
+    :param tm1_services: Dictionary of TM1Service instances
     :param tm1_preserve_connections: Dictionary indicating which connections to preserve
     :param force: If True, logout even from preserved connections
+    :return: True if logout was performed, False if skipped
     """
     if instance_name not in tm1_services:
-        return
+        return False
 
     if not force and tm1_preserve_connections.get(instance_name, False):
         logger.debug(f"Preserving connection to {instance_name} (early release skipped)")
-        return
+        return False
 
     try:
         tm1_services[instance_name].logout()
-        del tm1_services[instance_name]
         logger.info(f"Early session release: logged out from {instance_name} (no remaining tasks)")
+        return True
     except Exception as e:
         logger.warning(f"Failed early logout from {instance_name}: {e}")
+        return False
 
 
 def logout(
