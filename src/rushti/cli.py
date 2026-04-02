@@ -1240,6 +1240,8 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 checkpoint_manager=checkpoint_manager,
                 task_optimizer=task_optimizer,
                 stage_workers=stage_workers,
+                tm1_preserve_connections=preserve_connections,
+                force_logout=exclusive_mode,
             )
         )
         success = True
