@@ -315,8 +315,12 @@ class TestEarlySessionRelease(unittest.TestCase):
         mock_a.logout.assert_called_once()
         mock_b.logout.assert_called_once()
 
-    def test_early_release_without_preserve_connections(self):
-        """Early release happens by default even without tm1_preserve_connections."""
+    def test_no_early_release_without_preserve_connections(self):
+        """No early release when tm1_preserve_connections is not provided.
+
+        This preserves shared connection state for callers (like integration
+        tests) that reuse tm1_services across multiple executions.
+        """
         dag = DAG()
         dag.add_task(_make_task("1", instance="A"))
         dag.add_task(_make_task("2", instance="B"))
@@ -336,16 +340,16 @@ class TestEarlySessionRelease(unittest.TestCase):
                         4,
                         0,
                         services,
-                        # tm1_preserve_connections not passed (None) — early release still active
+                        # tm1_preserve_connections not passed (None) — no early release
                     )
                 )
             finally:
                 loop.close()
 
         self.assertTrue(all(results))
-        # Both should be released (early release is always active)
-        mock_a.logout.assert_called_once()
-        mock_b.logout.assert_called_once()
+        # Neither should be logged out (early release not active)
+        mock_a.logout.assert_not_called()
+        mock_b.logout.assert_not_called()
 
     def test_early_release_with_dependencies(self):
         """Early release works correctly with DAG dependencies.

@@ -565,10 +565,10 @@ async def work_through_tasks_dag(
     in addition to the global max_workers ceiling. The global max_workers
     always takes precedence as the absolute cap.
 
-    After each task completion, instances with no remaining tasks are logged out
-    immediately (early session release) to free TM1 server resources and release
-    exclusive locks. Instances marked in tm1_preserve_connections are exempt
-    from early release unless force_logout is True (exclusive mode).
+    When tm1_preserve_connections is provided, early session release is enabled:
+    after each task completion, instances with no remaining tasks are logged out
+    immediately to free TM1 server resources and release exclusive locks.
+    Instances marked as preserved are exempt unless force_logout is True.
 
     :param ctx: The current execution context
     :param dag: DAG containing tasks and their dependencies
@@ -579,7 +579,8 @@ async def work_through_tasks_dag(
     :param task_optimizer: Optional TaskOptimizer for runtime-based scheduling
     :param stage_workers: Optional per-stage worker limits (e.g. {"extract": 8, "load": 4})
     :param tm1_preserve_connections: Optional dict indicating which connections to preserve.
-        Preserved connections are exempt from early release unless force_logout is True.
+        When provided, enables early session release. Preserved connections are exempt
+        from early release unless force_logout is True.
     :param force_logout: If True, force logout even from preserved connections (exclusive mode)
     :return: List of execution outcomes (True/False for each task)
     """
@@ -684,18 +685,22 @@ async def work_through_tasks_dag(
                         error_message=None if success else "Task failed",
                     )
 
-            # Early session release: logout from instances with no remaining tasks
-            remaining = dag.get_remaining_tasks_by_instance()
-            for instance_name in list(tm1_services.keys()):
-                if instance_name not in remaining and instance_name not in released_instances:
-                    released = _logout_instance(
-                        instance_name,
-                        tm1_services,
-                        tm1_preserve_connections or {},
-                        force_logout,
-                    )
-                    if released:
-                        released_instances.add(instance_name)
+            # Early session release: logout from instances with no remaining tasks.
+            # Only active when tm1_preserve_connections is provided (i.e. called from CLI).
+            # Direct callers (e.g. integration tests) that don't pass it won't trigger
+            # early release, preserving shared connection state across test methods.
+            if tm1_preserve_connections is not None:
+                remaining = dag.get_remaining_tasks_by_instance()
+                for instance_name in list(tm1_services.keys()):
+                    if instance_name not in remaining and instance_name not in released_instances:
+                        released = _logout_instance(
+                            instance_name,
+                            tm1_services,
+                            tm1_preserve_connections,
+                            force_logout,
+                        )
+                        if released:
+                            released_instances.add(instance_name)
 
             # Submit newly ready tasks
             submit_ready_tasks()
