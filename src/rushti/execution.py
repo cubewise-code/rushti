@@ -550,6 +550,8 @@ async def work_through_tasks_dag(
     checkpoint_manager: "CheckpointManager" = None,
     task_optimizer: "TaskOptimizer" = None,
     stage_workers: Optional[Dict[str, int]] = None,
+    tm1_preserve_connections: Optional[Dict] = None,
+    force_logout: bool = False,
 ) -> List[bool]:
     """Execute tasks using DAG-based scheduling.
 
@@ -563,6 +565,11 @@ async def work_through_tasks_dag(
     in addition to the global max_workers ceiling. The global max_workers
     always takes precedence as the absolute cap.
 
+    After each task completion, instances with no remaining tasks are logged out
+    immediately (early session release) to free TM1 server resources and release
+    exclusive locks. Instances marked in tm1_preserve_connections are exempt
+    from early release unless force_logout is True (exclusive mode).
+
     :param ctx: The current execution context
     :param dag: DAG containing tasks and their dependencies
     :param max_workers: Maximum number of concurrent workers
@@ -571,6 +578,9 @@ async def work_through_tasks_dag(
     :param checkpoint_manager: Optional CheckpointManager for resume support
     :param task_optimizer: Optional TaskOptimizer for runtime-based scheduling
     :param stage_workers: Optional per-stage worker limits (e.g. {"extract": 8, "load": 4})
+    :param tm1_preserve_connections: Optional dict indicating which connections to preserve.
+        Preserved connections are exempt from early release unless force_logout is True.
+    :param force_logout: If True, force logout even from preserved connections (exclusive mode)
     :return: List of execution outcomes (True/False for each task)
     """
     outcomes = []
@@ -672,6 +682,17 @@ async def work_through_tasks_dag(
                         error_message=None if success else "Task failed",
                     )
 
+            # Early session release: logout from instances with no remaining tasks
+            remaining = dag.get_remaining_tasks_by_instance()
+            for instance_name in list(tm1_services.keys()):
+                if instance_name not in remaining:
+                    _logout_instance(
+                        instance_name,
+                        tm1_services,
+                        tm1_preserve_connections or {},
+                        force_logout,
+                    )
+
             # Submit newly ready tasks
             submit_ready_tasks()
 
@@ -680,6 +701,36 @@ async def work_through_tasks_dag(
             logger.warning("DAG execution incomplete - some tasks may have unmet dependencies")
 
     return outcomes
+
+
+def _logout_instance(
+    instance_name: str,
+    tm1_services: Dict,
+    tm1_preserve_connections: Dict,
+    force: bool = False,
+):
+    """Logout from a single TM1 instance and remove it from the services dict.
+
+    Used for early session release when an instance has no remaining tasks.
+
+    :param instance_name: Name of the TM1 instance to logout from
+    :param tm1_services: Dictionary of TM1Service instances (modified in-place)
+    :param tm1_preserve_connections: Dictionary indicating which connections to preserve
+    :param force: If True, logout even from preserved connections
+    """
+    if instance_name not in tm1_services:
+        return
+
+    if not force and tm1_preserve_connections.get(instance_name, False):
+        logger.debug(f"Preserving connection to {instance_name} (early release skipped)")
+        return
+
+    try:
+        tm1_services[instance_name].logout()
+        del tm1_services[instance_name]
+        logger.info(f"Early session release: logged out from {instance_name} (no remaining tasks)")
+    except Exception as e:
+        logger.warning(f"Failed early logout from {instance_name}: {e}")
 
 
 def logout(

@@ -303,6 +303,23 @@ class DAG:
         """
         return dict(self._results)
 
+    def get_remaining_tasks_by_instance(self) -> Dict[str, int]:
+        """Get count of remaining (non-completed) tasks per TM1 instance.
+
+        A task is considered remaining if its status is PENDING or RUNNING.
+
+        :return: Dictionary mapping instance_name to count of remaining tasks
+        """
+        counts: Dict[str, int] = {}
+        for task_id, status in self._status.items():
+            if status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.SKIPPED):
+                continue
+            for task in self._tasks.get(task_id, []):
+                instance = getattr(task, "instance_name", None)
+                if instance:
+                    counts[instance] = counts.get(instance, 0) + 1
+        return counts
+
     def __len__(self) -> int:
         """Return the number of unique task IDs in the DAG."""
         return len(self._tasks)

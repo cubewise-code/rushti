@@ -181,6 +181,41 @@ timeout = 1800   # Wait up to 30 minutes
 
 ---
 
+## Early Session Release
+
+When a workflow spans multiple TM1 instances, RushTI automatically releases sessions from instances that have no remaining tasks — without waiting for the entire workflow to finish. This is especially valuable in exclusive mode, where holding an idle session blocks other RushTI instances from accessing that server.
+
+### Example
+
+Consider a workflow with 100 tasks: 5 tasks on `tm1-finance` (10 seconds) and 95 tasks on `tm1-reporting` (30 minutes).
+
+| Behavior | `tm1-finance` Locked For |
+|----------|------------------------|
+| **Without** early release | 30 min 10 sec (entire workflow) |
+| **With** early release | 10 sec (only while its tasks run) |
+
+Once the 5 tasks on `tm1-finance` complete, RushTI logs out from that instance immediately, freeing it for other workflows. The session on `tm1-reporting` continues until its tasks finish.
+
+### What You See in Logs
+
+```
+Executing task 5/100: RunExtract on tm1-finance
+Early session release: logged out from tm1-finance (no remaining tasks)
+Executing task 6/100: TransformData on tm1-reporting
+...
+```
+
+### How It Works
+
+- After each task completes, RushTI checks if any pending or running tasks remain for each connected TM1 instance.
+- If an instance has zero remaining tasks, the session is closed immediately.
+- In exclusive mode (`--exclusive`), even preserved connections (via `connection_file`) are released early.
+- In normal mode, preserved connections are kept open for reuse across runs.
+
+This feature is always active — no configuration needed.
+
+---
+
 ## When to Use Exclusive Mode
 
 !!! tip "Use For"
