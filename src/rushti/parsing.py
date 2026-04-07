@@ -7,7 +7,6 @@ This module handles:
 - File pre-processing (encoding normalization)
 """
 
-import importlib.util
 import logging
 from itertools import product
 from typing import Dict, List, Tuple, Type, Union
@@ -17,6 +16,7 @@ from TM1py import TM1Service
 from rushti.taskfile import (
     detect_file_type,
     detect_execution_mode,
+    open_task_file,
     parse_json_taskfile,
     parse_line_arguments,
     Taskfile,
@@ -211,21 +211,21 @@ def get_instances_from_tasks_file(tasks_file_path: str) -> set:
 def extract_ordered_tasks_and_waits_from_file_type_norm(
     file_path: str, expand: bool = False, tm1_services: Dict[str, TM1Service] = None
 ):
-    with open(file_path, encoding="utf-8") as file:
-        original_tasks = [
-            extract_task_or_wait_from_line(line)
-            for line in file.readlines()
-            if not line.startswith("#")
-        ]
-        if not expand:
-            return original_tasks
+    text = open_task_file(file_path)
+    original_tasks = [
+        extract_task_or_wait_from_line(line)
+        for line in text.splitlines(keepends=True)
+        if not line.startswith("#")
+    ]
+    if not expand:
+        return original_tasks
 
-        return flatten_to_list(
-            [
-                expand_task(tm1_services, task) if isinstance(task, Task) else Wait()
-                for task in original_tasks
-            ]
-        )
+    return flatten_to_list(
+        [
+            expand_task(tm1_services, task) if isinstance(task, Task) else Wait()
+            for task in original_tasks
+        ]
+    )
 
 
 def extract_tasks_from_file_type_opt(
@@ -239,20 +239,20 @@ def extract_tasks_from_file_type_opt(
     """
     # Mapping of id against task
     tasks = dict()
-    with open(file_path, encoding="utf-8") as input_file:
-        lines = input_file.readlines()
-        # Build tasks dictionary
-        for line in lines:
-            # exclude comments
-            if not line.startswith("#"):
-                # skip empty lines
-                if not line.strip():
-                    continue
-                task = extract_task_from_line_type_opt(line)
-                if task.id not in tasks:
-                    tasks[task.id] = [task]
-                else:
-                    tasks[task.id].append(task)
+    text = open_task_file(file_path)
+    lines = text.splitlines(keepends=True)
+    # Build tasks dictionary
+    for line in lines:
+        # exclude comments
+        if not line.startswith("#"):
+            # skip empty lines
+            if not line.strip():
+                continue
+            task = extract_task_from_line_type_opt(line)
+            if task.id not in tasks:
+                tasks[task.id] = [task]
+            else:
+                tasks[task.id].append(task)
 
     # expand tasks
     if expand:
@@ -274,24 +274,29 @@ def extract_tasks_from_file_type_opt(
 
 
 def pre_process_file(file_path: str):
-    """Preprocess file for Python to change encoding from 'utf-8-sig' to 'utf-8'
+    """Preprocess file to normalise encoding to UTF-8.
 
-    Background: Under certain circumstances TM1 / Turbo Integrator generates files with utf-8-sig
+    Background: TM1 / Turbo Integrator may generate files with UTF-8-SIG,
+    Windows-1252, or other non-UTF-8 encodings.  This function detects the
+    encoding and re-writes the file as UTF-8 so downstream readers work
+    correctly.
 
-    :param file_path:
-    :return:
+    :param file_path: Path to the file to normalise
     """
-    import chardet
+    from rushti.taskfile import detect_file_encoding
 
-    with open(file_path, "rb") as file:
-        raw = file.read(32)  # at most 32 bytes are returned
-        encoding = chardet.detect(raw)["encoding"]
+    encoding = detect_file_encoding(file_path)
+    normalised = encoding.upper().replace("-", "")
 
-    if encoding and encoding.upper() == "UTF-8-SIG":
-        with open(file_path, mode="r", encoding="utf-8-sig") as file:
-            text = file.read()
-        with open(file_path, mode="w", encoding="utf-8") as file:
-            file.write(text)
+    # Already UTF-8 — nothing to do
+    if normalised == "UTF8":
+        return
+
+    logger.info(f"Converting '{file_path}' from {encoding} to UTF-8")
+    with open(file_path, mode="r", encoding=encoding) as f:
+        text = f.read()
+    with open(file_path, mode="w", encoding="utf-8") as f:
+        f.write(text)
 
 
 # ---------------------------------------------------------------------------
@@ -380,13 +385,8 @@ def build_dag(
             logger.error(str(e))
             raise
     else:
-        # Legacy TXT file processing
-        if importlib.util.find_spec("chardet") is not None:
-            pre_process_file(file_path)
-        else:
-            logging.info(
-                f"Function '{pre_process_file.__name__}' skipped. Optional dependency 'chardet' not installed"
-            )
+        # Legacy TXT file processing — normalise encoding to UTF-8
+        pre_process_file(file_path)
 
         # Reset task ID counter so executed tasks start from 1
         Task.reset_id_counter()

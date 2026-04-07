@@ -12,6 +12,8 @@ import unittest.mock
 from rushti.taskfile import (
     parse_json_taskfile,
     detect_file_type,
+    detect_file_encoding,
+    open_task_file,
     convert_txt_to_json,
     validate_taskfile,
     archive_taskfile,
@@ -842,6 +844,97 @@ class TestArchiveTaskfile(unittest.TestCase):
                 taskfile = self._make_taskfile()
                 path = archive_taskfile(taskfile, "wf", "run1")
                 self.assertTrue(os.path.isabs(path))
+
+
+class TestFileEncoding(unittest.TestCase):
+    """Tests for encoding detection and file reading (issue #137)."""
+
+    def _write_bytes(self, content: bytes, suffix: str = ".txt") -> str:
+        """Write raw bytes to a temp file and return its path."""
+        f = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=tempfile.gettempdir())
+        f.write(content)
+        f.close()
+        self.addCleanup(os.unlink, f.name)
+        return f.name
+
+    def test_detect_utf8(self):
+        path = self._write_bytes("instance=tm1 process=test\n".encode("utf-8"))
+        enc = detect_file_encoding(path)
+        self.assertIn(enc.lower().replace("-", ""), ("utf8", "ascii"))
+
+    def test_detect_utf8_sig(self):
+        content = b"\xef\xbb\xbf" + "instance=tm1 process=test\n".encode("utf-8")
+        path = self._write_bytes(content)
+        enc = detect_file_encoding(path)
+        self.assertEqual(enc.lower(), "utf-8-sig")
+
+    def test_detect_windows_1252(self):
+        # Text with accented characters encoded in Windows-1252
+        text = "instance=tm1 process=Héllo_Wörld\n"
+        content = text.encode("windows-1252")
+        path = self._write_bytes(content)
+        enc = detect_file_encoding(path)
+        # Should detect as some non-UTF-8 encoding (exact name varies by chardet version)
+        self.assertIsNotNone(enc)
+
+    def test_open_task_file_utf8(self):
+        text = "instance=tm1 process=test\n"
+        path = self._write_bytes(text.encode("utf-8"))
+        result = open_task_file(path)
+        self.assertEqual(result, text)
+
+    def test_open_task_file_utf8_sig(self):
+        text = "instance=tm1 process=test\n"
+        content = b"\xef\xbb\xbf" + text.encode("utf-8")
+        path = self._write_bytes(content)
+        result = open_task_file(path)
+        # utf-8-sig strips the BOM
+        self.assertEqual(result, text)
+
+    def test_open_task_file_windows_1252(self):
+        """File with Windows-1252 encoding should be read without error (issue #137)."""
+        text = "instance=tm1 process=Héllo_Wörld\n"
+        content = text.encode("windows-1252")
+        path = self._write_bytes(content)
+        result = open_task_file(path)
+        # Should contain the accented characters
+        self.assertIn("llo", result)
+        self.assertIn("rld", result)
+
+    def test_open_task_file_latin1(self):
+        """File with latin-1 bytes that are invalid UTF-8 should not crash."""
+        # \xe9 = 'é' in latin-1, but invalid continuation byte in UTF-8
+        content = b"instance=tm1 process=caf\xe9\n"
+        path = self._write_bytes(content)
+        result = open_task_file(path)
+        self.assertIn("caf", result)
+
+    def test_parse_json_taskfile_windows_1252(self):
+        """JSON taskfile with non-UTF-8 encoding should parse correctly (issue #137)."""
+        taskfile_data = {
+            "version": "2.0",
+            "tasks": [
+                {
+                    "id": "1",
+                    "instance": "tm1",
+                    "process": "Héllo",
+                    "parameters": {},
+                }
+            ],
+        }
+        text = json.dumps(taskfile_data)
+        content = text.encode("windows-1252")
+        path = self._write_bytes(content, suffix=".json")
+        taskfile = parse_json_taskfile(path)
+        self.assertEqual(len(taskfile.tasks), 1)
+
+    def test_convert_txt_to_json_windows_1252(self):
+        """TXT taskfile with non-UTF-8 encoding should convert correctly (issue #137)."""
+        text = "instance=tm1 process=café\n"
+        content = text.encode("windows-1252")
+        path = self._write_bytes(content)
+        taskfile = convert_txt_to_json(path)
+        self.assertEqual(len(taskfile.tasks), 1)
 
 
 if __name__ == "__main__":

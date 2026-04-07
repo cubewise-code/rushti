@@ -4,8 +4,10 @@ This module provides:
 - JSON task file parsing and validation
 - TXT to JSON conversion utilities
 - File type detection
+- Encoding detection and normalization
 """
 
+import importlib.util
 import json
 import logging
 import shlex
@@ -34,6 +36,87 @@ TASK_DEFAULTS = {
     "require_predecessor_success": False,
     "succeed_on_minor_errors": False,
 }
+
+
+# ---------------------------------------------------------------------------
+# Encoding detection and file reading utilities
+# ---------------------------------------------------------------------------
+
+# Minimum bytes to sample for encoding detection.  chardet works better with
+# more data, but 4 KB is usually enough for task files and fast to read.
+_ENCODING_SAMPLE_BYTES = 4096
+
+
+def detect_file_encoding(file_path: Union[str, Path]) -> str:
+    """Detect the encoding of a file.
+
+    Uses ``chardet`` when available.  Falls back to a simple BOM / UTF-8
+    probe otherwise.
+
+    :param file_path: Path to the file
+    :return: Detected encoding name (e.g. ``"utf-8"``, ``"windows-1252"``)
+    """
+    file_path = Path(file_path)
+    raw = file_path.read_bytes()[:_ENCODING_SAMPLE_BYTES]
+
+    # Check for common BOMs first (cheap, no dependency)
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return "utf-16"
+
+    # Try chardet if installed
+    if importlib.util.find_spec("chardet") is not None:
+        import chardet
+
+        result = chardet.detect(raw)
+        encoding = result.get("encoding")
+        confidence = result.get("confidence", 0)
+        if encoding:
+            logger.debug(
+                f"chardet detected encoding '{encoding}' "
+                f"(confidence {confidence:.0%}) for {file_path}"
+            )
+            return encoding
+
+    # Without chardet: try UTF-8, fall back to latin-1 (never raises)
+    try:
+        raw.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        logger.warning(
+            f"File '{file_path}' is not valid UTF-8 and chardet is not installed; "
+            f"falling back to latin-1 encoding"
+        )
+        return "latin-1"
+
+
+def open_task_file(file_path: Union[str, Path]) -> str:
+    """Read a task file with automatic encoding detection.
+
+    :param file_path: Path to the task file
+    :return: File contents as a Unicode string
+    :raises FileNotFoundError: If file does not exist
+    :raises UnicodeDecodeError: If file cannot be decoded with any encoding
+    """
+    file_path = Path(file_path)
+    encoding = detect_file_encoding(file_path)
+
+    # Normalise UTF-8-SIG → UTF-8 transparently
+    if encoding.upper() == "UTF-8-SIG":
+        encoding = "utf-8-sig"
+
+    logger.debug(f"Reading task file '{file_path}' with encoding '{encoding}'")
+
+    try:
+        return file_path.read_text(encoding=encoding)
+    except (UnicodeDecodeError, LookupError) as exc:
+        # Last-resort fallback: latin-1 never fails
+        logger.warning(
+            f"Failed to read '{file_path}' with encoding '{encoding}' ({exc}); "
+            f"retrying with latin-1"
+        )
+        return file_path.read_text(encoding="latin-1")
 
 
 @dataclass
@@ -425,8 +508,8 @@ def parse_json_taskfile(file_path: Union[str, Path]) -> Taskfile:
     logger.info(f"Parsing JSON task file: {file_path}")
 
     try:
-        with open(file_path, "r") as f:
-            data = json.load(f)
+        text = open_task_file(file_path)
+        data = json.loads(text)
     except json.JSONDecodeError as e:
         raise TaskfileValidationError(f"Invalid JSON syntax: {e}")
 
@@ -455,12 +538,11 @@ def detect_file_type(file_path: Union[str, Path]) -> str:
     else:
         # Try to detect from content
         try:
-            with open(file_path, "r") as f:
-                first_char = f.read(1).strip()
-                if first_char == "{":
-                    return "json"
+            text = open_task_file(file_path)
+            if text.lstrip()[:1] == "{":
+                return "json"
         except Exception:
-            pass  # JSON detection failed; will try other formats
+            pass  # Detection failed; will try other formats
         return "txt"
 
 
@@ -475,29 +557,29 @@ def detect_execution_mode(file_path: Union[str, Path]) -> str:
     :raises ValueError: If the file format cannot be determined
     """
     file_path = Path(file_path)
+    text = open_task_file(file_path)
 
-    with open(file_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            # Skip empty lines and comments
-            if not line or line.startswith("#"):
-                continue
+    for line in text.splitlines():
+        line = line.strip()
+        # Skip empty lines and comments
+        if not line or line.startswith("#"):
+            continue
 
-            # Check the first meaningful line
-            if line.lower() == "wait":
-                # 'wait' keyword only exists in NORM mode
-                return "norm"
-            elif line.startswith("id="):
-                return "opt"
-            elif line.startswith("instance="):
-                return "norm"
-            else:
-                # Unknown format - raise error
-                raise ValueError(
-                    f"Cannot determine execution mode from file content. "
-                    f"Expected line starting with 'id=' (opt) or 'instance=' (norm), "
-                    f"got: {line[:50]}..."
-                )
+        # Check the first meaningful line
+        if line.lower() == "wait":
+            # 'wait' keyword only exists in NORM mode
+            return "norm"
+        elif line.startswith("id="):
+            return "opt"
+        elif line.startswith("instance="):
+            return "norm"
+        else:
+            # Unknown format - raise error
+            raise ValueError(
+                f"Cannot determine execution mode from file content. "
+                f"Expected line starting with 'id=' (opt) or 'instance=' (norm), "
+                f"got: {line[:50]}..."
+            )
 
     # Empty file or only comments
     raise ValueError("Cannot determine execution mode: file contains no task definitions")
@@ -571,9 +653,9 @@ def convert_txt_to_json(
 
     logger.info(f"Converting TXT to JSON: {txt_path}")
 
-    # Read and parse TXT file
-    with open(txt_path, "r") as f:
-        lines = f.readlines()
+    # Read and parse TXT file with encoding detection
+    text = open_task_file(txt_path)
+    lines = text.splitlines(keepends=True)
 
     tasks = []
     task_id = 1
