@@ -8,7 +8,7 @@ mkdocs>=1.5.0
 mkdocs-material>=9.5.0
 
 # Version management plugin
-mike>=2.0.0
+mike>=2.2.0
 
 # Markdown extensions (most are included with mkdocs-material, but explicit for clarity)
 pymdown-extensions>=10.7
