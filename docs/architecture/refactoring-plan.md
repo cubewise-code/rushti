@@ -88,6 +88,52 @@ Black-box tests that invoke RushTI through its public surface (`argv` → exit c
 
 ~1 sub-branch, ~1–2 days of focused work. Pause for user checkpoint after merging into parent.
 
+### Status (after first iteration)
+
+Sub-branch ``refactor/phase-0-safety-net`` landed three commits:
+
+1. **Golden-file safety net** for both ``write_optimized_taskfile``
+   functions. Goldens at ``tests/resources/golden/`` pin current behavior
+   byte-for-byte. **Critical for Phase 2b**: revealed that the two
+   ``write_optimized_taskfile`` functions are *not* duplicates — they
+   share a name but solve different problems (EWMA reorder vs.
+   contention grouping). Phase 2b will rename rather than merge.
+2. **CLI dispatch tests** (``tests/unit/test_cli_dispatch.py``, 25 tests)
+   covering ``uses_named_arguments``, ``translate_cmd_arguments``,
+   ``parse_arguments``, ``resolve_config_path`` precedence, ``main()``
+   --help / --version / bad-input exits, and subcommand routing via
+   handler patching. **Critical for Phase 1**.
+3. **Pattern smoke tests** (``tests/unit/test_commands_smoke.py``,
+   3 tests) demonstrating the full ``argv -> main() -> handler ->
+   output`` chain works for ``tasks expand``, ``tasks visualize``, and
+   ``db list workflows`` (via ``--settings`` pointing at a populated
+   SQLite DB).
+
+**Total: 30 new unit tests. Suite runtime: 2.53s. No regressions**
+(637 passed, 5 skipped).
+
+**Known gaps deferred to follow-up**:
+
+- TM1-required smoke tests (``run``, ``resume``, ``build``,
+  ``tasks export``, ``tasks push``) — pattern is established; can be
+  added in ``tests/integration/test_commands_smoke.py`` as Phase 2
+  surfaces specific risks.
+- Remaining non-TM1 smoke tests (``tasks validate``, ``stats *``,
+  ``db show/clear/vacuum``) — same shape as the three already there;
+  add as needed.
+
+**New conftest fixtures**:
+
+- ``unique_workflow_name`` — UUID-suffixed name for integration tests
+- ``populated_stats_db`` — tmp SQLite DB with one workflow run + 2 tasks
+- ``golden_file`` — read/compare/regenerate helper
+  (``RUSHTI_REGENERATE_GOLDENS=1`` overwrites)
+
+**Plan adjustments triggered by Phase 0 findings**:
+
+- Phase 2b's "dedup ``write_optimized_taskfile``" goal is replaced by
+  "rename to disambiguate" — same depth gain, lower risk.
+
 ---
 
 ## Phase 1 — Extract non-CLI helpers from `cli.py`
@@ -165,13 +211,22 @@ src/rushti/commands/
 
 `commands/__init__.py` keeps `commands.run_build_command` etc. importable from the original path — backwards compat for any caller that imports them directly.
 
-### Sub-phase 2b — Dedup `write_optimized_taskfile`
+### Sub-phase 2b — Disambiguate `write_optimized_taskfile`
 
-Today: two functions with the same name in `taskfile_ops.py:1194` and `contention_analyzer.py:906`.
+**Plan revised after Phase 0 finding:** the two functions sharing the
+name `write_optimized_taskfile` are not duplicates — they have different
+signatures and solve different problems:
 
-- Make `Taskfile.with_optimized_order(...)` a method on the `Taskfile` dataclass in `taskfile.py`.
-- Both call sites become callers of the method.
-- Phase 0 snapshot tests catch any drift between the two old implementations during the merge.
+- `taskfile_ops.write_optimized_taskfile(path, optimized_order, output, AnalysisReport)` — EWMA-based reordering by task-ID list.
+- `contention_analyzer.write_optimized_taskfile(path, ContentionAnalysisResult, output)` — contention-driver grouping with predecessor injection and `max_workers` embedding.
+
+The original "merge into one method" plan would have produced an
+overloaded API. Better:
+
+- Rename to `taskfile_ops.write_ewma_optimized_taskfile`.
+- Rename to `contention_analyzer.write_contention_optimized_taskfile`.
+- Optionally: hoist both to methods on `Taskfile` (`with_ewma_order`, `with_contention_optimization`) so the model owns its operations.
+- Phase 0 golden-file snapshots guard against any byte-level drift during the rename.
 
 ### Sub-phase 2c — Consolidate validation
 

@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "algorithm": "EWMA",
+    "algorithm_version": "2.0",
+    "description": "Phase 0 safety-net input for write_optimized_taskfile snapshots",
+    "ewma_alpha": 0.3,
+    "lookback_runs": 10,
+    "optimization_date": "2026-04-30T00:00:00Z",
+    "optimized": true,
+    "original_taskfile": "<INPUT_PATH>",
+    "run_count": 5,
+    "task_count": 5,
+    "workflow": "snapshot-fixture"
+  },
+  "settings": {
+    "max_workers": 4
+  },
+  "tasks": [
+    {
+      "id": "task_b",
+      "instance": "tm1srv01",
+      "parameters": {
+        "pCube": "Sales",
+        "pYear": "2025"
+      },
+      "process": "}bedrock.cube.data.copy"
+    },
+    {
+      "id": "task_d",
+      "instance": "tm1srv01",
+      "parameters": {
+        "pCube": "Inventory",
+        "pYear": "2025"
+      },
+      "process": "}bedrock.cube.data.copy"
+    },
+    {
+      "id": "task_a",
+      "instance": "tm1srv01",
+      "parameters": {
+        "pCube": "Sales",
+        "pYear": "2024"
+      },
+      "process": "}bedrock.cube.data.copy"
+    },
+    {
+      "id": "task_e",
+      "instance": "tm1srv01",
+      "parameters": {
+        "pCube": "Forecast",
+        "pYear": "2025"
+      },
+      "process": "}bedrock.cube.data.copy"
+    },
+    {
+      "id": "task_c",
+      "instance": "tm1srv01",
+      "parameters": {
+        "pCube": "Inventory",
+        "pYear": "2024"
+      },
+      "process": "}bedrock.cube.data.copy"
+    }
+  ],
+  "version": "2.0"
+}

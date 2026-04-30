@@ -479,3 +479,132 @@ def sample_json_taskfile():
             }
         ],
     }
+
+
+# =============================================================================
+# Phase 0 Safety-Net Fixtures
+# =============================================================================
+# These fixtures support the architecture-refactor safety net (see
+# docs/architecture/refactoring-plan.md). They are intentionally small and
+# self-contained so they can be removed if the refactor is reverted.
+
+
+@pytest.fixture
+def unique_workflow_name(request):
+    """Provide a UUID-suffixed workflow name unique to each test.
+
+    Used by integration smoke tests so that concurrent developers running
+    the suite don't collide on stats DB rows or TM1 cube state.
+    """
+    import uuid
+
+    test_name = request.node.name.replace("[", "_").replace("]", "")
+    return f"rushti_phase0_smoke_{test_name}_{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def populated_stats_db(tmp_path):
+    """Create a SQLite stats DB pre-populated with one workflow run.
+
+    Returns the absolute path to the DB file. Used by non-TM1 smoke tests
+    of the ``stats`` and ``db`` subcommands so they have something to query
+    without needing real workflow execution.
+    """
+    from datetime import datetime, timedelta
+
+    from rushti.stats import StatsDatabase
+
+    db_path = str(tmp_path / "stats.db")
+    db = StatsDatabase(db_path=db_path, enabled=True)
+
+    workflow = "smoke-test-workflow"
+    run_id = "20260430-120000-abc123"
+    base_time = datetime(2026, 4, 30, 12, 0, 0)
+
+    db.start_run(
+        run_id=run_id,
+        workflow=workflow,
+        taskfile_path=str(tmp_path / "fixture_taskfile.json"),
+        task_count=2,
+        taskfile_name="smoke-fixture",
+        max_workers=4,
+    )
+    db.record_task(
+        run_id=run_id,
+        task_id="task1",
+        instance="tm1srv01",
+        process="}bedrock.server.wait",
+        parameters={"pWaitSec": "1"},
+        success=True,
+        start_time=base_time,
+        end_time=base_time + timedelta(seconds=2),
+        workflow=workflow,
+    )
+    db.record_task(
+        run_id=run_id,
+        task_id="task2",
+        instance="tm1srv01",
+        process="}bedrock.server.wait",
+        parameters={"pWaitSec": "2"},
+        success=True,
+        start_time=base_time + timedelta(seconds=2),
+        end_time=base_time + timedelta(seconds=5),
+        workflow=workflow,
+    )
+    db.complete_run(run_id=run_id, status="Success", success_count=2, failure_count=0)
+    db.close()
+
+    return db_path
+
+
+@pytest.fixture
+def golden_file(request):
+    """Compare actual content against a checked-in golden file.
+
+    Goldens live under ``tests/resources/golden/``. Set the
+    ``RUSHTI_REGENERATE_GOLDENS=1`` environment variable to overwrite them
+    with the current actual output (used after intentional behavior
+    changes).
+
+    Returns a callable: ``compare(actual: str, golden_name: str)``. Asserts
+    equality (or regenerates) and includes a diff snippet on mismatch.
+    """
+    import difflib
+
+    golden_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "golden")
+    os.makedirs(golden_dir, exist_ok=True)
+    regenerate = os.environ.get("RUSHTI_REGENERATE_GOLDENS") == "1"
+
+    def _compare(actual: str, golden_name: str) -> None:
+        golden_path = os.path.join(golden_dir, golden_name)
+
+        if regenerate or not os.path.exists(golden_path):
+            with open(golden_path, "w", encoding="utf-8") as f:
+                f.write(actual)
+            if not regenerate:
+                pytest.skip(
+                    f"Golden file {golden_name} did not exist; created it. "
+                    f"Re-run to compare against the new golden."
+                )
+            return
+
+        with open(golden_path, "r", encoding="utf-8") as f:
+            expected = f.read()
+
+        if actual != expected:
+            diff = "\n".join(
+                difflib.unified_diff(
+                    expected.splitlines(),
+                    actual.splitlines(),
+                    fromfile=f"{golden_name} (golden)",
+                    tofile=f"{golden_name} (actual)",
+                    lineterm="",
+                )
+            )
+            raise AssertionError(
+                f"Golden mismatch for {golden_name}\n"
+                f"Set RUSHTI_REGENERATE_GOLDENS=1 to update.\n\n"
+                f"Diff:\n{diff}"
+            )
+
+    return _compare
