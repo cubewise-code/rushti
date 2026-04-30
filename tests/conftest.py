@@ -503,6 +503,61 @@ def unique_workflow_name(request):
 
 
 @pytest.fixture
+def populated_stats_db(tmp_path):
+    """Create a SQLite stats DB pre-populated with one workflow run.
+
+    Returns the absolute path to the DB file. Used by non-TM1 smoke tests
+    of the ``stats`` and ``db`` subcommands so they have something to query
+    without needing real workflow execution.
+    """
+    from datetime import datetime, timedelta
+
+    from rushti.stats import StatsDatabase
+
+    db_path = str(tmp_path / "stats.db")
+    db = StatsDatabase(db_path=db_path, enabled=True)
+
+    workflow = "smoke-test-workflow"
+    run_id = "20260430-120000-abc123"
+    base_time = datetime(2026, 4, 30, 12, 0, 0)
+
+    db.start_run(
+        run_id=run_id,
+        workflow=workflow,
+        taskfile_path=str(tmp_path / "fixture_taskfile.json"),
+        task_count=2,
+        taskfile_name="smoke-fixture",
+        max_workers=4,
+    )
+    db.record_task(
+        run_id=run_id,
+        task_id="task1",
+        instance="tm1srv01",
+        process="}bedrock.server.wait",
+        parameters={"pWaitSec": "1"},
+        success=True,
+        start_time=base_time,
+        end_time=base_time + timedelta(seconds=2),
+        workflow=workflow,
+    )
+    db.record_task(
+        run_id=run_id,
+        task_id="task2",
+        instance="tm1srv01",
+        process="}bedrock.server.wait",
+        parameters={"pWaitSec": "2"},
+        success=True,
+        start_time=base_time + timedelta(seconds=2),
+        end_time=base_time + timedelta(seconds=5),
+        workflow=workflow,
+    )
+    db.complete_run(run_id=run_id, status="Success", success_count=2, failure_count=0)
+    db.close()
+
+    return db_path
+
+
+@pytest.fixture
 def golden_file(request):
     """Compare actual content against a checked-in golden file.
 
