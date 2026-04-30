@@ -479,3 +479,77 @@ def sample_json_taskfile():
             }
         ],
     }
+
+
+# =============================================================================
+# Phase 0 Safety-Net Fixtures
+# =============================================================================
+# These fixtures support the architecture-refactor safety net (see
+# docs/architecture/refactoring-plan.md). They are intentionally small and
+# self-contained so they can be removed if the refactor is reverted.
+
+
+@pytest.fixture
+def unique_workflow_name(request):
+    """Provide a UUID-suffixed workflow name unique to each test.
+
+    Used by integration smoke tests so that concurrent developers running
+    the suite don't collide on stats DB rows or TM1 cube state.
+    """
+    import uuid
+
+    test_name = request.node.name.replace("[", "_").replace("]", "")
+    return f"rushti_phase0_smoke_{test_name}_{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def golden_file(request):
+    """Compare actual content against a checked-in golden file.
+
+    Goldens live under ``tests/resources/golden/``. Set the
+    ``RUSHTI_REGENERATE_GOLDENS=1`` environment variable to overwrite them
+    with the current actual output (used after intentional behavior
+    changes).
+
+    Returns a callable: ``compare(actual: str, golden_name: str)``. Asserts
+    equality (or regenerates) and includes a diff snippet on mismatch.
+    """
+    import difflib
+
+    golden_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "golden")
+    os.makedirs(golden_dir, exist_ok=True)
+    regenerate = os.environ.get("RUSHTI_REGENERATE_GOLDENS") == "1"
+
+    def _compare(actual: str, golden_name: str) -> None:
+        golden_path = os.path.join(golden_dir, golden_name)
+
+        if regenerate or not os.path.exists(golden_path):
+            with open(golden_path, "w", encoding="utf-8") as f:
+                f.write(actual)
+            if not regenerate:
+                pytest.skip(
+                    f"Golden file {golden_name} did not exist; created it. "
+                    f"Re-run to compare against the new golden."
+                )
+            return
+
+        with open(golden_path, "r", encoding="utf-8") as f:
+            expected = f.read()
+
+        if actual != expected:
+            diff = "\n".join(
+                difflib.unified_diff(
+                    expected.splitlines(),
+                    actual.splitlines(),
+                    fromfile=f"{golden_name} (golden)",
+                    tofile=f"{golden_name} (actual)",
+                    lineterm="",
+                )
+            )
+            raise AssertionError(
+                f"Golden mismatch for {golden_name}\n"
+                f"Set RUSHTI_REGENERATE_GOLDENS=1 to update.\n\n"
+                f"Diff:\n{diff}"
+            )
+
+    return _compare
