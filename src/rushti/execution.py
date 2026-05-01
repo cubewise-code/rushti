@@ -588,7 +588,6 @@ async def work_through_tasks_dag(
     loop = asyncio.get_event_loop()
     task_start_times: Dict[str, datetime] = {}
     # Track instances that have been early-released to avoid double-logout
-    released_instances: set = set()
 
     with ThreadPoolExecutor(int(max_workers)) as executor:
         # Map futures to tasks
@@ -689,18 +688,21 @@ async def work_through_tasks_dag(
             # Only active when tm1_preserve_connections is provided (i.e. called from CLI).
             # Direct callers (e.g. integration tests) that don't pass it won't trigger
             # early release, preserving shared connection state across test methods.
+            #
+            # _logout_instance removes the entry from tm1_services on success, so the
+            # end-of-run logout() call cannot double-logout the same session (which
+            # would otherwise emit a CookieConflictError warning when the second
+            # logout response leaves a duplicate TM1SessionId in the cookie jar).
             if tm1_preserve_connections is not None:
                 remaining = dag.get_remaining_tasks_by_instance()
                 for instance_name in list(tm1_services.keys()):
-                    if instance_name not in remaining and instance_name not in released_instances:
-                        released = _logout_instance(
+                    if instance_name not in remaining:
+                        _logout_instance(
                             instance_name,
                             tm1_services,
                             tm1_preserve_connections,
                             force_logout,
                         )
-                        if released:
-                            released_instances.add(instance_name)
 
             # Submit newly ready tasks
             submit_ready_tasks()
@@ -718,17 +720,19 @@ def _logout_instance(
     tm1_preserve_connections: Dict,
     force: bool = False,
 ):
-    """Logout from a single TM1 instance.
+    """Logout from a single TM1 instance and remove it from ``tm1_services``.
 
     Used for early session release when an instance has no remaining tasks.
-    Does NOT remove the instance from tm1_services — the caller tracks
-    which instances have been released to avoid double-release.
+    On success the instance is removed from ``tm1_services`` so that the
+    end-of-run :func:`logout` call cannot double-logout the same session.
+    On failure or when skipped (preserved without force), the entry stays
+    so the final cleanup retries it.
 
     :param instance_name: Name of the TM1 instance to logout from
-    :param tm1_services: Dictionary of TM1Service instances
+    :param tm1_services: Dictionary of TM1Service instances (mutated on success)
     :param tm1_preserve_connections: Dictionary indicating which connections to preserve
     :param force: If True, logout even from preserved connections
-    :return: True if logout was performed, False if skipped
+    :return: True if logout was performed, False if skipped or failed
     """
     if instance_name not in tm1_services:
         return False
@@ -739,6 +743,7 @@ def _logout_instance(
 
     try:
         tm1_services[instance_name].logout()
+        del tm1_services[instance_name]
         logger.info(f"Early session release: logged out from {instance_name} (no remaining tasks)")
         return True
     except Exception as e:
@@ -751,15 +756,21 @@ def logout(
     tm1_preserve_connections: Dict,
     force: bool = False,
 ):
-    """Logout from all TM1 instances.
+    """Logout from all remaining TM1 instances and remove them from ``tm1_services``.
 
-    :param tm1_services: Dictionary of TM1Service instances
+    Successfully logged-out instances are removed from ``tm1_services`` so
+    the dict consistently represents *live* connections. Pre-existing
+    entries that were already released via :func:`_logout_instance` are
+    therefore not double-logged-out — they're not in the dict anymore.
+
+    :param tm1_services: Dictionary of TM1Service instances (mutated)
     :param tm1_preserve_connections: Dictionary indicating which connections to preserve
     :param force: If True, logout from ALL connections including preserved ones.
                   Use this for exclusive mode to ensure sessions are properly closed.
     :return: None
     """
-    for connection in tm1_services:
+    # Snapshot keys so del-on-success doesn't perturb iteration.
+    for connection in list(tm1_services.keys()):
         # Skip preserved connections unless force is True
         if not force and tm1_preserve_connections.get(connection, False) is True:
             logger.debug(f"Preserving connection to {connection}")
@@ -767,6 +778,7 @@ def logout(
 
         try:
             tm1_services[connection].logout()
+            del tm1_services[connection]
             logger.debug(f"Logged out from {connection}")
         except Exception as e:
             logger.warning(f"Failed to logout from {connection}: {e}")

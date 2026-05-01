@@ -25,6 +25,7 @@ from rushti.task import Task  # noqa: E402
 from rushti.execution import (  # noqa: E402
     work_through_tasks_dag,
     _logout_instance,
+    logout,
     ExecutionContext,
 )
 
@@ -130,7 +131,7 @@ class TestLogoutInstance(unittest.TestCase):
     """Tests for _logout_instance() helper."""
 
     def test_logout_calls_logout_and_returns_true(self):
-        """Successful logout calls logout on the service and returns True."""
+        """Successful logout calls logout, removes the entry, returns True."""
         mock_tm1 = MagicMock()
         services = {"A": mock_tm1, "B": MagicMock()}
 
@@ -138,7 +139,19 @@ class TestLogoutInstance(unittest.TestCase):
 
         mock_tm1.logout.assert_called_once()
         self.assertTrue(result)
-        # Dict is NOT modified — caller tracks released instances separately
+        # On success the entry is removed so end-of-run logout() can't double-release.
+        self.assertNotIn("A", services)
+        self.assertIn("B", services)
+
+    def test_logout_failure_keeps_entry_in_services(self):
+        """A failed logout leaves the entry so the final cleanup can retry."""
+        mock_tm1 = MagicMock()
+        mock_tm1.logout.side_effect = Exception("boom")
+        services = {"A": mock_tm1}
+
+        result = _logout_instance("A", services, {}, force=False)
+
+        self.assertFalse(result)
         self.assertIn("A", services)
 
     def test_preserved_connection_skipped_without_force(self):
@@ -253,10 +266,16 @@ class TestEarlySessionRelease(unittest.TestCase):
         )
 
         self.assertTrue(all(results))
-        # A should have been logged out early
+        # A should have been logged out early (after its single task finishes,
+        # while B is still running). B is then released after its last task
+        # finishes inside the same loop.
         mock_a.logout.assert_called_once()
-        # Services dict is NOT modified (instances tracked via released_instances set)
-        self.assertIn("A", services)
+        mock_b.logout.assert_called_once()
+        # On successful early release the entry is removed from tm1_services
+        # so that the end-of-run logout() call cannot double-logout the same
+        # session (which would emit a CookieConflictError warning).
+        self.assertNotIn("A", services)
+        self.assertNotIn("B", services)
 
     def test_single_instance_early_release(self):
         """All tasks on one instance: logout once all tasks complete."""
@@ -377,6 +396,121 @@ class TestEarlySessionRelease(unittest.TestCase):
         self.assertEqual(len(results), 3)
         # A should have been released early after A1 completed
         mock_a.logout.assert_called_once()
+
+
+class TestNoDoubleLogoutAfterEarlyRelease(unittest.TestCase):
+    """Regression tests: early release + final logout must not double-logout the same session.
+
+    Before the fix, early session release left the entry in tm1_services
+    after calling .logout(). The end-of-run logout() call (from cli.py's
+    finally block) then iterated the same dict and called .logout()
+    again. The second logout response added a TM1SessionId cookie with
+    different (path, domain, secure) attributes than the original — RFC
+    6265 says that's a distinct cookie — and TM1py's name-only cookie
+    lookup tripped on the duplicate, surfacing as:
+
+        WARNING - Failed to logout from tm1srv01:
+                  There are multiple cookies with name, 'TM1SessionId'
+
+    These tests pin the behavior end-to-end: each session is logged out
+    exactly once, regardless of whether the release came from the early
+    path or the end-of-run path.
+    """
+
+    def _build_mock_execute_task(self):
+        def mock_execute_task(ctx, task, retries, tm1_services):
+            time.sleep(0.005)
+            return True
+
+        return mock_execute_task
+
+    def _run_full_lifecycle(self, dag, services, preserve=None, force_logout=False):
+        """Run work_through_tasks_dag then the end-of-run logout, like cli.py does."""
+        preserve = preserve if preserve is not None else {}
+        with patch("rushti.execution.execute_task", self._build_mock_execute_task()):
+            loop = asyncio.new_event_loop()
+            try:
+                results = loop.run_until_complete(
+                    work_through_tasks_dag(
+                        ExecutionContext(),
+                        dag,
+                        4,
+                        0,
+                        services,
+                        tm1_preserve_connections=preserve,
+                        force_logout=force_logout,
+                    )
+                )
+            finally:
+                loop.close()
+        # Mirrors the cli.py finally block: logout(tm1_service_by_instance, preserve_connections, ...)
+        logout(services, preserve, force=force_logout)
+        return results
+
+    def test_single_instance_logged_out_exactly_once(self):
+        """Bug scenario: single-instance workflow ran twice through logout pre-fix."""
+        dag = DAG()
+        dag.add_task(_make_task("1", instance="tm1srv01"))
+        dag.add_task(_make_task("2", instance="tm1srv01"))
+
+        mock_tm1 = MagicMock()
+        services = {"tm1srv01": mock_tm1}
+
+        self._run_full_lifecycle(dag, services)
+
+        # Pre-fix: called_count == 2 (once in early release, once in final logout).
+        # Post-fix: exactly once.
+        self.assertEqual(mock_tm1.logout.call_count, 1)
+        self.assertNotIn("tm1srv01", services)
+
+    def test_multi_instance_each_logged_out_exactly_once(self):
+        """Both early-released and final-released instances logout exactly once."""
+        dag = DAG()
+        dag.add_task(_make_task("1", instance="A"))
+        dag.add_task(_make_task("2", instance="B"))
+
+        mock_a = MagicMock()
+        mock_b = MagicMock()
+        services = {"A": mock_a, "B": mock_b}
+
+        self._run_full_lifecycle(dag, services)
+
+        self.assertEqual(mock_a.logout.call_count, 1)
+        self.assertEqual(mock_b.logout.call_count, 1)
+        self.assertEqual(services, {})
+
+    def test_failed_early_release_falls_back_to_final_logout(self):
+        """If early release raises, the entry stays so final logout retries.
+
+        This preserves the existing safety net: a transient logout failure
+        during early release shouldn't leave the session orphaned.
+        """
+        dag = DAG()
+        dag.add_task(_make_task("1", instance="tm1srv01"))
+
+        mock_tm1 = MagicMock()
+        mock_tm1.logout.side_effect = [Exception("transient"), None]
+        services = {"tm1srv01": mock_tm1}
+
+        self._run_full_lifecycle(dag, services)
+
+        # Two attempts: failed early release, successful final logout.
+        self.assertEqual(mock_tm1.logout.call_count, 2)
+        self.assertNotIn("tm1srv01", services)
+
+    def test_preserved_without_force_skips_both_paths(self):
+        """A preserved connection without force is skipped by both passes."""
+        dag = DAG()
+        dag.add_task(_make_task("1", instance="A"))
+
+        mock_a = MagicMock()
+        services = {"A": mock_a}
+        preserve = {"A": True}
+
+        self._run_full_lifecycle(dag, services, preserve=preserve, force_logout=False)
+
+        mock_a.logout.assert_not_called()
+        self.assertIn("A", services)
 
 
 if __name__ == "__main__":
