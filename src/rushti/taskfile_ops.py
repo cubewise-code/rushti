@@ -614,6 +614,15 @@ def validate_taskfile_full(
 ) -> ValidationResult:
     """Perform full validation of a task file.
 
+    Layers:
+        1. Structural validation via ``Taskfile.validate()`` (the model
+           owns this — required fields, types, duplicate IDs, settings
+           and metadata shape).
+        2. DAG validation (cycle detection across ``tasks``).
+        3. Optional TM1 connectivity / process existence (this layer is
+           why ``validate_taskfile_full`` lives in ``taskfile_ops``
+           rather than the model).
+
     :param source: Taskfile source - can be:
         - str: Path to task file
         - TaskfileSource: Source specification (file or TM1)
@@ -636,6 +645,12 @@ def validate_taskfile_full(
         tasks = taskfile.tasks
         result.info.append("Source: Taskfile object")
 
+        # Structural validation via the model
+        structural_errors = taskfile.validate()
+        if structural_errors:
+            result.valid = False
+            result.errors.extend(structural_errors)
+
     elif isinstance(source, TaskfileSource):
         # Load from TaskfileSource
         try:
@@ -646,6 +661,12 @@ def validate_taskfile_full(
 
             taskfile = load_taskfile_from_source(source, config_path, mode=mode)
             tasks = taskfile.tasks
+
+            # Structural validation via the model
+            structural_errors = taskfile.validate()
+            if structural_errors:
+                result.valid = False
+                result.errors.extend(structural_errors)
         except Exception as e:
             result.valid = False
             result.errors.append(f"Failed to load taskfile: {e}")
@@ -1191,16 +1212,21 @@ def analyze_runs(
     return report
 
 
-def write_optimized_taskfile(
+def write_ewma_optimized_taskfile(
     original_taskfile_path: str,
     optimized_order: List[str],
     output_path: str,
     report: AnalysisReport,
 ) -> None:
-    """Generate optimized task file with reordered tasks.
+    """Generate optimized task file with EWMA-reordered tasks.
 
     Loads the original task file, reorders tasks based on EWMA estimates,
     and writes an executable optimized task file with metadata.
+
+    Renamed from ``write_optimized_taskfile`` in Phase 2b of the
+    architecture refactor — this is the EWMA-reorder path, distinct from
+    ``contention_analyzer.write_contention_optimized_taskfile`` which
+    injects predecessor chains based on contention groups.
 
     :param original_taskfile_path: Path to original task file
     :param optimized_order: List of task IDs in optimized order

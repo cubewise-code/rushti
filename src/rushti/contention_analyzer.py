@@ -903,7 +903,7 @@ def get_archived_taskfile_path(
     return None
 
 
-def write_optimized_taskfile(
+def write_contention_optimized_taskfile(
     original_taskfile_path: str,
     result: ContentionAnalysisResult,
     output_path: str,
@@ -914,6 +914,12 @@ def write_optimized_taskfile(
     within each group). Injects predecessor chains for heavy groups. Embeds the
     recommended ``max_workers`` in the taskfile settings so it takes effect
     automatically (the CLI ``--max-workers`` flag still overrides).
+
+    Renamed from ``write_optimized_taskfile`` in Phase 2b of the
+    architecture refactor to disambiguate from
+    ``taskfile_ops.write_ewma_optimized_taskfile``, which performs a
+    different kind of optimization (EWMA-based reorder of task IDs,
+    no predecessor injection).
 
     :param original_taskfile_path: Path to original JSON taskfile
     :param result: Contention analysis result

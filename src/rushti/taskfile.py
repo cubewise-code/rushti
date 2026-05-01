@@ -190,6 +190,19 @@ class Taskfile:
         with open(file_path, "w") as f:
             f.write(self.to_json())
 
+    def validate(self) -> List[str]:
+        """Structural validation of this taskfile.
+
+        Returns a list of error messages (empty if the taskfile is
+        structurally valid). Validates required fields, types, duplicate
+        IDs, settings constraints, and metadata shape — but does **not**
+        check TM1 reachability. For full validation including TM1
+        connectivity see ``taskfile_ops.validate_taskfile_full``.
+
+        :return: List of validation error messages
+        """
+        return validate_taskfile(self.to_dict())
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Taskfile":
         return cls(

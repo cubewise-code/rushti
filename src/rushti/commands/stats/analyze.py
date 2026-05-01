@@ -66,9 +66,9 @@ def handle_stats_analyze(args) -> None:
                 print("\nWarning: --tasks required to generate optimized task file")
                 print("Only analysis report will be written.")
             else:
-                from rushti.taskfile_ops import write_optimized_taskfile
+                from rushti.taskfile_ops import write_ewma_optimized_taskfile
 
-                write_optimized_taskfile(
+                write_ewma_optimized_taskfile(
                     original_taskfile_path=args.taskfile,
                     optimized_order=report.optimized_order,
                     output_path=args.output_file,

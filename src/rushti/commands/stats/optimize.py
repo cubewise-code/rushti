@@ -24,7 +24,7 @@ def handle_stats_optimize(args) -> None:
         from rushti.contention_analyzer import (
             analyze_contention,
             get_archived_taskfile_path,
-            write_optimized_taskfile,
+            write_contention_optimized_taskfile,
         )
         from rushti.settings import load_settings
         from rushti.stats import create_stats_database, get_db_path
@@ -89,9 +89,9 @@ def handle_stats_optimize(args) -> None:
                 print(f"\n⚠ {result.warnings[0]}")
                 print("Falling back to standard optimization (longest_first).\n")
 
-                from rushti.taskfile_ops import analyze_runs
                 from rushti.taskfile_ops import (
-                    write_optimized_taskfile as write_optimized_taskfile_standard,
+                    analyze_runs,
+                    write_ewma_optimized_taskfile,
                 )
 
                 report = analyze_runs(
@@ -105,7 +105,7 @@ def handle_stats_optimize(args) -> None:
                 if not fallback_output:
                     fallback_output = resolve_app_path(f"{taskfile_path.stem}_optimized.json")
 
-                write_optimized_taskfile_standard(
+                write_ewma_optimized_taskfile(
                     original_taskfile_path=str(taskfile_path),
                     optimized_order=report.optimized_order,
                     output_path=fallback_output,
@@ -225,7 +225,7 @@ def handle_stats_optimize(args) -> None:
                     stem = taskfile_path.stem
                     output_path = resolve_app_path(f"{stem}_optimized.json")
 
-                write_optimized_taskfile(
+                write_contention_optimized_taskfile(
                     original_taskfile_path=str(taskfile_path),
                     result=result,
                     output_path=output_path,
@@ -240,9 +240,9 @@ def handle_stats_optimize(args) -> None:
                     "standard optimization (longest_first)."
                 )
 
-                from rushti.taskfile_ops import analyze_runs
                 from rushti.taskfile_ops import (
-                    write_optimized_taskfile as write_optimized_taskfile_standard,
+                    analyze_runs,
+                    write_ewma_optimized_taskfile,
                 )
 
                 fallback_report = analyze_runs(
@@ -256,7 +256,7 @@ def handle_stats_optimize(args) -> None:
                 if not output_path:
                     output_path = resolve_app_path(f"{taskfile_path.stem}_optimized.json")
 
-                write_optimized_taskfile_standard(
+                write_ewma_optimized_taskfile(
                     original_taskfile_path=str(taskfile_path),
                     optimized_order=fallback_report.optimized_order,
                     output_path=output_path,
