@@ -33,45 +33,16 @@ black, isort, flake8, mypy, and pyinstaller.
 rushti/
 ├── src/rushti/             # Source code (all modules)
 │   ├── cli.py              #   CLI entry point and argument parsing
-│   ├── app_paths.py        #   Config-path resolution (RUSHTI_DIR, legacy fallback)
-│   ├── logging_setup.py    #   Logging config + log-level CLI helpers
-│   ├── results_writer.py   #   CSV results-summary writer
-│   ├── commands/           #   Subcommand handlers (one module per subcommand)
-│   │   ├── __init__.py     #     Re-exports run_*_command functions
-│   │   ├── build.py        #     run_build_command (TM1 logging objects)
-│   │   ├── resume.py       #     run_resume_command (checkpoint resume)
-│   │   ├── db.py           #     run_db_command (db admin: list/clear/show/vacuum)
-│   │   ├── tasks/          #     run_tasks_command + per-action modules
-│   │   │   ├── __init__.py #       Dispatcher (export, push, expand, visualize, validate)
-│   │   │   ├── export.py
-│   │   │   ├── push.py
-│   │   │   ├── expand.py
-│   │   │   ├── visualize.py
-│   │   │   └── validate.py
-│   │   └── stats/          #     run_stats_command + per-action modules
-│   │       ├── __init__.py #       Dispatcher (export, analyze, optimize, visualize, list)
-│   │       ├── export.py
-│   │       ├── analyze.py
-│   │       ├── optimize.py
-│   │       ├── visualize.py
-│   │       └── list.py
+│   ├── commands.py          #   Subcommand handler functions
 │   ├── task.py              #   Task domain model (Task, OptimizedTask, Wait, ExecutionMode)
 │   ├── dag.py               #   DAG domain model (DAG, TaskStatus, CircularDependencyError)
-│   ├── taskfile.py          #   Task file parsing (TXT and JSON); Taskfile.validate()
+│   ├── taskfile.py          #   Task file parsing (TXT and JSON)
 │   ├── parsing.py           #   DAG construction from task files
 │   ├── taskfile_ops.py      #   Taskfile operations (expand, validate, visualize, analyze)
 │   ├── execution.py         #   Thread-based parallel execution engine (ExecutionContext)
 │   ├── settings.py          #   Settings loading and precedence resolution
-│   ├── stats/               #   Statistics layer (Protocol + adapters)
-│   │   ├── __init__.py      #     Backwards-compatible re-exports
-│   │   ├── repository.py    #     StatsRepository Protocol + create_stats_database
-│   │   ├── sqlite.py        #     StatsDatabase (SQLite adapter, default backend)
-│   │   ├── dynamodb.py      #     DynamoDBStatsDatabase (cloud backend)
-│   │   ├── paths.py         #     DEFAULT_* constants, get_db_path, get_stats_backend
-│   │   └── signature.py     #     calculate_task_signature
+│   ├── stats.py             #   SQLite statistics database operations
 │   ├── optimizer.py         #   EWMA-based task runtime optimization
-│   ├── contention_analyzer.py  # Contention-aware optimization
-│   ├── optimization_report.py  # HTML optimization report
 │   ├── dashboard.py         #   HTML dashboard generation (Chart.js)
 │   ├── checkpoint.py        #   Checkpoint save/load for resume support
 │   ├── exclusive.py         #   Exclusive mode session management
@@ -81,7 +52,7 @@ rushti/
 │   ├── utils.py             #   Stateless helper functions
 │   ├── messages.py          #   Centralized message templates
 │   ├── logging.py           #   Structured execution logging
-│   ├── db_admin.py          #   Database administration utilities (SQLite-only)
+│   ├── db_admin.py          #   Database administration utilities
 │   └── templates/           #   HTML templates
 │       └── visualization.html  # DAG visualization template
 ├── tests/
