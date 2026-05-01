@@ -26,7 +26,7 @@ from unittest.mock import patch
 
 import pytest
 
-from rushti import cli
+from rushti import app_paths, cli
 
 # ---------------------------------------------------------------------------
 # uses_named_arguments
@@ -115,23 +115,28 @@ class TestParseArguments:
 
 
 class TestResolveConfigPath:
-    """``resolve_config_path`` reads ``cli.CURRENT_DIRECTORY`` (captured at
-    module import) for legacy/config-subdir lookups. Tests must patch that
-    constant rather than ``os.getcwd()`` / ``monkeypatch.chdir``."""
+    """``resolve_config_path`` reads ``app_paths.CURRENT_DIRECTORY`` (captured
+    at module import) for legacy/config-subdir lookups. Tests must patch
+    that constant rather than ``os.getcwd()`` / ``monkeypatch.chdir``.
+
+    Phase 1 moved the function from ``cli`` to ``app_paths``; ``cli`` still
+    re-exports ``resolve_config_path`` because it imports it at module
+    scope, so direct calls via ``cli.resolve_config_path`` continue to
+    work."""
 
     def test_cli_path_takes_precedence(self, tmp_path, monkeypatch):
         cli_config = tmp_path / "explicit.ini"
         cli_config.write_text("[tm1srv01]\n")
         # Even with RUSHTI_DIR set, the explicit CLI path wins.
         monkeypatch.setenv("RUSHTI_DIR", str(tmp_path))
-        result = cli.resolve_config_path(
+        result = app_paths.resolve_config_path(
             "config.ini", warn_on_legacy=False, cli_path=str(cli_config)
         )
         assert result == str(cli_config)
 
     def test_cli_path_missing_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            cli.resolve_config_path(
+            app_paths.resolve_config_path(
                 "config.ini",
                 warn_on_legacy=False,
                 cli_path=str(tmp_path / "does-not-exist.ini"),
@@ -146,8 +151,8 @@ class TestResolveConfigPath:
         # Point CURRENT_DIRECTORY somewhere with no config/ so the env var wins.
         empty = tmp_path / "elsewhere"
         empty.mkdir()
-        monkeypatch.setattr(cli, "CURRENT_DIRECTORY", str(empty))
-        result = cli.resolve_config_path("config.ini", warn_on_legacy=False)
+        monkeypatch.setattr(app_paths, "CURRENT_DIRECTORY", str(empty))
+        result = app_paths.resolve_config_path("config.ini", warn_on_legacy=False)
         assert result == str(target)
 
     def test_default_config_subdir_used_when_no_env(self, tmp_path, monkeypatch):
@@ -156,21 +161,21 @@ class TestResolveConfigPath:
         target = config_dir / "config.ini"
         target.write_text("[tm1srv01]\n")
         monkeypatch.delenv("RUSHTI_DIR", raising=False)
-        monkeypatch.setattr(cli, "CURRENT_DIRECTORY", str(tmp_path))
-        result = cli.resolve_config_path("config.ini", warn_on_legacy=False)
+        monkeypatch.setattr(app_paths, "CURRENT_DIRECTORY", str(tmp_path))
+        result = app_paths.resolve_config_path("config.ini", warn_on_legacy=False)
         assert result == str(target)
 
     def test_legacy_cwd_location_used_with_warning(self, tmp_path, monkeypatch):
         legacy_target = tmp_path / "config.ini"
         legacy_target.write_text("[tm1srv01]\n")
         monkeypatch.delenv("RUSHTI_DIR", raising=False)
-        monkeypatch.setattr(cli, "CURRENT_DIRECTORY", str(tmp_path))
+        monkeypatch.setattr(app_paths, "CURRENT_DIRECTORY", str(tmp_path))
         # Reset the warning-tracking set so we can observe the side effect.
-        monkeypatch.setattr(cli, "_legacy_path_warnings", set())
-        result = cli.resolve_config_path("config.ini", warn_on_legacy=True)
+        monkeypatch.setattr(app_paths, "_legacy_path_warnings", set())
+        result = app_paths.resolve_config_path("config.ini", warn_on_legacy=True)
         assert result == str(legacy_target)
         # Legacy path was recorded for later deprecation warning.
-        assert "config.ini" in cli._legacy_path_warnings
+        assert "config.ini" in app_paths._legacy_path_warnings
 
 
 # ---------------------------------------------------------------------------
