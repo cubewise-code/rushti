@@ -179,6 +179,27 @@ Stays in `cli.py`: `print_banner`, `create_argument_parser`, `parse_named_argume
 
 ---
 
+## Phase 1 — Status (after sub-branch merge into parent)
+
+Sub-branch ``refactor/phase-1-cli-cleanup`` merged into parent. Three
+focused modules extracted from cli.py:
+
+- ``app_paths.py`` (89 lines): config-path resolution + legacy-warning tracking
+- ``logging_setup.py`` (130 lines): logging config preprocessing + log-level helpers
+- ``results_writer.py`` (60 lines): CSV results-summary writer
+
+Lazy ``from rushti.cli import …`` calls inside ``commands.py`` reduced
+from 5 to 2 (the remaining two reference names that legitimately still
+live in cli.py — ``CONFIG`` and ``add_taskfile_source_args``).
+
+cli.py: 1376 → 1177 lines (-199). The plan target of 400-line reduction
+was over-optimistic; most of cli.py is ``main()`` and
+``create_argument_parser()``, which Phase 1 left in place per the plan.
+
+All 637 unit tests still pass. Suite runtime: 2.48s.
+
+---
+
 ## Phase 2 — Split `commands.py` and dedup taskfile operations
 
 **Why it goes here:** the biggest readability win. With Phase 1's helpers extracted, each subcommand can move into its own module without dragging in cli-state.
@@ -251,6 +272,38 @@ Today: `validate_taskfile` in `taskfile.py` (structural) and `validate_taskfile_
 ### Estimate
 
 2 PRs (2a alone, then 2b+2c together), ~3–4 days total.
+
+### Status (partial — first session)
+
+Sub-branch ``refactor/phase-2-commands-split`` has the following
+commits ready on the parent branch:
+
+1. **commands.py → commands/__init__.py** (no behavior change, sets up
+   the package layout).
+2. **build subcommand extracted** to ``commands/build.py``.
+3. **resume subcommand extracted** to ``commands/resume.py``.
+4. **db subcommand extracted** to ``commands/db.py``.
+
+commands/__init__.py: 2113 → 1527 lines (-586). All 637 unit tests
+pass after each extraction.
+
+**Remaining Phase 2 work** (deferred to a follow-up session):
+
+- Phase 2a-3: split ``run_tasks_command`` dispatcher + 5 sub-action
+  helpers (``_tasks_export``, ``_tasks_push``, ``_tasks_expand``,
+  ``_tasks_visualize``, ``_tasks_validate``) into a
+  ``commands/tasks/`` package.
+- Phase 2a-4: split ``run_stats_command`` dispatcher + 5 sub-action
+  helpers (``_stats_export``, ``_stats_analyze``, ``_stats_optimize``,
+  ``_stats_visualize``, ``_stats_list``) into a ``commands/stats/``
+  package.
+- Phase 2b: rename ``write_optimized_taskfile`` in both modules to
+  disambiguate. The Phase 0 golden snapshots will catch any byte-level
+  drift during the rename.
+- Phase 2c: consolidate ``validate_taskfile`` (structural,
+  ``taskfile.py``) with ``validate_taskfile_full`` (structural + TM1
+  reachability, ``taskfile_ops.py``). Make ``Taskfile.validate()`` the
+  structural method; keep TM1 reachability separate.
 
 ---
 
