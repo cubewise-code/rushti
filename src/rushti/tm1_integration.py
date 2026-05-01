@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 from TM1py import TM1Service
 
-from rushti.stats import StatsDatabase
+from rushti.stats import StatsRepository
 from rushti.taskfile import Taskfile, TaskDefinition, TaskfileMetadata, TaskfileSettings
 
 logger = logging.getLogger(__name__)
@@ -400,13 +400,13 @@ def _parse_bool(value: Any) -> bool:
 
 
 def build_results_dataframe(
-    stats_db: StatsDatabase,
+    stats_db: StatsRepository,
     workflow: str,
     run_id: str,
 ) -> pd.DataFrame:
     """Build DataFrame from SQLite stats for a specific run.
 
-    :param stats_db: StatsDatabase instance
+    :param stats_db: StatsRepository instance
     :param workflow: Workflow identifier
     :param run_id: Run identifier
     :return: DataFrame with task results
@@ -529,14 +529,14 @@ def summarize_expanded_tasks(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def export_results_to_csv(
-    stats_db: StatsDatabase,
+    stats_db: StatsRepository,
     workflow: str,
     run_id: Optional[str],
     output_path: str,
 ) -> int:
     """Export results from SQLite to local CSV file.
 
-    :param stats_db: StatsDatabase instance
+    :param stats_db: StatsRepository instance
     :param workflow: Workflow identifier
     :param run_id: Specific run ID, or None to export all runs
     :param output_path: Path to output CSV file
@@ -578,12 +578,12 @@ def export_results_to_csv(
 
 
 def _get_runs_for_workflow(
-    stats_db: StatsDatabase,
+    stats_db: StatsRepository,
     workflow: str,
 ) -> List[Dict[str, Any]]:
     """Get all runs for a workflow from the database.
 
-    :param stats_db: StatsDatabase instance
+    :param stats_db: StatsRepository instance
     :param workflow: Workflow identifier
     :return: List of run info dictionaries
     """
