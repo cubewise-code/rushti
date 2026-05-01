@@ -1,13 +1,15 @@
-"""Phase 0 safety-net: golden-file snapshots for the two write_optimized_taskfile functions.
+"""Phase 0 safety-net: golden-file snapshots for the optimized-taskfile writers.
 
 These tests pin the current behavior of:
-- ``rushti.taskfile_ops.write_optimized_taskfile`` (EWMA-based reordering)
-- ``rushti.contention_analyzer.write_optimized_taskfile`` (contention-aware reordering)
+- ``rushti.taskfile_ops.write_ewma_optimized_taskfile`` (EWMA-based reordering)
+- ``rushti.contention_analyzer.write_contention_optimized_taskfile`` (contention-aware reordering)
 
-The two functions share a name but solve different problems. This file captures
-their current outputs into goldens at ``tests/resources/golden/`` so any
-behavior drift introduced by the architecture refactor surfaces as a test
-failure with a unified diff.
+The two functions previously shared the name ``write_optimized_taskfile``;
+Phase 2b renamed them so each call site reads unambiguously. They solve
+different problems: EWMA reorders task IDs in-place; contention-aware
+injects predecessor chains and embeds ``max_workers``. This file captures
+both outputs into goldens at ``tests/resources/golden/`` so any behavior
+drift surfaces as a test failure with a unified diff.
 
 To regenerate goldens after an intentional behavior change:
 
@@ -23,12 +25,14 @@ from rushti.contention_analyzer import (
     ContentionAnalysisResult,
     ContentionGroup,
 )
-from rushti.contention_analyzer import write_optimized_taskfile as write_contention_optimized
+from rushti.contention_analyzer import (
+    write_contention_optimized_taskfile as write_contention_optimized,
+)
 from rushti.taskfile_ops import (
     AnalysisReport,
     TaskAnalysis,
 )
-from rushti.taskfile_ops import write_optimized_taskfile as write_ewma_optimized
+from rushti.taskfile_ops import write_ewma_optimized_taskfile as write_ewma_optimized
 
 # Deterministic input taskfile shared by both snapshots.
 INPUT_TASKFILE = {
@@ -80,7 +84,7 @@ def _write_input(tmp_path, name="input_taskfile.json"):
 
 
 class TestEwmaOptimizedSnapshot:
-    """Snapshot of taskfile_ops.write_optimized_taskfile (EWMA-based)."""
+    """Snapshot of taskfile_ops.write_ewma_optimized_taskfile (EWMA-based)."""
 
     def test_ewma_optimized_taskfile_golden(self, tmp_path, golden_file):
         """Pin the current EWMA-based optimized taskfile output."""
@@ -159,7 +163,7 @@ class TestEwmaOptimizedSnapshot:
 
 
 class TestContentionOptimizedSnapshot:
-    """Snapshot of contention_analyzer.write_optimized_taskfile (contention-aware)."""
+    """Snapshot of contention_analyzer.write_contention_optimized_taskfile (contention-aware)."""
 
     def test_contention_optimized_taskfile_golden(self, tmp_path, golden_file):
         """Pin the current contention-aware optimized taskfile output."""
