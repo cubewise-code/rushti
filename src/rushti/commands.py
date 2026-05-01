@@ -7,8 +7,12 @@ This module contains the handler functions for all RushTI subcommands:
 - stats: Statistics queries (export, analyze, optimize, visualize, list)
 - db: Database administration (list, clear, show, vacuum)
 
-Note: Functions from ``rushti.cli`` (argument helpers, config resolution)
-are imported lazily inside each handler to avoid circular imports.
+Note: ``CONFIG`` and ``add_taskfile_source_args`` are still imported
+lazily from ``rushti.cli`` because cli.py imports this module at the
+bottom; a module-level import would create an unresolvable cycle.
+After Phase 1, every other helper that used to live in cli.py
+(``add_log_level_arg``, ``apply_log_level``, ``resolve_config_path``)
+moved into focused modules and is imported normally.
 """
 
 import argparse
@@ -21,21 +25,23 @@ from typing import Optional
 
 from TM1py import TM1Service
 
+from rushti.app_paths import resolve_config_path
+from rushti.checkpoint import (
+    find_checkpoint_for_taskfile,
+    load_checkpoint,
+)
+from rushti.logging_setup import add_log_level_arg, apply_log_level
 from rushti.settings import load_settings
-from rushti.tm1_integration import resolve_tm1_params
 from rushti.stats import create_stats_database
 from rushti.taskfile import TaskfileSource
 from rushti.taskfile_ops import (
-    expand_taskfile,
-    visualize_dag,
-    validate_taskfile_full,
     analyze_runs,
-)
-from rushti.checkpoint import (
-    load_checkpoint,
-    find_checkpoint_for_taskfile,
+    expand_taskfile,
+    validate_taskfile_full,
+    visualize_dag,
 )
 from rushti.tm1_build import build_logging_objects, get_build_status
+from rushti.tm1_integration import resolve_tm1_params
 
 APP_NAME = "RushTI"
 
@@ -49,7 +55,7 @@ def run_build_command(argv: list) -> None:
 
     :param argv: Command line arguments
     """
-    from rushti.cli import add_log_level_arg, apply_log_level, CONFIG
+    from rushti.cli import CONFIG
 
     parser = argparse.ArgumentParser(
         prog=f"{APP_NAME} build",
@@ -158,8 +164,6 @@ def run_resume_command(argv: list) -> Optional[dict]:
 
     :param argv: Command line arguments (sys.argv)
     """
-    from rushti.cli import add_log_level_arg, apply_log_level
-
     parser = argparse.ArgumentParser(
         prog=f"{APP_NAME} resume",
         description="Resume task execution from a checkpoint.",
@@ -372,12 +376,7 @@ def run_tasks_command(argv: list) -> None:
 
     :param argv: Command line arguments
     """
-    from rushti.cli import (
-        add_log_level_arg,
-        apply_log_level,
-        add_taskfile_source_args,
-        resolve_config_path,
-    )
+    from rushti.cli import add_taskfile_source_args
 
     parser = argparse.ArgumentParser(
         prog=f"{APP_NAME} tasks",
@@ -830,8 +829,6 @@ def run_stats_command(argv: list) -> None:
 
     :param argv: Command line arguments
     """
-    from rushti.cli import add_log_level_arg, apply_log_level
-
     parser = argparse.ArgumentParser(
         prog=f"{APP_NAME} stats",
         description="Query and analyze execution statistics from the stats database.",
@@ -1134,8 +1131,6 @@ def _stats_export(args) -> None:
 
     :param args: Parsed arguments
     """
-    from rushti.cli import resolve_config_path
-
     try:
         # Load settings
         settings_path = resolve_config_path("settings.ini", cli_path=args.settings_file)
