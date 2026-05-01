@@ -9,7 +9,6 @@ This module provides the command-line interface for RushTI, including:
 
 import argparse
 import asyncio
-import csv
 import logging
 import os
 import sys
@@ -28,6 +27,7 @@ from rushti.logging_setup import (
     apply_log_level,
     resolve_logging_config,
 )
+from rushti.results_writer import create_results_file
 from rushti.task import ExecutionMode
 from rushti.settings import load_settings, get_effective_settings
 from rushti.taskfile import (
@@ -457,43 +457,6 @@ def parse_arguments(argv: list):
             "log_level": None,  # Not supported in positional style
         }
         return tasks_file, cli_args
-
-
-def create_results_file(
-    result_file: str,
-    overall_success: bool,
-    executions: int,
-    fails: int,
-    start_time: datetime,
-    end_time: datetime,
-    elapsed_time: timedelta,
-):
-    header = (
-        "PID",
-        "Process Runs",
-        "Process Fails",
-        "Start",
-        "End",
-        "Runtime",
-        "Overall Success",
-    )
-    record = (
-        os.getpid(),
-        executions,
-        fails,
-        start_time,
-        end_time,
-        elapsed_time,
-        overall_success,
-    )
-
-    from rushti.utils import ensure_shared_file, makedirs_shared
-
-    makedirs_shared(str(Path(result_file).parent))
-    with open(result_file, "w", encoding="utf-8") as file:
-        cw = csv.writer(file, delimiter="|", lineterminator="\n")
-        cw.writerows([header, record])
-    ensure_shared_file(result_file)
 
 
 def exit_rushti(
