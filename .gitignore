@@ -118,3 +118,6 @@ visualizations/
 
 # Serena config
 .serena/
+
+# Demo assets
+.demo/
