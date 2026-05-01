@@ -19,14 +19,13 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-from rushti.stats import StatsDatabase
+from rushti.stats import StatsRepository
 
-if TYPE_CHECKING:
-    from rushti.stats import DynamoDBStatsDatabase
-
-AnyStatsDatabase = Union[StatsDatabase, "DynamoDBStatsDatabase"]
+# Phase 3 left this alias in place for callers that imported it from
+# this module before the StatsRepository Protocol existed.
+AnyStatsDatabase = StatsRepository
 
 logger = logging.getLogger(__name__)
 

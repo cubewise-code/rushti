@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from rushti.stats import StatsDatabase, calculate_task_signature
+from rushti.stats import StatsRepository, calculate_task_signature
 
 if TYPE_CHECKING:
     from rushti.settings import OptimizationSettings
@@ -64,7 +64,7 @@ class TaskOptimizer:
     4. Caches results based on cache_duration_hours (unless time_of_day_weighting)
 
     Attributes:
-        stats_db: StatsDatabase for historical data
+        stats_db: StatsRepository for historical data
         settings: OptimizationSettings (EWMA tuning parameters)
         workflow: Identifier for the current workflow
         algorithm: Scheduling algorithm name
@@ -72,14 +72,14 @@ class TaskOptimizer:
 
     def __init__(
         self,
-        stats_db: StatsDatabase,
+        stats_db: StatsRepository,
         settings: "OptimizationSettings",
         workflow: str,
         algorithm: str = "longest_first",
     ):
         """Initialize optimizer with stats database and settings.
 
-        :param stats_db: StatsDatabase instance (must be enabled)
+        :param stats_db: StatsRepository instance (must be enabled)
         :param settings: OptimizationSettings from settings.ini (EWMA tuning)
         :param workflow: Identifier for the current workflow
         :param algorithm: Scheduling algorithm — ``longest_first`` or ``shortest_first``
@@ -396,7 +396,7 @@ class TaskOptimizer:
 
 
 def create_task_optimizer(
-    stats_db: StatsDatabase,
+    stats_db: StatsRepository,
     settings: "OptimizationSettings",
     workflow: str,
     algorithm: str = "longest_first",
@@ -405,7 +405,7 @@ def create_task_optimizer(
 
     Returns None if stats_db is None or not enabled.
 
-    :param stats_db: StatsDatabase instance
+    :param stats_db: StatsRepository instance
     :param settings: OptimizationSettings from settings.ini (EWMA tuning)
     :param workflow: Identifier for the current workflow
     :param algorithm: Scheduling algorithm — ``longest_first`` or ``shortest_first``

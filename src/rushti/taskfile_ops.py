@@ -34,7 +34,7 @@ from rushti.taskfile import (
     get_expandable_parameters,
     load_taskfile_from_source,
 )
-from rushti.stats import StatsDatabase
+from rushti.stats import StatsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -997,7 +997,7 @@ class AnalysisReport:
 
 def analyze_runs(
     workflow: str,
-    stats_db: StatsDatabase,
+    stats_db: StatsRepository,
     output_path: Optional[str] = None,
     run_count: int = 10,
     ewma_alpha: float = 0.3,
@@ -1009,7 +1009,7 @@ def analyze_runs(
     by using a default estimate (fastest 25% average).
 
     :param workflow: Workflow name to analyze
-    :param stats_db: StatsDatabase instance with historical execution data
+    :param stats_db: StatsRepository instance with historical execution data
     :param output_path: Optional path to write analysis report
     :param run_count: Number of recent runs to analyze (lookback window)
     :param ewma_alpha: EWMA smoothing factor (0-1, higher = more weight on recent)
