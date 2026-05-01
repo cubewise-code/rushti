@@ -273,37 +273,41 @@ Today: `validate_taskfile` in `taskfile.py` (structural) and `validate_taskfile_
 
 2 PRs (2a alone, then 2b+2c together), ~3–4 days total.
 
-### Status (partial — first session)
+### Status — complete
 
-Sub-branch ``refactor/phase-2-commands-split`` has the following
-commits ready on the parent branch:
+Sub-branches landed sequentially into the parent
+``refactor/architecture-deepening``:
 
-1. **commands.py → commands/__init__.py** (no behavior change, sets up
-   the package layout).
-2. **build subcommand extracted** to ``commands/build.py``.
-3. **resume subcommand extracted** to ``commands/resume.py``.
-4. **db subcommand extracted** to ``commands/db.py``.
+1. **Phase 2a-1/2** (sub-branch ``refactor/phase-2-commands-split``)
+   - ``commands.py`` → ``commands/__init__.py`` (package layout).
+   - ``build``, ``resume``, ``db`` subcommands extracted into
+     ``commands/build.py``, ``commands/resume.py``, ``commands/db.py``.
+2. **Phase 2a-3/4** (sub-branch
+   ``refactor/phase-2a-tasks-stats-split``)
+   - ``run_tasks_command`` (469 lines) split into
+     ``commands/tasks/{__init__,export,push,expand,visualize,validate}.py``.
+   - ``run_stats_command`` (~1010 lines) split into
+     ``commands/stats/{__init__,export,analyze,optimize,visualize,list}.py``.
+3. **Phase 2b+2c** (sub-branch
+   ``refactor/phase-2b-rename-optimized``)
+   - ``taskfile_ops.write_optimized_taskfile`` → ``write_ewma_optimized_taskfile``.
+   - ``contention_analyzer.write_optimized_taskfile`` →
+     ``write_contention_optimized_taskfile``.
+   - Updated all 7 importer call sites + tests; Phase 0 golden
+     snapshots remained byte-identical (rename only, no logic change).
+   - Added ``Taskfile.validate()`` method that delegates to the
+     existing ``validate_taskfile`` free function.
+   - ``validate_taskfile_full`` now calls ``Taskfile.validate()`` for
+     the Taskfile and TaskfileSource code paths.
 
-commands/__init__.py: 2113 → 1527 lines (-586). All 637 unit tests
-pass after each extraction.
+**End state**:
 
-**Remaining Phase 2 work** (deferred to a follow-up session):
-
-- Phase 2a-3: split ``run_tasks_command`` dispatcher + 5 sub-action
-  helpers (``_tasks_export``, ``_tasks_push``, ``_tasks_expand``,
-  ``_tasks_visualize``, ``_tasks_validate``) into a
-  ``commands/tasks/`` package.
-- Phase 2a-4: split ``run_stats_command`` dispatcher + 5 sub-action
-  helpers (``_stats_export``, ``_stats_analyze``, ``_stats_optimize``,
-  ``_stats_visualize``, ``_stats_list``) into a ``commands/stats/``
-  package.
-- Phase 2b: rename ``write_optimized_taskfile`` in both modules to
-  disambiguate. The Phase 0 golden snapshots will catch any byte-level
-  drift during the rename.
-- Phase 2c: consolidate ``validate_taskfile`` (structural,
-  ``taskfile.py``) with ``validate_taskfile_full`` (structural + TM1
-  reachability, ``taskfile_ops.py``). Make ``Taskfile.validate()`` the
-  structural method; keep TM1 reachability separate.
+- ``commands/__init__.py``: 2113 → 32 lines (a thin facade
+  re-exporting all five subcommand handlers).
+- Two ``write_optimized_taskfile`` definitions disambiguated by name.
+- Structural validation owned by the model; TM1-reachability
+  validation owned by ``taskfile_ops``.
+- All 637 unit tests pass after every commit.
 
 ---
 
@@ -369,6 +373,41 @@ Use `typing.Protocol` (PEP 544) — structural typing, no inheritance change to 
 
 ~1 PR, ~2 days.
 
+### Status — complete
+
+Sub-branch ``refactor/phase-3-stats-protocol`` merged into parent.
+``stats.py`` (1453 lines) split into a focused ``stats/`` package:
+
+- ``stats/__init__.py``    — re-exports for backwards compat
+- ``stats/paths.py``       — ``DEFAULT_*`` constants, ``get_db_path``,
+                             ``get_stats_backend``
+- ``stats/signature.py``   — ``calculate_task_signature``
+- ``stats/sqlite.py``      — ``StatsDatabase`` (SQLite adapter)
+- ``stats/dynamodb.py``    — ``DynamoDBStatsDatabase`` (DynamoDB adapter)
+- ``stats/repository.py``  — ``StatsRepository`` Protocol +
+                             ``create_stats_database`` factory
+
+``StatsRepository`` is a ``runtime_checkable`` ``typing.Protocol``;
+both real adapters satisfy it structurally with no inheritance change.
+
+**Importer migration** (5 of 8 files; ``db_admin.py`` intentionally
+not migrated — it uses raw sqlite3 connections for SQLite-only
+operations; ``execution.py`` only carried a docstring reference):
+
+- ``tm1_integration.py`` — type hints + docstrings
+- ``taskfile_ops.py``    — type hints + docstrings
+- ``optimizer.py``       — type hints + docstrings
+- ``contention_analyzer.py`` — replaced the ``AnyStatsDatabase``
+  Union shim with ``StatsRepository``; alias retained for callers.
+- ``execution.py``       — docstring only
+
+**New test capability**: ``tests/unit/test_stats_repository.py`` (5
+tests) defines a ``FakeStatsRepository`` that satisfies the Protocol
+and drives ``TaskOptimizer`` end-to-end without touching SQLite or
+DynamoDB. Both real adapters are also verified via ``isinstance``.
+
+Suite size: 637 → 642 tests, all passing.
+
 ---
 
 ## Phase 4 — Re-cut `parsing.py` and `taskfile.py` (decision gate)
@@ -408,6 +447,25 @@ src/rushti/dag_build.py    # build_dag, convert_json_to_dag (was parsing.py)
 ### Estimate
 
 ~1 PR, ~3–4 days.
+
+### Decision — SKIP (2026-05-01)
+
+After Phases 1–3 merged into parent the gate was re-evaluated and
+Phase 4 is **skipped**. Rationale and trade-offs are documented in
+**[ADR-0001: Skip Phase 4 of the architecture refactor](adr/0001-skip-phase-4-parsing-recut.md)**.
+Summary:
+
+- The deletion test passes structurally (``parsing.py`` has 2 external
+  callers — ``cli.py`` and ``execution.py``) but the remaining
+  friction is naming/aesthetic, not architectural.
+- Phases 1–3 captured the major structural wins (deep modules,
+  removed circular imports, real adapter seam, model-owned
+  validation). The Phase 4 risk profile (per the original plan,
+  "Highest of any phase. Parsing is the public-facing surface for
+  users with custom taskfiles.") is disproportionate to the
+  remaining payoff.
+- Revisit only if a future feature genuinely needs the
+  format-adapter split (e.g., adding a YAML format).
 
 ---
 

@@ -106,26 +106,38 @@ single concern.
 ### `cli.py` -- Entry Point
 
 Argument parsing via `argparse`, subcommand registration, settings resolution,
-and the top-level `main()` function. Delegates to handler functions in
-`commands.py` for each subcommand (`run`, `resume`, `tasks`, `stats`, `db`,
-`build`).
+and the top-level `main()` function. Delegates to handler functions in the
+`commands/` package for each subcommand (`run`, `resume`, `tasks`, `stats`,
+`db`, `build`). After Phase 1 of the architecture refactor, several
+non-CLI helpers that used to live in `cli.py` moved to focused modules:
+`app_paths.py` (config-path resolution), `logging_setup.py` (log-level
+helpers), `results_writer.py` (CSV results writer).
 
-### `commands.py` -- Subcommand Handlers
+### `commands/` -- Subcommand Handlers (package)
 
-Contains the handler functions for all RushTI subcommands:
+The `commands` package holds one focused module per subcommand. The
+package `__init__.py` is a thin facade that re-exports all five
+handler entry points:
 
-- **build** -- Create TM1 logging dimensions and cube.
-- **resume** -- Resume execution from a checkpoint. Returns a resume context
-  dict that `main()` merges into CLI args (no module-level global state).
-- **tasks** -- Taskfile operations (export, push, expand, visualize, validate).
-- **stats** -- Statistics queries (export, analyze, visualize, list).
-- **db** -- Database administration (list, clear, show, vacuum).
+- `commands/build.py`  -- `run_build_command`: create TM1 logging objects.
+- `commands/resume.py` -- `run_resume_command`: resume execution from a
+  checkpoint. Returns a resume context dict that `main()` merges into
+  CLI args (no module-level global state).
+- `commands/tasks/`    -- `run_tasks_command` (dispatcher) plus one
+  module per sub-action: `export.py`, `push.py`, `expand.py`,
+  `visualize.py`, `validate.py`.
+- `commands/stats/`    -- `run_stats_command` (dispatcher) plus
+  `export.py`, `analyze.py`, `optimize.py`, `visualize.py`, `list.py`.
+- `commands/db.py`     -- `run_db_command`: database administration
+  (list, clear, show, vacuum).
 
 ### `taskfile.py` -- Task File Parsing
 
 Parses TXT and JSON task files into internal `Task` / `OptimizedTask` objects.
 Handles taskfile metadata, settings, and expandable parameters. Provides
 `TaskfileSource` for abstracting over file-based and TM1-cube-based sources.
+The `Taskfile` model owns structural validation via `Taskfile.validate()`;
+TM1-reachability validation lives in `taskfile_ops.validate_taskfile_full`.
 
 ### `task.py` -- Task Domain Model
 
@@ -170,11 +182,29 @@ Loads `settings.ini`, resolves the settings precedence chain (CLI flags >
 environment variables > JSON taskfile settings > settings.ini > defaults),
 and validates configuration values.
 
-### `stats.py` -- Statistics Database
+### `stats/` -- Statistics Database (package)
 
-SQLite database operations for recording execution results: run-level and
-task-level metrics, historical queries, and data export. Used by the optimizer
-and dashboard.
+After Phase 3 of the architecture refactor, the stats layer is a
+package with a documented Protocol seam between adapters and consumers:
+
+- `stats/repository.py` -- `StatsRepository` (a `runtime_checkable`
+  `typing.Protocol`) plus the `create_stats_database` factory.
+  Callers depend on `StatsRepository`, not a concrete class.
+- `stats/sqlite.py`     -- `StatsDatabase`: SQLite adapter (default
+  backend; zero-setup, file-based, WAL-mode).
+- `stats/dynamodb.py`   -- `DynamoDBStatsDatabase`: DynamoDB adapter
+  for cloud-hosted deployments.
+- `stats/paths.py`      -- `DEFAULT_*` constants, `get_db_path`,
+  `get_stats_backend`.
+- `stats/signature.py`  -- `calculate_task_signature` (deterministic
+  16-char SHA256 hash of `instance|process|sorted_params`).
+- `stats/__init__.py`   -- backwards-compatible re-exports of every
+  public name that used to live in `stats.py`.
+
+Used by the optimizer, contention analyzer, dashboard, and the
+`commands.stats.*` handlers. `db_admin.py` is intentionally
+SQLite-specific (raw `sqlite3` connections for `VACUUM` and direct
+queries) and does **not** depend on the Protocol.
 
 ### `optimizer.py` -- Task Optimization
 
@@ -198,8 +228,12 @@ analysis:
 6. Detect concurrency ceiling or scale-up opportunities from multi-run data.
 
 Returns a `ContentionAnalysisResult` dataclass with all analysis outputs.
-Also provides `write_optimized_taskfile()` to generate new task files with
-predecessor chains and embedded `max_workers`.
+Also provides `write_contention_optimized_taskfile()` to generate new
+task files with predecessor chains and embedded `max_workers`. The
+EWMA-based reorder path lives in
+`taskfile_ops.write_ewma_optimized_taskfile()`; the two functions used
+to share the name `write_optimized_taskfile` and were disambiguated in
+Phase 2b of the architecture refactor.
 
 ### `optimization_report.py` -- HTML Optimization Report
 
