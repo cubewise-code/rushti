@@ -9,19 +9,25 @@ This module provides the command-line interface for RushTI, including:
 
 import argparse
 import asyncio
-import configparser
-import csv
 import logging
 import os
 import sys
 from datetime import datetime, timedelta
 from logging.config import fileConfig
 from pathlib import Path
-from typing import Optional
 
 from TM1py.Utils import integerize_version
 
-from rushti.utils import set_current_directory
+from rushti.app_paths import (
+    log_legacy_path_warnings,
+    resolve_config_path,
+)
+from rushti.logging_setup import (
+    add_log_level_arg,
+    apply_log_level,
+    resolve_logging_config,
+)
+from rushti.results_writer import create_results_file
 from rushti.task import ExecutionMode
 from rushti.settings import load_settings, get_effective_settings
 from rushti.taskfile import (
@@ -44,10 +50,6 @@ from rushti.checkpoint import (
 from rushti import __version__
 
 APP_NAME = "RushTI"
-CURRENT_DIRECTORY = set_current_directory()
-
-# Track which legacy paths have been warned about (to avoid duplicate warnings)
-_legacy_path_warnings = set()
 
 
 def print_banner():
@@ -81,67 +83,6 @@ def print_banner():
     print(banner)
 
 
-def resolve_config_path(filename: str, warn_on_legacy: bool = True, cli_path: str = None) -> str:
-    """Resolve configuration file path with fallback to legacy location.
-
-    Checks for configuration files in this order:
-    1. CLI argument (if provided)
-    2. RUSHTI_DIR environment variable (looks in {RUSHTI_DIR}/config/)
-    3. Current directory (legacy location with deprecation warning)
-    4. config/ directory (recommended location)
-
-    :param filename: Name of the configuration file (e.g., "config.ini")
-    :param warn_on_legacy: Whether to log a deprecation warning if legacy path is used
-    :param cli_path: Optional CLI-provided path (takes precedence)
-    :return: Path to the configuration file
-    """
-    # 1. CLI argument takes precedence
-    if cli_path:
-        if os.path.exists(cli_path):
-            return cli_path
-        raise FileNotFoundError(f"Config file not found: {cli_path}")
-
-    # 2. RUSHTI_DIR environment variable (config files live in config/ subdirectory)
-    rushti_dir = os.environ.get("RUSHTI_DIR")
-    if rushti_dir:
-        env_path = os.path.join(rushti_dir, "config", filename)
-        if os.path.exists(env_path):
-            return env_path
-        # Warn but continue to fallback
-        logging.warning(
-            f"RUSHTI_DIR is set to '{rushti_dir}' but '{filename}' "
-            f"was not found in '{rushti_dir}/config/'"
-        )
-
-    # 3. Current directory (legacy location)
-    legacy_path = os.path.join(CURRENT_DIRECTORY, filename)
-    if os.path.exists(legacy_path):
-        if warn_on_legacy and filename not in _legacy_path_warnings:
-            _legacy_path_warnings.add(filename)
-        return legacy_path
-
-    # 4. config/ subdirectory (recommended location)
-    new_path = os.path.join(CURRENT_DIRECTORY, "config", filename)
-    if os.path.exists(new_path):
-        return new_path
-
-    # Neither exists - return new path for error messaging
-    return new_path
-
-
-def log_legacy_path_warnings(logger):
-    """Log deprecation warnings for any legacy paths that were used.
-
-    Call this after logging is initialized to emit any pending warnings.
-    """
-    for filename in _legacy_path_warnings:
-        logger.warning(
-            f"DEPRECATION: '{filename}' found in root directory. "
-            f"Please move it to 'config/{filename}' or set environment variable. "
-            f"Legacy path support will be removed in a future version."
-        )
-
-
 CONFIG = resolve_config_path("config.ini")
 LOGGING_CONFIG = resolve_config_path("logging_config.ini")
 
@@ -154,78 +95,11 @@ from rushti.messages import (  # noqa: E402
     MSG_RUSHTI_ARGUMENT4_INVALID,
     MSG_RUSHTI_ENDS,
     MSG_RUSHTI_ABORTED,
-    LOG_LEVELS,
 )
-
-
-def _resolve_logging_config(config_path: str) -> configparser.ConfigParser:
-    """Pre-process logging config to resolve relative file handler paths.
-
-    Python's fileConfig() resolves relative paths in handler args against the
-    current working directory. When rushti is invoked from TM1's ExecuteCommand,
-    CWD is often C:\\windows\\system32, causing PermissionError.
-
-    This reads the logging config into a ConfigParser, resolves any relative
-    file paths in file handler args against the application directory, and
-    returns the modified ConfigParser. Absolute paths are left unchanged.
-
-    Since Python 3.4, fileConfig() accepts a ConfigParser instance directly.
-    """
-    from rushti.utils import resolve_app_path
-
-    cp = configparser.ConfigParser()
-    cp.read(config_path)
-
-    file_handler_classes = {
-        "FileHandler",
-        "logging.FileHandler",
-        "handlers.RotatingFileHandler",
-        "logging.handlers.RotatingFileHandler",
-        "handlers.TimedRotatingFileHandler",
-        "logging.handlers.TimedRotatingFileHandler",
-    }
-
-    for section in cp.sections():
-        if not section.startswith("handler_"):
-            continue
-        handler_class = cp.get(section, "class", fallback="")
-        if handler_class not in file_handler_classes:
-            continue
-        args_str = cp.get(section, "args", fallback="")
-        if not args_str:
-            continue
-
-        # Extract the first string argument (the filename) from the args tuple.
-        # The args value looks like: ('rushti.log', 'a', 5*1024*1024, 10, 'utf-8')
-        # We can't use ast.literal_eval due to expressions like 5*1024*1024,
-        # so we find the first quoted string and do a targeted replacement.
-        for quote_char in ("'", '"'):
-            start_idx = args_str.find(quote_char)
-            if start_idx == -1:
-                continue
-            end_idx = args_str.find(quote_char, start_idx + 1)
-            if end_idx == -1:
-                continue
-            file_path = args_str[start_idx + 1 : end_idx]
-            if not file_path:
-                continue
-
-            if not os.path.isabs(file_path):
-                resolved = resolve_app_path(file_path)
-                # Use forward slashes — Python handles them on all platforms,
-                # and avoids backslash escaping issues inside the args string
-                resolved_fwd = resolved.replace("\\", "/")
-                # Replace only the filename portion in the args string
-                new_args = args_str[: start_idx + 1] + resolved_fwd + args_str[end_idx:]
-                cp.set(section, "args", new_args)
-            break  # Only process the first string (the filename)
-
-    return cp
-
 
 # Initialize logging if config exists
 if os.path.isfile(LOGGING_CONFIG):
-    resolved_config = _resolve_logging_config(LOGGING_CONFIG)
+    resolved_config = resolve_logging_config(LOGGING_CONFIG)
     fileConfig(resolved_config)
 
     # Ensure log files and directories are writable by all OS users
@@ -240,42 +114,6 @@ logger = logging.getLogger()
 
 # Log any deprecation warnings for legacy config paths
 log_legacy_path_warnings(logger)
-
-
-def add_log_level_arg(parser: argparse.ArgumentParser) -> None:
-    """Add --log-level argument to a parser.
-
-    :param parser: ArgumentParser to add the argument to
-    """
-    parser.add_argument(
-        "--log-level",
-        "-L",
-        dest="log_level",
-        choices=LOG_LEVELS,
-        default=None,
-        metavar="LEVEL",
-        help="Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Overrides logging_config.ini",
-    )
-
-
-def apply_log_level(log_level: Optional[str]) -> None:
-    """Apply log level override if specified.
-
-    Updates the root logger and all its handlers to the specified level.
-
-    :param log_level: Log level string (e.g., "DEBUG", "INFO") or None
-    """
-    if log_level is None:
-        return
-
-    level = getattr(logging, log_level.upper(), None)
-    if level is None:
-        return
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(level)
-    for handler in root_logger.handlers:
-        handler.setLevel(level)
 
 
 from rushti.parsing import convert_json_to_dag, build_dag  # noqa: E402
@@ -619,43 +457,6 @@ def parse_arguments(argv: list):
             "log_level": None,  # Not supported in positional style
         }
         return tasks_file, cli_args
-
-
-def create_results_file(
-    result_file: str,
-    overall_success: bool,
-    executions: int,
-    fails: int,
-    start_time: datetime,
-    end_time: datetime,
-    elapsed_time: timedelta,
-):
-    header = (
-        "PID",
-        "Process Runs",
-        "Process Fails",
-        "Start",
-        "End",
-        "Runtime",
-        "Overall Success",
-    )
-    record = (
-        os.getpid(),
-        executions,
-        fails,
-        start_time,
-        end_time,
-        elapsed_time,
-        overall_success,
-    )
-
-    from rushti.utils import ensure_shared_file, makedirs_shared
-
-    makedirs_shared(str(Path(result_file).parent))
-    with open(result_file, "w", encoding="utf-8") as file:
-        cw = csv.writer(file, delimiter="|", lineterminator="\n")
-        cw.writerows([header, record])
-    ensure_shared_file(result_file)
 
 
 def exit_rushti(

@@ -1,6 +1,6 @@
 """
 Unit tests for logging config path resolution.
-Covers _resolve_logging_config() which pre-processes logging_config.ini
+Covers resolve_logging_config() which pre-processes logging_config.ini
 to resolve relative file handler paths against the application directory.
 """
 
@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 
 class TestResolveLoggingConfig(unittest.TestCase):
-    """Tests for _resolve_logging_config()."""
+    """Tests for resolve_logging_config()."""
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
@@ -49,9 +49,9 @@ class TestResolveLoggingConfig(unittest.TestCase):
         )
 
         with patch.dict(os.environ, {"RUSHTI_DIR": self.temp_dir}):
-            from rushti.cli import _resolve_logging_config
+            from rushti.logging_setup import resolve_logging_config
 
-            cp = _resolve_logging_config(config_path)
+            cp = resolve_logging_config(config_path)
 
         args_str = cp.get("handler_file_handler", "args")
         # The path should now be absolute, pointing to temp_dir
@@ -84,9 +84,9 @@ class TestResolveLoggingConfig(unittest.TestCase):
         )
 
         with patch.dict(os.environ, {"RUSHTI_DIR": self.temp_dir}):
-            from rushti.cli import _resolve_logging_config
+            from rushti.logging_setup import resolve_logging_config
 
-            cp = _resolve_logging_config(config_path)
+            cp = resolve_logging_config(config_path)
 
         args_str = cp.get("handler_file_handler", "args")
         self.assertIn(abs_path, args_str)
@@ -113,9 +113,9 @@ class TestResolveLoggingConfig(unittest.TestCase):
         )
 
         with patch.dict(os.environ, {"RUSHTI_DIR": self.temp_dir}):
-            from rushti.cli import _resolve_logging_config
+            from rushti.logging_setup import resolve_logging_config
 
-            cp = _resolve_logging_config(config_path)
+            cp = resolve_logging_config(config_path)
 
         args_str = cp.get("handler_stream_handler", "args")
         self.assertEqual(args_str, "(sys.stderr,)")
@@ -142,9 +142,9 @@ class TestResolveLoggingConfig(unittest.TestCase):
         )
 
         with patch.dict(os.environ, {"RUSHTI_DIR": self.temp_dir}):
-            from rushti.cli import _resolve_logging_config
+            from rushti.logging_setup import resolve_logging_config
 
-            cp = _resolve_logging_config(config_path)
+            cp = resolve_logging_config(config_path)
 
         args_str = cp.get("handler_file_handler", "args")
         expected_path = os.path.join(self.temp_dir, "app.log").replace("\\", "/")
@@ -177,9 +177,9 @@ class TestResolveLoggingConfig(unittest.TestCase):
         )
 
         with patch.dict(os.environ, {"RUSHTI_DIR": self.temp_dir}):
-            from rushti.cli import _resolve_logging_config
+            from rushti.logging_setup import resolve_logging_config
 
-            cp = _resolve_logging_config(config_path)
+            cp = resolve_logging_config(config_path)
 
         # Stream handler unchanged
         stream_args = cp.get("handler_stream_handler", "args")
@@ -214,9 +214,9 @@ class TestResolveLoggingConfig(unittest.TestCase):
         )
 
         with patch.dict(os.environ, {"RUSHTI_DIR": self.temp_dir}):
-            from rushti.cli import _resolve_logging_config
+            from rushti.logging_setup import resolve_logging_config
 
-            cp = _resolve_logging_config(config_path)
+            cp = resolve_logging_config(config_path)
 
         self.assertIsInstance(cp, configparser.ConfigParser)
 

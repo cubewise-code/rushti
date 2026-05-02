@@ -21,7 +21,7 @@ from rushti.contention_analyzer import (
     _detect_concurrency_ceiling,
     analyze_contention,
     get_archived_taskfile_path,
-    write_optimized_taskfile,
+    write_contention_optimized_taskfile,
     _empty_result,
 )
 
@@ -754,7 +754,7 @@ class TestAnalyzeContention(TestCase):
 
 
 class TestWriteOptimizedTaskfile(TestCase):
-    """Tests for write_optimized_taskfile."""
+    """Tests for write_contention_optimized_taskfile."""
 
     def _create_taskfile(self, tmp_dir: str) -> str:
         """Create a minimal JSON taskfile for testing."""
@@ -826,7 +826,7 @@ class TestWriteOptimizedTaskfile(TestCase):
                 predecessor_map={"3": ["1"], "4": ["2"]},
             )
 
-            write_optimized_taskfile(taskfile_path, result, output_path)
+            write_contention_optimized_taskfile(taskfile_path, result, output_path)
 
             # Verify output file exists
             self.assertTrue(os.path.exists(output_path))
@@ -871,7 +871,7 @@ class TestWriteOptimizedTaskfile(TestCase):
                 predecessor_map={},
             )
 
-            write_optimized_taskfile(taskfile_path, result, output_path)
+            write_contention_optimized_taskfile(taskfile_path, result, output_path)
 
             with open(output_path) as f:
                 optimized = json.load(f)
@@ -906,7 +906,7 @@ class TestWriteOptimizedTaskfile(TestCase):
                 predecessor_map={},
             )
 
-            write_optimized_taskfile(taskfile_path, result, output_path)
+            write_contention_optimized_taskfile(taskfile_path, result, output_path)
 
             with open(output_path) as f:
                 optimized = json.load(f)

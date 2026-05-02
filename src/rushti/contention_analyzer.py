@@ -19,14 +19,12 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-from rushti.stats import StatsDatabase
+from rushti.stats import StatsRepository
 
-if TYPE_CHECKING:
-    from rushti.stats import DynamoDBStatsDatabase
-
-AnyStatsDatabase = Union[StatsDatabase, "DynamoDBStatsDatabase"]
+# Backwards-compatible alias for callers that imported this name directly.
+AnyStatsDatabase = StatsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -903,7 +901,7 @@ def get_archived_taskfile_path(
     return None
 
 
-def write_optimized_taskfile(
+def write_contention_optimized_taskfile(
     original_taskfile_path: str,
     result: ContentionAnalysisResult,
     output_path: str,
@@ -914,6 +912,9 @@ def write_optimized_taskfile(
     within each group). Injects predecessor chains for heavy groups. Embeds the
     recommended ``max_workers`` in the taskfile settings so it takes effect
     automatically (the CLI ``--max-workers`` flag still overrides).
+
+    For the simpler EWMA-reorder path that does not inject predecessors,
+    see :func:`rushti.taskfile_ops.write_ewma_optimized_taskfile`.
 
     :param original_taskfile_path: Path to original JSON taskfile
     :param result: Contention analysis result

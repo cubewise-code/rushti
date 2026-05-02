@@ -63,7 +63,7 @@ class ExecutionContext:
 
     #: Structured execution logger (ExecutionLogger or None)
     execution_logger: Optional[object] = None
-    #: SQLite statistics database (StatsDatabase or None)
+    #: Statistics database (StatsRepository or None)
     stats_db: Optional[object] = None
     #: Lock protecting ``stats_data`` list
     stats_data_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
