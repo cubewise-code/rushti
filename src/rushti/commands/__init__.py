@@ -16,7 +16,8 @@ keep using ``from rushti.commands import run_build_command`` etc.
 without caring about the internal package layout.
 """
 
-# Re-exports for backwards compatibility (Phase 2a per-subcommand splits)
+# Backwards-compatible re-exports so callers can keep using
+# ``from rushti.commands import run_build_command`` etc.
 from rushti.commands.build import run_build_command
 from rushti.commands.db import run_db_command
 from rushti.commands.resume import run_resume_command

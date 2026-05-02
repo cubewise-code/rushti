@@ -9,9 +9,6 @@ Per PEP 544 the Protocol uses *structural* typing: classes don't need
 to inherit from it; they only need to expose matching method shapes.
 Both existing adapters already do, so no changes are required to make
 them satisfy the Protocol.
-
-Extracted from ``rushti.stats`` (formerly ``stats.py``) in Phase 3 of
-the architecture refactor.
 """
 
 import logging

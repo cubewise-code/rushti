@@ -4,9 +4,6 @@ Writes a small two-row CSV summarizing a run's outcome (PID, executions,
 fails, start/end times, duration, overall success). The path is supplied
 by the caller (typically from the ``--result`` CLI arg or the
 ``[defaults] result_file`` setting).
-
-Extracted from ``rushti.cli`` in Phase 1 of the architecture refactor
-(see ``docs/architecture/refactoring-plan.md``).
 """
 
 import csv

@@ -1,8 +1,4 @@
-"""rushti stats export — export task execution results to CSV.
-
-Extracted from ``rushti.commands`` (formerly ``_stats_export``) in
-Phase 2a-4 of the architecture refactor.
-"""
+"""rushti stats export — export task execution results to CSV."""
 
 import sys
 

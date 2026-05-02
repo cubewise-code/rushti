@@ -1,8 +1,4 @@
-"""rushti stats visualize — interactive HTML dashboard + DAG.
-
-Extracted from ``rushti.commands`` (formerly ``_stats_visualize``) in
-Phase 2a-4 of the architecture refactor.
-"""
+"""rushti stats visualize — interactive HTML dashboard + DAG."""
 
 import logging
 import os

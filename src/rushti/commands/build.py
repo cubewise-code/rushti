@@ -1,9 +1,6 @@
 """rushti build — create TM1 logging dimensions and cube.
 
 Usage: ``rushti build --tm1-instance tm1srv01 [--force]``
-
-Extracted from ``rushti.commands`` in Phase 2 of the architecture
-refactor (see ``docs/architecture/refactoring-plan.md``).
 """
 
 import argparse

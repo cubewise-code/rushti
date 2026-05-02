@@ -1,8 +1,4 @@
-"""Deterministic task-signature hashing.
-
-Extracted from ``rushti.stats`` (formerly ``stats.py``) in Phase 3 of
-the architecture refactor.
-"""
+"""Deterministic task-signature hashing."""
 
 import hashlib
 import json

@@ -1,19 +1,18 @@
 """RushTI execution-statistics package.
 
-Re-exports the public surface that used to live in the single
-``rushti.stats`` module. After Phase 3 of the architecture refactor:
+Submodules:
 
-- ``signature.py`` — ``calculate_task_signature``
-- ``paths.py``     — ``DEFAULT_*`` constants, ``get_db_path``,
-                     ``get_stats_backend``
-- ``sqlite.py``    — ``StatsDatabase`` (SQLite adapter)
-- ``dynamodb.py``  — ``DynamoDBStatsDatabase`` (DynamoDB adapter)
-- ``repository.py``— ``StatsRepository`` Protocol +
-                     ``create_stats_database`` factory
+- ``signature.py``  — ``calculate_task_signature``
+- ``paths.py``      — ``DEFAULT_*`` constants, ``get_db_path``,
+                      ``get_stats_backend``
+- ``sqlite.py``     — ``StatsDatabase`` (SQLite adapter)
+- ``dynamodb.py``   — ``DynamoDBStatsDatabase`` (DynamoDB adapter)
+- ``repository.py`` — ``StatsRepository`` Protocol +
+                      ``create_stats_database`` factory
 
-Callers should ideally import from the focused submodules, but the
-legacy ``from rushti.stats import StatsDatabase`` etc. paths keep
-working unchanged via these re-exports.
+Callers should ideally import from the focused submodules, but
+``from rushti.stats import StatsDatabase`` etc. is also supported
+via the re-exports below.
 """
 
 from rushti.stats.dynamodb import DynamoDBStatsDatabase

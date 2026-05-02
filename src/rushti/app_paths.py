@@ -4,9 +4,6 @@ Resolves configuration file locations across the supported lookup
 precedence (CLI flag > ``RUSHTI_DIR`` env var > legacy CWD > ``config/``)
 and tracks which legacy paths have been used so a deprecation warning
 can be emitted once logging is initialized.
-
-Extracted from ``rushti.cli`` in Phase 1 of the architecture refactor
-(see ``docs/architecture/refactoring-plan.md``).
 """
 
 import logging

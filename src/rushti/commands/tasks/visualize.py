@@ -1,8 +1,4 @@
-"""rushti tasks visualize — generate interactive HTML DAG visualization.
-
-Extracted from ``rushti.commands`` (formerly ``_tasks_visualize``) in
-Phase 2a-3 of the architecture refactor.
-"""
+"""rushti tasks visualize — generate interactive HTML DAG visualization."""
 
 import os
 import sys

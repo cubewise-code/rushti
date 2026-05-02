@@ -482,11 +482,8 @@ def sample_json_taskfile():
 
 
 # =============================================================================
-# Phase 0 Safety-Net Fixtures
+# CLI dispatch and snapshot test fixtures
 # =============================================================================
-# These fixtures support the architecture-refactor safety net (see
-# docs/architecture/refactoring-plan.md). They are intentionally small and
-# self-contained so they can be removed if the refactor is reverted.
 
 
 @pytest.fixture
@@ -499,7 +496,7 @@ def unique_workflow_name(request):
     import uuid
 
     test_name = request.node.name.replace("[", "_").replace("]", "")
-    return f"rushti_phase0_smoke_{test_name}_{uuid.uuid4().hex[:8]}"
+    return f"rushti_smoke_{test_name}_{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture

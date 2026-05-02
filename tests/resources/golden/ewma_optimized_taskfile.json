@@ -2,7 +2,7 @@
   "metadata": {
     "algorithm": "EWMA",
     "algorithm_version": "2.0",
-    "description": "Phase 0 safety-net input for write_optimized_taskfile snapshots",
+    "description": "snapshot test input fixture",
     "ewma_alpha": 0.3,
     "lookback_runs": 10,
     "optimization_date": "2026-04-30T00:00:00Z",

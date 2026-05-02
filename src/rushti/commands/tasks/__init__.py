@@ -6,9 +6,6 @@ Subcommands:
     expand:    Expand MDX expressions in taskfile parameters.
     visualize: Generate interactive HTML DAG visualization.
     validate:  Validate taskfile structure and TM1 connectivity.
-
-Extracted from ``rushti.commands`` in Phase 2a-3 of the architecture
-refactor (see ``docs/architecture/refactoring-plan.md``).
 """
 
 import argparse

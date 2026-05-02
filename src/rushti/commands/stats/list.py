@@ -1,8 +1,4 @@
-"""rushti stats list — list runs or tasks for a workflow.
-
-Extracted from ``rushti.commands`` (formerly ``_stats_list``) in
-Phase 2a-4 of the architecture refactor.
-"""
+"""rushti stats list — list runs or tasks for a workflow."""
 
 import sys
 

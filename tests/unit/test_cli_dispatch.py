@@ -1,9 +1,4 @@
-"""Phase 0 safety-net: CLI argument parsing and subcommand dispatch.
-
-These tests pin the current behavior of ``rushti.cli`` so the Phase 1
-extraction (moving ``resolve_config_path``, ``apply_log_level``,
-``create_results_file`` etc. out of cli.py) cannot silently regress
-argument parsing or dispatch routing.
+"""CLI argument parsing and subcommand-dispatch tests.
 
 What we test (no TM1 required):
 - ``uses_named_arguments`` style detection
@@ -17,8 +12,6 @@ What we do NOT test here (covered by integration smoke tests):
 - Full execution of any subcommand handler
 - TM1 connection setup
 - File-output behavior of subcommands
-
-See ``docs/architecture/refactoring-plan.md`` (Phase 0) for context.
 """
 
 import sys
@@ -119,10 +112,8 @@ class TestResolveConfigPath:
     at module import) for legacy/config-subdir lookups. Tests must patch
     that constant rather than ``os.getcwd()`` / ``monkeypatch.chdir``.
 
-    Phase 1 moved the function from ``cli`` to ``app_paths``; ``cli`` still
-    re-exports ``resolve_config_path`` because it imports it at module
-    scope, so direct calls via ``cli.resolve_config_path`` continue to
-    work."""
+    The function lives in ``app_paths`` but is also re-exported from
+    ``cli``, so calls via ``cli.resolve_config_path`` continue to work."""
 
     def test_cli_path_takes_precedence(self, tmp_path, monkeypatch):
         cli_config = tmp_path / "explicit.ini"

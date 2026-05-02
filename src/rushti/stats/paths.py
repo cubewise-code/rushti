@@ -1,8 +1,4 @@
-"""Stats backend defaults and path/backend resolution.
-
-Extracted from ``rushti.stats`` (formerly ``stats.py``) in Phase 3 of
-the architecture refactor.
-"""
+"""Stats backend defaults and path/backend resolution."""
 
 from rushti.utils import resolve_app_path
 

@@ -1,9 +1,4 @@
-"""SQLite-backed StatsDatabase adapter.
-
-Extracted from ``rushti.stats`` (formerly ``stats.py``) in Phase 3 of
-the architecture refactor. The class itself is unchanged byte-for-byte;
-only its module home moved.
-"""
+"""SQLite-backed StatsDatabase adapter."""
 
 import json
 import logging

@@ -3,9 +3,6 @@
 Administrative tools for managing the SQLite stats database (list,
 clear, show, vacuum). For querying statistics and analyzing runs, see
 the ``stats`` command instead.
-
-Extracted from ``rushti.commands`` in Phase 2 of the architecture
-refactor (see ``docs/architecture/refactoring-plan.md``).
 """
 
 import argparse

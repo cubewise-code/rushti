@@ -1,8 +1,4 @@
-"""rushti tasks expand — expand MDX expressions in taskfile parameters.
-
-Extracted from ``rushti.commands`` (formerly ``_tasks_expand``) in
-Phase 2a-3 of the architecture refactor.
-"""
+"""rushti tasks expand — expand MDX expressions in taskfile parameters."""
 
 import os
 import sys

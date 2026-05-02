@@ -5,9 +5,6 @@ file-handler paths against the application directory so log files don't
 get written into ``C:\\windows\\system32`` when invoked from TM1's
 ``ExecuteCommand``), the ``--log-level`` argparse helper, and the
 runtime application of an override level.
-
-Extracted from ``rushti.cli`` in Phase 1 of the architecture refactor
-(see ``docs/architecture/refactoring-plan.md``).
 """
 
 import argparse

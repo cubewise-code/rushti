@@ -1,21 +1,21 @@
-"""Phase 0 safety-net: golden-file snapshots for the optimized-taskfile writers.
+"""Golden-file snapshots for the two optimized-taskfile writers.
 
-These tests pin the current behavior of:
-- ``rushti.taskfile_ops.write_ewma_optimized_taskfile`` (EWMA-based reordering)
-- ``rushti.contention_analyzer.write_contention_optimized_taskfile`` (contention-aware reordering)
+Pins the current output of:
 
-The two functions previously shared the name ``write_optimized_taskfile``;
-Phase 2b renamed them so each call site reads unambiguously. They solve
-different problems: EWMA reorders task IDs in-place; contention-aware
-injects predecessor chains and embeds ``max_workers``. This file captures
-both outputs into goldens at ``tests/resources/golden/`` so any behavior
-drift surfaces as a test failure with a unified diff.
+- ``rushti.taskfile_ops.write_ewma_optimized_taskfile`` (EWMA-based
+  reordering of task IDs in place)
+- ``rushti.contention_analyzer.write_contention_optimized_taskfile``
+  (contention-driver reordering with predecessor-chain injection and
+  ``max_workers`` embedding)
+
+The two functions solve different problems and live in different
+modules; this file captures both outputs into goldens at
+``tests/resources/golden/`` so any behavior drift surfaces as a test
+failure with a unified diff.
 
 To regenerate goldens after an intentional behavior change:
 
     RUSHTI_REGENERATE_GOLDENS=1 pytest tests/unit/test_optimized_taskfile_snapshot.py
-
-See ``docs/architecture/refactoring-plan.md`` (Phase 0) for context.
 """
 
 import json
@@ -39,7 +39,7 @@ INPUT_TASKFILE = {
     "version": "2.0",
     "metadata": {
         "workflow": "snapshot-fixture",
-        "description": "Phase 0 safety-net input for write_optimized_taskfile snapshots",
+        "description": "snapshot test input fixture",
     },
     "settings": {"max_workers": 4},
     "tasks": [

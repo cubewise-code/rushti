@@ -1,8 +1,4 @@
-"""rushti tasks export — convert TXT/TM1 taskfiles to JSON.
-
-Extracted from ``rushti.commands`` (formerly ``_tasks_export``) in
-Phase 2a-3 of the architecture refactor.
-"""
+"""rushti tasks export — convert TXT/TM1 taskfiles to JSON."""
 
 import json
 import os

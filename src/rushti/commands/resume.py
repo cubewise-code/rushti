@@ -2,9 +2,6 @@
 
 This is the ONLY way to resume from a checkpoint. The 'run' command
 always starts fresh, even if a checkpoint exists.
-
-Extracted from ``rushti.commands`` in Phase 2 of the architecture
-refactor (see ``docs/architecture/refactoring-plan.md``).
 """
 
 import argparse

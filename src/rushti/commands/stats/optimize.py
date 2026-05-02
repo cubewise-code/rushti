@@ -1,8 +1,4 @@
-"""rushti stats optimize — contention-aware analysis + optimized taskfile.
-
-Extracted from ``rushti.commands`` (formerly ``_stats_optimize``) in
-Phase 2a-4 of the architecture refactor.
-"""
+"""rushti stats optimize — contention-aware analysis + optimized taskfile."""
 
 import logging
 import sys

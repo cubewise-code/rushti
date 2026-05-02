@@ -1,28 +1,24 @@
-"""Phase 0 safety-net: full main() invocation smoke tests for non-TM1 subcommands.
+"""Smoke tests for the full ``argv -> main() -> handler -> output`` chain
+of non-TM1 subcommands.
 
-These tests prove the full ``argv -> main() -> handler -> output`` chain works
-for subcommands that do not require a live TM1 instance:
+Covered here:
 
 - ``tasks expand``  (file in/out)
 - ``tasks visualize``  (file in/out, HTML)
 - ``db list``  (reads stats SQLite via --settings file)
 
-They form a representative pattern. The remaining non-TM1 subcommands
-(``tasks validate``, ``stats *``, ``db show/clear/vacuum``) have the same
-shape — pass --settings pointing at the test DB, assert exit code + key
-output. They are intentionally omitted from this initial Phase 0 file to
-keep the safety-net commit small; they can be expanded as Phase 2 surfaces
-specific risk areas.
+The remaining non-TM1 subcommands (``tasks validate``, ``stats *``,
+``db show/clear/vacuum``) have the same shape — pass ``--settings``
+pointing at the test DB and assert exit code + key output. Add them
+here when a specific risk surfaces.
 
 For TM1-requiring subcommands (``run``, ``resume``, ``build``,
 ``tasks export``, ``tasks push``), see ``tests/integration/test_commands_smoke.py``.
 
-Assertions follow the practical level agreed for Phase 0:
+Each test asserts:
 - exit code (0 success, non-zero failure)
 - key file outputs exist with non-empty content
 - key stdout/stderr tokens appear (e.g., a workflow name we just inserted)
-
-See ``docs/architecture/refactoring-plan.md`` (Phase 0) for context.
 """
 
 import json
@@ -57,7 +53,7 @@ def _write_minimal_json_taskfile(path: Path) -> Path:
                 "version": "2.0",
                 "metadata": {
                     "workflow": "smoke-fixture",
-                    "description": "Phase 0 smoke fixture",
+                    "description": "smoke-test fixture",
                 },
                 "tasks": [
                     {

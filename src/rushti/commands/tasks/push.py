@@ -1,8 +1,4 @@
-"""rushti tasks push — upload JSON taskfile to TM1 as a file.
-
-Extracted from ``rushti.commands`` (formerly ``_tasks_push``) in
-Phase 2a-3 of the architecture refactor.
-"""
+"""rushti tasks push — upload JSON taskfile to TM1 as a file."""
 
 import os
 import sys

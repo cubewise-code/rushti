@@ -6,9 +6,6 @@ Subcommands:
     optimize:  Contention-aware analysis + optimized taskfile
     visualize: Generate interactive HTML dashboard + DAG
     list:      List runs or tasks for a workflow
-
-Extracted from ``rushti.commands`` in Phase 2a-4 of the architecture
-refactor (see ``docs/architecture/refactoring-plan.md``).
 """
 
 import argparse

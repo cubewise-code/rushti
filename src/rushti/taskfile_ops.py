@@ -1221,12 +1221,10 @@ def write_ewma_optimized_taskfile(
     """Generate optimized task file with EWMA-reordered tasks.
 
     Loads the original task file, reorders tasks based on EWMA estimates,
-    and writes an executable optimized task file with metadata.
-
-    Renamed from ``write_optimized_taskfile`` in Phase 2b of the
-    architecture refactor — this is the EWMA-reorder path, distinct from
-    ``contention_analyzer.write_contention_optimized_taskfile`` which
-    injects predecessor chains based on contention groups.
+    and writes an executable optimized task file with metadata. This is
+    the EWMA-reorder path; for the contention-driver path that injects
+    predecessor chains, see
+    :func:`rushti.contention_analyzer.write_contention_optimized_taskfile`.
 
     :param original_taskfile_path: Path to original task file
     :param optimized_order: List of task IDs in optimized order

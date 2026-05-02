@@ -1,8 +1,4 @@
-"""rushti tasks validate — validate taskfile structure and TM1 connectivity.
-
-Extracted from ``rushti.commands`` (formerly ``_tasks_validate``) in
-Phase 2a-3 of the architecture refactor.
-"""
+"""rushti tasks validate — validate taskfile structure and TM1 connectivity."""
 
 import os
 import sys

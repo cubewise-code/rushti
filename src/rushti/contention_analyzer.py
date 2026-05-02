@@ -23,8 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from rushti.stats import StatsRepository
 
-# Phase 3 left this alias in place for callers that imported it from
-# this module before the StatsRepository Protocol existed.
+# Backwards-compatible alias for callers that imported this name directly.
 AnyStatsDatabase = StatsRepository
 
 logger = logging.getLogger(__name__)
@@ -914,11 +913,8 @@ def write_contention_optimized_taskfile(
     recommended ``max_workers`` in the taskfile settings so it takes effect
     automatically (the CLI ``--max-workers`` flag still overrides).
 
-    Renamed from ``write_optimized_taskfile`` in Phase 2b of the
-    architecture refactor to disambiguate from
-    ``taskfile_ops.write_ewma_optimized_taskfile``, which performs a
-    different kind of optimization (EWMA-based reorder of task IDs,
-    no predecessor injection).
+    For the simpler EWMA-reorder path that does not inject predecessors,
+    see :func:`rushti.taskfile_ops.write_ewma_optimized_taskfile`.
 
     :param original_taskfile_path: Path to original JSON taskfile
     :param result: Contention analysis result

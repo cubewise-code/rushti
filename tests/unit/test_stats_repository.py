@@ -1,13 +1,13 @@
-"""Phase 3 safety-net: StatsRepository Protocol parity smoke test.
+"""StatsRepository Protocol parity tests.
 
-These tests pin the structural-typing seam introduced in Phase 3:
+Pin the structural-typing seam between the consumers and the storage
+backends:
 
 - Both real adapters (``StatsDatabase``, ``DynamoDBStatsDatabase``)
   satisfy the ``StatsRepository`` Protocol structurally.
-- A small fake adapter is also a valid ``StatsRepository`` and is
-  enough to drive ``TaskOptimizer`` end-to-end without touching
-  SQLite or DynamoDB. This is the proof point that the seam is useful:
-  optimizer tests no longer have to spin up a real database.
+- A small fake adapter also satisfies the Protocol and is enough to
+  drive ``TaskOptimizer`` end-to-end — optimizer tests no longer have
+  to spin up a real database.
 """
 
 from datetime import datetime, timedelta

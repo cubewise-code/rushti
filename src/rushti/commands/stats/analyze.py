@@ -1,8 +1,4 @@
-"""rushti stats analyze — EWMA-based historical run analysis.
-
-Extracted from ``rushti.commands`` (formerly ``_stats_analyze``) in
-Phase 2a-4 of the architecture refactor.
-"""
+"""rushti stats analyze — EWMA-based historical run analysis."""
 
 import sys
 
