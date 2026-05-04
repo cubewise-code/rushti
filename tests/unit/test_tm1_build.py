@@ -23,6 +23,8 @@ from rushti.tm1_build import (
     _create_task_id_dimension,
     _create_run_id_dimension,
     _create_measure_dimension,
+    _create_process,
+    _merge_measure_dimension_elements,
 )
 
 # Default dimension and cube names for testing
@@ -57,9 +59,16 @@ class TestTM1ObjectsConstants(unittest.TestCase):
             "require_predecessor_success",
             "succeed_on_minor_errors",
             "wait",
+            "original_task_id",
         ]
         for measure in required_measures:
             self.assertIn(measure, MEASURE_ELEMENTS)
+
+    def test_original_task_id_is_results_only_measure(self):
+        """original_task_id is a results-only measure (cube output, not input)."""
+        attrs = MEASURE_ATTRIBUTES["original_task_id"]
+        self.assertEqual(attrs["inputs"], "")
+        self.assertEqual(attrs["results"], "Y")
 
     def test_measure_attributes_match_elements(self):
         """Test that every measure element has an attribute entry."""
@@ -176,6 +185,102 @@ class TestVerifyLoggingObjects(unittest.TestCase):
         self.assertFalse(result[DIM_TASKFILE])
         self.assertTrue(result[DIM_TASK])
         self.assertTrue(result[CUBE_LOGS])
+
+
+class TestMergeMeasureDimensionElements(unittest.TestCase):
+    """Non-destructive upgrade: add only missing elements + their attribute values."""
+
+    def test_no_op_when_dimension_already_complete(self):
+        mock_tm1 = Mock()
+        mock_tm1.elements.get_element_names.return_value = list(MEASURE_ELEMENTS)
+
+        added = _merge_measure_dimension_elements(mock_tm1, DIM_MEASURE)
+
+        self.assertEqual(added, 0)
+        mock_tm1.elements.create.assert_not_called()
+        mock_tm1.cells.write_values.assert_not_called()
+
+    def test_adds_only_missing_elements(self):
+        # Simulate a 2.x model: all current elements except the new
+        # ``original_task_id``.
+        legacy = [e for e in MEASURE_ELEMENTS if e != "original_task_id"]
+        mock_tm1 = Mock()
+        mock_tm1.elements.get_element_names.return_value = legacy
+
+        added = _merge_measure_dimension_elements(mock_tm1, DIM_MEASURE)
+
+        self.assertEqual(added, 1)
+        # One create call for the missing element only.
+        self.assertEqual(mock_tm1.elements.create.call_count, 1)
+        kwargs = mock_tm1.elements.create.call_args.kwargs
+        self.assertEqual(kwargs["dimension_name"], DIM_MEASURE)
+        self.assertEqual(kwargs["hierarchy_name"], DIM_MEASURE)
+        self.assertEqual(kwargs["element"].name, "original_task_id")
+
+    def test_writes_attributes_only_for_new_elements(self):
+        legacy = [e for e in MEASURE_ELEMENTS if e != "original_task_id"]
+        mock_tm1 = Mock()
+        mock_tm1.elements.get_element_names.return_value = legacy
+
+        _merge_measure_dimension_elements(mock_tm1, DIM_MEASURE)
+
+        # Single write_values call carrying only the new element's attribute(s).
+        mock_tm1.cells.write_values.assert_called_once()
+        cube_arg, cellset = mock_tm1.cells.write_values.call_args.args
+        self.assertEqual(cube_arg, f"}}ElementAttributes_{DIM_MEASURE}")
+        # original_task_id is results-only; the cellset must contain that and
+        # no entries for any other element.
+        keys = set(cellset.keys())
+        self.assertEqual(keys, {("original_task_id", "results")})
+
+
+class TestProcessAlwaysOverwrites(unittest.TestCase):
+    """The TI process is application-owned — every build replaces it."""
+
+    def test_existing_process_is_replaced(self):
+        mock_tm1 = Mock()
+        mock_tm1.processes.exists.return_value = True
+
+        result = _create_process(mock_tm1, "}rushti.load.results", force=False)
+
+        # Without force=True, the legacy code returned False; the new contract
+        # says the live TI is always replaced and the function always returns True.
+        self.assertTrue(result)
+        mock_tm1.processes.delete.assert_called_once_with("}rushti.load.results")
+        mock_tm1.processes.create.assert_called_once()
+
+    def test_missing_process_is_created(self):
+        mock_tm1 = Mock()
+        mock_tm1.processes.exists.return_value = False
+
+        result = _create_process(mock_tm1, "}rushti.load.results", force=False)
+
+        self.assertTrue(result)
+        mock_tm1.processes.delete.assert_not_called()
+        mock_tm1.processes.create.assert_called_once()
+
+
+class TestBuildLoggingObjectsUpgradePath(unittest.TestCase):
+    """build_logging_objects routes the measure dim through the merge helper."""
+
+    def test_measure_dim_existing_triggers_merge(self):
+        # Dim exists → measure dim should be additively merged, not skipped.
+        legacy = [e for e in MEASURE_ELEMENTS if e != "original_task_id"]
+
+        mock_tm1 = Mock()
+        mock_tm1.dimensions.exists.return_value = True
+        mock_tm1.cubes.exists.return_value = True
+        mock_tm1.processes.exists.return_value = True
+        mock_tm1.subsets.exists.return_value = True
+        mock_tm1.cubes.views.exists.return_value = True
+        mock_tm1.elements.get_element_names.return_value = legacy
+
+        build_logging_objects(mock_tm1, force=False)
+
+        # Merge helper landed → at least one elements.create call for the
+        # missing element, and no destructive dimension recreate.
+        self.assertGreaterEqual(mock_tm1.elements.create.call_count, 1)
+        mock_tm1.dimensions.update_or_create.assert_not_called()
 
 
 class TestGetBuildStatus(unittest.TestCase):

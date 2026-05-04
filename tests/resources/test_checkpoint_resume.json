@@ -7,42 +7,60 @@
   },
   "tasks": [
     {
-      "id": "task-1",
+      "id": 1,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "3"},
+      "parameters": {
+        "pWaitSec": "3"
+      },
       "safe_retry": true
     },
     {
-      "id": "task-2",
+      "id": 2,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "3"},
-      "predecessors": ["task-1"],
+      "parameters": {
+        "pWaitSec": "3"
+      },
+      "predecessors": [
+        1
+      ],
       "safe_retry": true
     },
     {
-      "id": "task-3",
+      "id": 3,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "3"},
-      "predecessors": ["task-2"],
+      "parameters": {
+        "pWaitSec": "3"
+      },
+      "predecessors": [
+        2
+      ],
       "safe_retry": false
     },
     {
-      "id": "task-4",
+      "id": 4,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "3"},
-      "predecessors": ["task-3"],
+      "parameters": {
+        "pWaitSec": "3"
+      },
+      "predecessors": [
+        3
+      ],
       "safe_retry": true
     },
     {
-      "id": "task-5",
+      "id": 5,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "3"},
-      "predecessors": ["task-4"],
+      "parameters": {
+        "pWaitSec": "3"
+      },
+      "predecessors": [
+        4
+      ],
       "safe_retry": true
     }
   ]

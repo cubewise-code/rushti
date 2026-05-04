@@ -338,6 +338,31 @@ def load_taskfile_from_source(
         raise ValueError("Invalid TaskfileSource: no source specified")
 
 
+_TASK_ID_ERROR_HINT = (
+    "Task IDs must be positive integers (the rushti_task_id cube dimension "
+    "uses integer member names)"
+)
+
+
+def _is_positive_integer_id(value: Any) -> bool:
+    """True for positive integers or canonical integer-shaped strings.
+
+    Accepts ``5`` and ``"5"``; rejects booleans, zero, negatives, leading-zero
+    strings (``"05"``), floats, and any non-digit string.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value > 0
+    if isinstance(value, str):
+        if not value or not value.isdigit():
+            return False
+        if len(value) > 1 and value[0] == "0":
+            return False
+        return int(value) > 0
+    return False
+
+
 def validate_task(task_data: Dict[str, Any], index: int) -> List[str]:
     """Validate a single task definition.
 
@@ -352,13 +377,22 @@ def validate_task(task_data: Dict[str, Any], index: int) -> List[str]:
         if prop not in task_data or not task_data[prop]:
             errors.append(f"Task {index}: Missing required property '{prop}'")
 
-    # Validate types
-    if "id" in task_data and not isinstance(task_data["id"], (str, int)):
-        errors.append(f"Task {index}: 'id' must be a string or integer")
+    if "id" in task_data and not _is_positive_integer_id(task_data["id"]):
+        errors.append(
+            f"Task {index}: 'id' must be a positive integer. "
+            f"Got: {task_data['id']!r}. {_TASK_ID_ERROR_HINT}."
+        )
 
     if "predecessors" in task_data:
         if not isinstance(task_data["predecessors"], list):
             errors.append(f"Task {index}: 'predecessors' must be an array")
+        else:
+            for pi, pred in enumerate(task_data["predecessors"]):
+                if not _is_positive_integer_id(pred):
+                    errors.append(
+                        f"Task {index}: predecessors[{pi}] must be a positive "
+                        f"integer. Got: {pred!r}. {_TASK_ID_ERROR_HINT}."
+                    )
 
     if "timeout" in task_data and task_data["timeout"] is not None:
         if not isinstance(task_data["timeout"], int) or task_data["timeout"] < 0:

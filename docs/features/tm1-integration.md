@@ -320,6 +320,42 @@ ExecuteCommand(cmd, 1);
 
 ---
 
+## Detailed Results
+
+By default, when a workflow uses [expandable tasks](../advanced/advanced-task-files.md) (parameters with the `*` suffix), all expansions of one parent task share the same `task_id` and the cube load step collapses them into a single summary row per original `task_id`. This is the only viable behaviour with the cube's `task_id` dimension, but it hides per-execution detail (individual durations, which specific parameter combo failed, retry counts per expansion).
+
+The `--detailed-results` flag (or `detailed_results = true` in `settings.ini` / the taskfile `settings` block) flips this: every executed TI gets its own row in the cube.
+
+### What Changes in the Cube
+
+- **One row per executed TI.** A workflow `[1, 2*(60), 3]` produces 62 rows instead of 3.
+- **Sequential gap-free `task_id`.** All rows are renumbered starting at 1 (`1..62`).
+- **`original_task_id` measure preserves identity.** Every row carries the pre-renumber ID, so the 60 expansions of `2*` all show `original_task_id = "2"`.
+- **`predecessors` references `original_task_id`.** Downstream tasks reconcile fan-in by joining `predecessors` against `original_task_id` in the same view — not against the new `task_id`.
+- **The stats DB is unchanged.** Results in the local SQLite/DynamoDB store remain keyed by the original `task_id`. The renumbering is purely a presentation step at upload time.
+
+The new `original_task_id` measure is added to the `rushti_measure` dimension automatically the next time you run `rushti build` (the upgrade is non-destructive — existing cube data is preserved). The `}rushti.load.results` TI is also rewritten to populate the new column.
+
+### Cross-Run Stability
+
+`task_id` values under detailed-results are **not stable across runs** — if the MDX in an expandable task returns a different number of members between runs, every renumbered ID downstream shifts. This is by design. The stable identity that survives across runs is the workflow definition stored under the `Input` element of the `rushti_run_id` dimension. For cross-run analysis, join through that input snapshot, the `task_signature` field in the stats DB, or the `original_task_id` measure.
+
+### Stage Grouping Recommendation
+
+Assign a unique `stage` value per expandable task so the fan-out groups visually in the cube. Every expansion inherits the parent's stage and lands together in views.
+
+### Dimension Sizing
+
+The `rushti_task_id` dimension defaults to 5,000 members. A workflow whose detailed-results renumbering exceeds 5,000 will fail to load into the cube — extend the dimension before enabling detailed-results on very wide workflows. RushTI does not auto-grow the dimension at upload time and does not perform extra TM1 round-trips to detect this case.
+
+### DAG Visualization Mirrors the Same Behavior
+
+`rushti stats visualize` rebuilds the DAG from the latest run's recorded predecessors. When that run involved expansions, the DAG now renders **one node per executed TI**, suffixing shared `task_id` values (`2.1`, `2.2`, `2.3`) and fanning predecessor edges out to every expansion of the parent. This is the visual analog of `--detailed-results` in the cube: per-execution rows in the cube ↔ per-execution nodes in the DAG.
+
+The stats database is the single source of truth for both the dashboard and the DAG. Editing the workflow definition (in the cube or in a JSON file) without re-running it will **not** refresh either visualization — re-run the workflow to update.
+
+---
+
 ## Customize Further
 
 - **[Statistics & Dashboards](statistics.md)** — The local SQLite database that feeds TM1 integration

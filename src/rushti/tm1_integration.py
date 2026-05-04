@@ -421,8 +421,10 @@ def build_results_dataframe(
     # Build rows for DataFrame
     rows = []
     for result in results:
+        task_id = result.get("task_id", "")
         row = {
-            "task_id": result.get("task_id", ""),
+            "task_id": task_id,
+            "original_task_id": task_id,
             "instance": result.get("instance", ""),
             "process": result.get("process", ""),
             "parameters": result.get("parameters", "{}"),
@@ -445,6 +447,53 @@ def build_results_dataframe(
 
     df = pd.DataFrame(rows)
     logger.debug(f"Built results DataFrame with {len(df)} rows")
+    return df
+
+
+def assign_unique_task_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """Renumber task_id sequentially so every result row has a unique ID.
+
+    Used by ``--detailed-results`` to expose per-execution detail in the cube
+    (one row per executed TI, instead of the summarized view from
+    ``summarize_expanded_tasks``).
+
+    The ``original_task_id`` column is left untouched — callers join on it to
+    reconcile cube rows back to the stats DB, where execution rows remain
+    stored under the original task_id.
+
+    Sort order: rows are ordered by ``(int(original_task_id), start_time)``
+    ascending. Pandas' stable sort preserves insertion order for ties; rows
+    with empty ``start_time`` (whole-group skips) sort last within their
+    group.
+
+    :param df: DataFrame with task results (may have duplicate task_ids
+        from MDX expansion). Must contain an ``original_task_id`` column
+        populated by ``build_results_dataframe``.
+    :return: DataFrame with ``task_id`` rewritten to gap-free integers
+        starting at 1. ``original_task_id`` and all other columns are
+        preserved.
+    """
+    if df.empty:
+        return df
+
+    # ``original_task_id`` is populated unconditionally by build_results_dataframe.
+    # Defensive fallback for callers that bypass that path.
+    if "original_task_id" not in df.columns:
+        df = df.copy()
+        df["original_task_id"] = df["task_id"]
+
+    df = df.copy()
+    df["_original_int"] = pd.to_numeric(df["original_task_id"], errors="coerce")
+    df = df.sort_values(
+        by=["_original_int", "start_time"],
+        kind="stable",
+        na_position="last",
+    ).reset_index(drop=True)
+
+    df["task_id"] = (df.index + 1).astype(str)
+    df = df.drop(columns=["_original_int"])
+
+    logger.info(f"Renumbered {len(df)} rows for detailed-results upload")
     return df
 
 

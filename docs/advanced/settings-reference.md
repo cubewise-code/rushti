@@ -119,6 +119,7 @@ Controls TM1-based read/write integration: reading task files from a TM1 cube an
 |---------|------|---------|-------------|
 | `push_results` | bool | `false` | Upload the results CSV to the TM1 Applications folder after each run. The file is named `rushti_{workflow}_{run_id}.csv` (with `.blb` extension for TM1 < v12). |
 | `auto_load_results` | bool | `false` | After uploading results (requires `push_results = true`), call the `}rushti.load.results` TI process on the target TM1 instance to load the CSV into the rushti cube. Passes `pSourceFile` and `pTargetCube` parameters. The process must exist on the target instance. |
+| `detailed_results` | bool | `false` | Emit one cube row per executed TI when pushing results, instead of summarizing expanded tasks (only meaningful with `push_results = true`). Each row gets a fresh sequential `task_id`; the original IDs are preserved in the new `original_task_id` measure. See [TM1 integration: detailed results](../features/tm1-integration.md#detailed-results). |
 | `default_tm1_instance` | str | *(none)* | Default TM1 instance name (from `config.ini`) used for reading task files and writing results. Required when `push_results` is enabled. |
 | `default_rushti_cube` | str | `rushti` | Name of the TM1 cube for task definitions and execution results. Created by the `rushti build` command. |
 | `default_workflow_dim` | str | `rushti_workflow` | Dimension name for workflow identifiers. |
@@ -128,7 +129,9 @@ Controls TM1-based read/write integration: reading task files from a TM1 cube an
 
 **Overridable via CLI:** `--tm1-instance`, `--workflow` / `-W`
 
-**Overridable via JSON task file:** `push_results`, `auto_load_results`
+**Overridable via CLI:** `--detailed-results`
+
+**Overridable via JSON task file:** `push_results`, `auto_load_results`, `detailed_results`
 
 !!! info "Setting Up TM1 Integration"
     Run `rushti build --tm1-instance <instance>` to create the required dimensions and cube automatically before enabling `push_results`.

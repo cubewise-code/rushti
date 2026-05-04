@@ -10,7 +10,7 @@
   },
   "tasks": [
     {
-      "id": "task_a",
+      "id": "1",
       "instance": "tm1srv01",
       "parameters": {
         "pCube": "Sales",
@@ -19,19 +19,19 @@
       "process": "}bedrock.cube.data.copy"
     },
     {
-      "id": "task_b",
+      "id": "2",
       "instance": "tm1srv01",
       "parameters": {
         "pCube": "Sales",
         "pYear": "2025"
       },
       "predecessors": [
-        "task_a"
+        "1"
       ],
       "process": "}bedrock.cube.data.copy"
     },
     {
-      "id": "task_c",
+      "id": "3",
       "instance": "tm1srv01",
       "parameters": {
         "pCube": "Inventory",
@@ -40,7 +40,7 @@
       "process": "}bedrock.cube.data.copy"
     },
     {
-      "id": "task_d",
+      "id": "4",
       "instance": "tm1srv01",
       "parameters": {
         "pCube": "Inventory",
@@ -49,7 +49,7 @@
       "process": "}bedrock.cube.data.copy"
     },
     {
-      "id": "task_e",
+      "id": "5",
       "instance": "tm1srv01",
       "parameters": {
         "pCube": "Forecast",

@@ -86,6 +86,94 @@ class TestJSONTaskfileValidation(unittest.TestCase):
         self.assertTrue(any("max_workers must be a positive integer" in e for e in errors))
 
 
+class TestNumericTaskIdValidation(unittest.TestCase):
+    """Positive integer task_id rule (matches the rushti_task_id cube dimension)."""
+
+    def _taskfile(self, task_id, predecessors=None):
+        task = {"id": task_id, "instance": "tm1srv01", "process": "test.process"}
+        if predecessors is not None:
+            task["predecessors"] = predecessors
+        return {"version": "2.0", "tasks": [task]}
+
+    # ---------------- accept -----------------
+
+    def test_accepts_json_integer(self):
+        errors = validate_taskfile(self._taskfile(5))
+        self.assertEqual(errors, [])
+
+    def test_accepts_integer_shaped_string(self):
+        errors = validate_taskfile(self._taskfile("5"))
+        self.assertEqual(errors, [])
+
+    def test_accepts_large_integer(self):
+        errors = validate_taskfile(self._taskfile(4999))
+        self.assertEqual(errors, [])
+
+    # ---------------- reject -----------------
+
+    def test_rejects_zero_int(self):
+        errors = validate_taskfile(self._taskfile(0))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_zero_string(self):
+        errors = validate_taskfile(self._taskfile("0"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_negative_int(self):
+        errors = validate_taskfile(self._taskfile(-3))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_leading_zero_string(self):
+        errors = validate_taskfile(self._taskfile("05"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_float(self):
+        errors = validate_taskfile(self._taskfile(5.0))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_alphanumeric_string(self):
+        errors = validate_taskfile(self._taskfile("1a"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_pure_alpha_string(self):
+        errors = validate_taskfile(self._taskfile("abc"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_empty_string(self):
+        # Empty string trips REQUIRED_TASK_PROPERTIES first; the validator emits
+        # the missing-required-property error and short-circuits the id check.
+        errors = validate_taskfile(self._taskfile(""))
+        self.assertTrue(any("Missing required property 'id'" in e for e in errors))
+
+    def test_rejects_boolean_true(self):
+        # bool is a subtype of int in Python; explicitly rejected to avoid
+        # accidental True/False sneaking in via JSON-shape mishaps.
+        errors = validate_taskfile(self._taskfile(True))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_error_message_includes_hint(self):
+        errors = validate_taskfile(self._taskfile("abc"))
+        self.assertTrue(any("rushti_task_id cube dimension" in e for e in errors))
+
+    # ---------------- predecessors -----------------
+
+    def test_rejects_non_integer_predecessor(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=["task-1"]))
+        self.assertTrue(any("predecessors[0]" in e and "positive integer" in e for e in errors))
+
+    def test_rejects_zero_predecessor(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=[0]))
+        self.assertTrue(any("predecessors[0]" in e and "positive integer" in e for e in errors))
+
+    def test_accepts_integer_predecessors(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=[1]))
+        self.assertEqual(errors, [])
+
+    def test_accepts_integer_string_predecessors(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=["1"]))
+        self.assertEqual(errors, [])
+
+
 class TestJSONTaskfileParsing(unittest.TestCase):
     """Tests for JSON task file parsing"""
 

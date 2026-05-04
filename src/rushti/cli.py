@@ -338,6 +338,18 @@ Configuration:
     )
 
     parser.add_argument(
+        "--detailed-results",
+        dest="detailed_results",
+        action="store_true",
+        default=None,
+        help=(
+            "Emit one row per executed TI in the cube results, instead of "
+            "summarizing expansions. Each row gets a fresh sequential task_id "
+            "and the original_task_id measure preserves the pre-renumber identity."
+        ),
+    )
+
+    parser.add_argument(
         "--optimize",
         dest="optimize",
         choices=["longest_first", "shortest_first"],
@@ -410,6 +422,7 @@ def parse_named_arguments(argv: list):
         "tm1_instance": tm1_instance,
         "workflow": workflow,
         "log_level": args.log_level,
+        "detailed_results": args.detailed_results,
     }
 
     return tasks_file_path, cli_args
@@ -1092,6 +1105,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                         connect_to_tm1_instance,
                         build_results_dataframe,
                         summarize_expanded_tasks,
+                        assign_unique_task_ids,
                     )
 
                     tm1_instance = settings.tm1_integration.default_tm1_instance
@@ -1106,7 +1120,10 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                                 workflow,
                                 ctx.execution_logger.run_id if ctx.execution_logger else "",
                             )
-                            results_df = summarize_expanded_tasks(results_df)
+                            if settings.tm1_integration.detailed_results:
+                                results_df = assign_unique_task_ids(results_df)
+                            else:
+                                results_df = summarize_expanded_tasks(results_df)
                             if not results_df.empty:
                                 file_name = upload_results_to_tm1(
                                     tm1_upload,

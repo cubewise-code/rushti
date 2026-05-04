@@ -37,6 +37,7 @@ MEASURE_ELEMENTS = [
     "require_predecessor_success",
     "succeed_on_minor_errors",
     "wait",
+    "original_task_id",
 ]
 
 # Maps element name -> {"inputs": "Y"|"", "results": "Y"|""}
@@ -59,6 +60,7 @@ MEASURE_ATTRIBUTES = {
     "require_predecessor_success": {"inputs": "Y", "results": "Y"},
     "succeed_on_minor_errors": {"inputs": "Y", "results": "Y"},
     "wait": {"inputs": "Y", "results": ""},
+    "original_task_id": {"inputs": "", "results": "Y"},
 }
 
 # ---------------------------------------------------------------------------
@@ -266,6 +268,7 @@ CellPutS(vtimeout, pTargetCube, vworkflow, vrun_id, vtask_id, 'timeout');
 CellPutS(vcancel_at_timeout, pTargetCube, vworkflow, vrun_id, vtask_id, 'cancel_at_timeout');
 CellPutS(vrequire_predecessor_success, pTargetCube, vworkflow, vrun_id, vtask_id, 'require_predecessor_success');
 CellPutS(vsucceed_on_minor_errors, pTargetCube, vworkflow, vrun_id, vtask_id, 'succeed_on_minor_errors');
+CellPutS(voriginal_task_id, pTargetCube, vworkflow, vrun_id, vtask_id, 'original_task_id');
 """
 
 PROCESS_EPILOG = r"""#################################################################################################
@@ -360,6 +363,7 @@ PROCESS_VARIABLES = [
     "vworkflow",
     "vrun_id",
     "vtask_id",
+    "voriginal_task_id",
     "vinstance",
     "vprocess",
     "vparameters",

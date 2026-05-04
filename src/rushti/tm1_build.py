@@ -25,6 +25,7 @@ from TM1py import TM1Service
 from TM1py.Objects import (
     Cube,
     Dimension,
+    Element,
     ElementAttribute,
     Hierarchy,
     MDXView,
@@ -88,6 +89,14 @@ def build_logging_objects(
             results[dim_name] = created
             if created:
                 logger.info(f"Created dimension: {dim_name}")
+            elif dim_name == dim_measure:
+                # Measure dim already exists — additively merge any new elements.
+                # User-owned cube data is preserved (no destructive recreate).
+                added = _merge_measure_dimension_elements(tm1, dim_name)
+                if added:
+                    logger.info(f"Upgraded {dim_name}: added {added} element(s)")
+                else:
+                    logger.debug(f"Dimension exists, no new elements: {dim_name}")
             else:
                 logger.info(f"Dimension exists: {dim_name}")
         except Exception as e:
@@ -249,6 +258,41 @@ def _apply_measure_attributes(tm1: TM1Service, dim_name: str):
 
     if cellset:
         tm1.cells.write_values(f"}}ElementAttributes_{dim_name}", cellset)
+
+
+def _merge_measure_dimension_elements(tm1: TM1Service, dim_name: str) -> int:
+    """Additively merge missing measure elements into an existing dimension.
+
+    Adds any elements present in ``MEASURE_ELEMENTS`` but missing from the
+    live dimension, and writes attribute values for those new elements only.
+    Existing elements and their attribute values are left alone — cube data
+    is user-owned and must not be destroyed by an upgrade.
+
+    :param tm1: TM1Service instance
+    :param dim_name: Name of the measure dimension
+    :return: Number of elements added (0 if dimension is already in sync)
+    """
+    existing = set(tm1.elements.get_element_names(dimension_name=dim_name, hierarchy_name=dim_name))
+    missing = [e for e in MEASURE_ELEMENTS if e not in existing]
+    if not missing:
+        return 0
+
+    for elem_name in missing:
+        tm1.elements.create(
+            dimension_name=dim_name,
+            hierarchy_name=dim_name,
+            element=Element(name=elem_name, element_type="String"),
+        )
+
+    cellset = {}
+    for elem_name in missing:
+        for attr_name, attr_value in MEASURE_ATTRIBUTES.get(elem_name, {}).items():
+            if attr_value:
+                cellset[(elem_name, attr_name)] = attr_value
+    if cellset:
+        tm1.cells.write_values(f"}}ElementAttributes_{dim_name}", cellset)
+
+    return len(missing)
 
 
 # ---------------------------------------------------------------------------
@@ -499,18 +543,20 @@ def _create_mdx_views(
 def _create_process(tm1: TM1Service, process_name: str, force: bool = False) -> bool:
     """Create the }rushti.load.results TI process.
 
+    The TI is application-owned and stateless: every build/upgrade replaces
+    the live process body with the current ``PROCESS_*`` constants. The
+    ``force`` parameter is accepted for signature compatibility but does not
+    change behavior — upgrades are always non-destructive at the cube/data
+    level and overwriting a TI cannot lose user data.
+
     :param tm1: TM1Service instance
     :param process_name: Name of the process
-    :param force: If True, delete and recreate if exists
-    :return: True if created, False if already exists
+    :param force: Accepted for compatibility; TI is always replaced
+    :return: True (always — the live TI is now in sync)
     """
     if tm1.processes.exists(process_name):
-        if force:
-            logger.info(f"Deleting existing process: {process_name}")
-            tm1.processes.delete(process_name)
-        else:
-            logger.debug(f"Process already exists: {process_name}")
-            return False
+        logger.info(f"Replacing existing process: {process_name}")
+        tm1.processes.delete(process_name)
 
     process = Process(
         name=process_name,
