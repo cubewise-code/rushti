@@ -632,6 +632,15 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     # Apply CLI overrides to settings
     settings = get_effective_settings(settings, cli_args=cli_args)
 
+    if settings.tm1_integration.detailed_results:
+        logging.info(
+            "Detailed results enabled: one cube row per executed TI. "
+            "If you upgraded RushTI from an earlier release, run "
+            "'rushti build --tm1-instance <instance>' once to add the "
+            "'original_task_id' measure to the rushti_measure dimension. "
+            "The build is non-destructive — existing cube data is preserved."
+        )
+
     # Extract final values (CLI overrides settings.ini)
     max_workers = (
         cli_args["max_workers"]
