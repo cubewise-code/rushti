@@ -14,10 +14,13 @@ from rushti.tm1_integration import (
     _dataframe_to_task_definitions,
     _parse_bool,
     _parse_parameters_string,
+    _render_parameters_column_for_upload,
+    _render_parameters_inline,
     assign_unique_task_ids,
     build_results_dataframe,
     connect_to_tm1_instance,
     read_taskfile_from_tm1,
+    upload_results_to_tm1,
 )
 
 # Default cube name for testing
@@ -107,6 +110,147 @@ class TestParseParametersString(unittest.TestCase):
         """Test that unmatched quotes return empty dict gracefully."""
         result = _parse_parameters_string('pBad="unclosed')
         self.assertEqual(result, {})
+
+    def test_windows_path_trailing_backslash(self):
+        # Issue #146 regression: a Windows-style path ending in a backslash
+        # inside quotes must parse, not raise/skip.
+        result = _parse_parameters_string('pGoFileDirectory="F:\\Cons\\Go_Files\\"')
+        self.assertEqual(result, {"pGoFileDirectory": "F:\\Cons\\Go_Files\\"})
+
+    def test_full_symptom_line(self):
+        # The exact full line from the bug report — must parse cleanly with
+        # every parameter present.
+        params_str = (
+            'pPeriod*=*"{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}" '
+            'pSegment*=*"{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}" '
+            'pVersion="Working Forecast" '
+            'pGoFileDirectory="F:\\Cons\\Go_Files\\" '
+            'iVerifyClear="0"'
+        )
+        result = _parse_parameters_string(params_str)
+        self.assertEqual(
+            result["pPeriod*"],
+            "*{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}",
+        )
+        self.assertEqual(
+            result["pSegment*"],
+            "*{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}",
+        )
+        self.assertEqual(result["pVersion"], "Working Forecast")
+        self.assertEqual(result["pGoFileDirectory"], "F:\\Cons\\Go_Files\\")
+        self.assertEqual(result["iVerifyClear"], "0")
+
+
+class TestRenderParametersInline(unittest.TestCase):
+    """Tests for _render_parameters_inline — the upload-format helper."""
+
+    def test_empty_dict_returns_empty_string(self):
+        self.assertEqual(_render_parameters_inline({}), "")
+
+    def test_none_returns_empty_string(self):
+        self.assertEqual(_render_parameters_inline(None), "")
+
+    def test_simple_dict_quoted_values(self):
+        # Every value is always double-quoted in the output, regardless of
+        # whether the original input had quotes.
+        result = _render_parameters_inline(
+            {"pWaitSec": "1", "pStrictErrorHandling": "0", "pLogOutput": "1"}
+        )
+        self.assertEqual(result, 'pWaitSec="1" pStrictErrorHandling="0" pLogOutput="1"')
+
+    def test_insertion_order_preserved(self):
+        result = _render_parameters_inline({"z": "1", "a": "2", "m": "3"})
+        self.assertEqual(result, 'z="1" a="2" m="3"')
+
+    def test_value_with_whitespace(self):
+        result = _render_parameters_inline({"pVersion": "Working Forecast"})
+        self.assertEqual(result, 'pVersion="Working Forecast"')
+
+    def test_numeric_value_coerced_to_string(self):
+        result = _render_parameters_inline({"pLogOutput": 1})
+        self.assertEqual(result, 'pLogOutput="1"')
+
+    def test_value_with_double_quote_logs_warning(self):
+        # Logger warning fires once per offending parameter; value emitted
+        # as-is between the surrounding quotes (broken output user can spot).
+        # Patch the module-level logger directly so the test is independent
+        # of any global log-level/propagation state.
+        with patch("rushti.tm1_integration.logger") as mock_logger:
+            result = _render_parameters_inline({"pName": 'has "quotes"'}, task_id="42")
+
+        self.assertEqual(result, 'pName="has "quotes""')
+        mock_logger.warning.assert_called_once()
+        warning_args = mock_logger.warning.call_args.args
+        # Format string + (key, task_id) — verify both surface in the call.
+        self.assertIn("pName", warning_args)
+        self.assertIn("42", warning_args)
+
+    def test_json_string_input_parsed_to_inline(self):
+        # _render_parameters_inline accepts JSON strings for convenience.
+        result = _render_parameters_inline('{"a": "1", "b": "2"}')
+        self.assertEqual(result, 'a="1" b="2"')
+
+
+class TestRenderParametersColumnForUpload(unittest.TestCase):
+    """Tests for the upload-boundary wrapper that handles summary shapes."""
+
+    def test_plain_dict_renders_inline(self):
+        result = _render_parameters_column_for_upload('{"pMonth": "Jan"}')
+        self.assertEqual(result, 'pMonth="Jan"')
+
+    def test_empty_string_returns_empty(self):
+        self.assertEqual(_render_parameters_column_for_upload(""), "")
+
+    def test_empty_json_dict_returns_empty(self):
+        self.assertEqual(_render_parameters_column_for_upload("{}"), "")
+
+    def test_summarize_expanded_shape(self):
+        # summarize_expanded_tasks wraps multiple param sets in
+        # {"expanded": N, "parameters": [...]}; render each inline, join
+        # with "; ".
+        summary = '{"expanded": 3, "parameters": [{"pMonth": "Jan"}, {"pMonth": "Feb"}, {"pMonth": "Mar"}]}'
+        result = _render_parameters_column_for_upload(summary)
+        self.assertEqual(result, 'pMonth="Jan"; pMonth="Feb"; pMonth="Mar"')
+
+    def test_non_json_string_passes_through(self):
+        # If the cell was already in inline form (unexpected but defensible),
+        # leave it alone.
+        result = _render_parameters_column_for_upload('pAlready="inline"')
+        self.assertEqual(result, 'pAlready="inline"')
+
+
+class TestUploadResultsToTM1ParameterFormat(unittest.TestCase):
+    """The Parameters column in the uploaded CSV must be inline, not JSON."""
+
+    def _df_from_parameters(self, parameters):
+        return pd.DataFrame(
+            [
+                {
+                    "task_id": "1",
+                    "instance": "tm1srv01",
+                    "process": "p",
+                    "parameters": parameters,
+                    "status": "Success",
+                }
+            ]
+        )
+
+    def test_dict_parameters_uploaded_inline(self):
+        import csv
+        import io
+
+        df = self._df_from_parameters(
+            '{"pWaitSec": "1", "pStrictErrorHandling": "0", "pLogOutput": "1"}'
+        )
+        mock_tm1 = MagicMock()
+        upload_results_to_tm1(mock_tm1, "wf", "run1", df)
+
+        file_content = mock_tm1.files.create.call_args.kwargs["file_content"]
+        rows = list(csv.DictReader(io.StringIO(file_content.decode("utf-8"))))
+        self.assertEqual(
+            rows[0]["parameters"],
+            'pWaitSec="1" pStrictErrorHandling="0" pLogOutput="1"',
+        )
 
 
 class TestConnectToTM1Instance(unittest.TestCase):

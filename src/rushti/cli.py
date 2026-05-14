@@ -1117,10 +1117,14 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                         assign_unique_task_ids,
                     )
 
-                    tm1_instance = settings.tm1_integration.default_tm1_instance
-                    if tm1_instance:
+                    # CLI --tm1-instance wins over default_tm1_instance for every
+                    # TM1 operation in this run (taskfile read, results push,
+                    # auto_load_results). Silent precedence — no extra warning
+                    # when CLI overrides default.
+                    upload_instance = tm1_instance or settings.tm1_integration.default_tm1_instance
+                    if upload_instance:
                         tm1_upload = connect_to_tm1_instance(
-                            tm1_instance,
+                            upload_instance,
                             CONFIG,
                         )
                         try:
@@ -1156,13 +1160,13 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                                     )
                                     logger.info(
                                         "Executed }rushti.load.results on %s",
-                                        tm1_instance,
+                                        upload_instance,
                                     )
                                     if not success:
                                         logger.warning(
                                             "auto_load_results: Failed to execute "
                                             "}rushti.load.results on %s: %s",
-                                            tm1_instance,
+                                            upload_instance,
                                             status,
                                         )
                         finally:

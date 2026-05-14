@@ -403,8 +403,10 @@ class TestParseLineArguments(unittest.TestCase):
         }
         self.assertEqual(result, expected)
 
-    def test_nested_double_quotes(self):
-        line = 'instance=tm1 process=process1 param1="value with \\"quotes\\"" param2="simple"'
+    def test_double_quotes_inside_single_quoted_value(self):
+        # Backslash is now literal, so the way to embed a double quote in a
+        # value is to wrap the value in single quotes.
+        line = "instance=tm1 process=process1 param1='value with \"quotes\"' param2='simple'"
         result = parse_line_arguments(line)
         expected = {
             "instance": "tm1",
@@ -414,26 +416,55 @@ class TestParseLineArguments(unittest.TestCase):
         }
         self.assertEqual(result, expected)
 
-    def test_backslashes(self):
+    def test_backslashes_are_literal(self):
+        # Each `\\` in the raw string source is a literal pair of backslashes
+        # in the actual input. The new parser preserves them verbatim — no
+        # POSIX escape collapsing.
         line = r'instance=tm1 process=process1 param1="value\\with\\backslashes" param2="normal"'
         result = parse_line_arguments(line)
         expected = {
             "instance": "tm1",
             "process": "process1",
-            "param1": r"value\with\backslashes",
+            "param1": r"value\\with\\backslashes",
             "param2": "normal",
         }
         self.assertEqual(result, expected)
 
-    def test_complex_nested_quotes(self):
-        line = r'instance=tm1 process=process1 param1="outer \"inner \\\"deepest\\\" inner\" outer"'
+    def test_windows_path_trailing_backslash(self):
+        # Issue #146 regression: a Windows path ending in a single backslash
+        # inside double quotes must parse as the literal path, not trip the
+        # quoting check.
+        line = 'pGoFileDirectory="F:\\Cons\\Go_Files\\" iVerifyClear="0"'
         result = parse_line_arguments(line)
-        expected = {
-            "instance": "tm1",
-            "process": "process1",
-            "param1": 'outer "inner \\"deepest\\" inner" outer',
-        }
-        self.assertEqual(result, expected)
+        # Path preserved verbatim, single trailing backslash intact.
+        self.assertEqual(result["pGoFileDirectory"], "F:\\Cons\\Go_Files\\")
+        self.assertEqual(result["iVerifyClear"], "0")
+
+    def test_mixed_mdx_and_windows_path(self):
+        # Symptom line from the bug report — exercises wildcard MDX, quoted
+        # spaces, a Windows path with trailing backslash, and a bare numeric
+        # value all together. Must parse cleanly with no warnings dropped.
+        line = (
+            'pPeriod*=*"{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}" '
+            'pSegment*=*"{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}" '
+            'pVersion="Working Forecast" '
+            'pGoFileDirectory="F:\\Cons\\Go_Files\\" '
+            'iVerifyClear="0"'
+        )
+        result = parse_line_arguments(line)
+        # Wildcard keys keep their `*` suffix and values keep their `*` prefix
+        # (consumed later by parsing.expand_task).
+        self.assertEqual(
+            result["pPeriod*"],
+            "*{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}",
+        )
+        self.assertEqual(
+            result["pSegment*"],
+            "*{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}",
+        )
+        self.assertEqual(result["pVersion"], "Working Forecast")
+        self.assertEqual(result["pGoFileDirectory"], "F:\\Cons\\Go_Files\\")
+        self.assertEqual(result["iVerifyClear"], "0")
 
     def test_predecessors_and_require_predecessor_success(self):
         line = 'id=1 instance=tm1 process=process1 predecessors="2,3,4" require_predecessor_success="true"'
@@ -448,8 +479,16 @@ class TestParseLineArguments(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_sql_query_parsing(self):
+        # Under the new literal-backslash semantics, the way to embed a
+        # double-quote in a value is to wrap that value in single quotes
+        # instead of relying on `\"` escapes.
         self.maxDiff = None
-        line = 'id="1" predecessors="" require_predecessor_success="" instance="tm1srv01" process="}bedrock.server.query" pQuery="SELECT Id,IsDeleted FROM Account WHERE date=\\"20241031092120\\"" pParam2="" pParam3="testing\\"2\\""'
+        line = (
+            'id="1" predecessors="" require_predecessor_success="" '
+            'instance="tm1srv01" process="}bedrock.server.query" '
+            "pQuery='SELECT Id,IsDeleted FROM Account WHERE date=\"20241031092120\"' "
+            'pParam2="" pParam3=\'testing"2"\''
+        )
         result = parse_line_arguments(line)
         expected = {
             "id": "1",

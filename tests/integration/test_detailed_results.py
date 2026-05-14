@@ -157,6 +157,12 @@ class TestDetailedResultsFalseSummarizes(unittest.TestCase):
         # Task 2 is the expansion summary — partial because one of three failed.
         summary = next(r for r in rows if r["task_id"] == "2")
         self.assertIn("Partial", summary["status"])
+        # Parameters cell renders the expansion summary as inline strings
+        # joined with "; " (one inline group per expansion).
+        self.assertEqual(
+            summary["parameters"],
+            'pMonth="Jan"; pMonth="Feb"; pMonth="Mar"',
+        )
         # original_task_id present for every row, equal to task_id (no renumbering).
         for row in rows:
             self.assertEqual(row["original_task_id"], row["task_id"])
@@ -185,6 +191,13 @@ class TestDetailedResultsTrueRenumbers(unittest.TestCase):
         self.assertEqual(
             [r["original_task_id"] for r in rows],
             ["1", "2", "2", "2", "3"],
+        )
+
+        # Parameters column is rendered inline (matching the input cube
+        # format), not as JSON dicts. Empty params render as empty string.
+        self.assertEqual(
+            [r["parameters"] for r in rows],
+            ["", 'pMonth="Jan"', 'pMonth="Feb"', 'pMonth="Mar"', ""],
         )
 
         # predecessors column references original task IDs, not renumbered ones.

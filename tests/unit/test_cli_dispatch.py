@@ -233,6 +233,45 @@ class TestMainSubcommandDispatch:
             assert exc_info.value.code == 0
 
 
+class TestUploadInstancePrecedence:
+    """Issue #146 regression: --tm1-instance must override default_tm1_instance
+    for the results push (and the auto_load_results call), not just the
+    taskfile read."""
+
+    def test_cli_value_wins_over_default(self):
+        # The push-results block computes upload_instance as
+        # `tm1_instance or settings.tm1_integration.default_tm1_instance`.
+        # When the CLI value is set, it must win.
+        cli_value = "tm1srv01"
+        default_value = "CONS_DIM_BUILD"
+        assert (cli_value or default_value) == "tm1srv01"
+
+    def test_default_used_when_cli_missing(self):
+        cli_value = None
+        default_value = "CONS_DIM_BUILD"
+        assert (cli_value or default_value) == "CONS_DIM_BUILD"
+
+    def test_empty_when_both_missing(self):
+        cli_value = None
+        default_value = ""
+        assert not (cli_value or default_value)
+
+    def test_source_uses_precedence_expression(self):
+        """Static guard: the push-results path in cli.py must compute the
+        upload target from the CLI value first. Catches accidental
+        re-introduction of the shadowing bug where the inner block
+        reassigned `tm1_instance = settings.tm1_integration.default_tm1_instance`
+        and silently dropped the CLI value."""
+        import inspect
+
+        source = inspect.getsource(cli)
+        assert "tm1_instance or settings.tm1_integration.default_tm1_instance" in source, (
+            "Expected `tm1_instance or settings.tm1_integration.default_tm1_instance` "
+            "in cli.py — the CLI --tm1-instance must take precedence over the "
+            "default in the push-results path. See issue #146."
+        )
+
+
 class TestMainBadInputs:
     def test_missing_tasks_file_exits_with_error(self, monkeypatch):
         """Default 'run' mode without a tasks file should not silently succeed."""

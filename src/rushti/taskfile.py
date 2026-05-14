@@ -8,11 +8,11 @@ This module provides:
 
 import json
 import logging
-import shlex
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from rushti._shlex_utils import shlex_split_literal_backslashes
 from rushti.messages import TRUE_VALUES
 
 logger = logging.getLogger(__name__)
@@ -553,17 +553,17 @@ def detect_execution_mode(file_path: Union[str, Path]) -> str:
 def parse_line_arguments(line: str) -> Dict[str, Any]:
     """Parse a task definition line into a dictionary of arguments.
 
-    Handles key=value pairs with proper escaping via shlex. Boolean-like
-    values for known keys (e.g. ``safe_retry``, ``succeed_on_minor_errors``)
-    are automatically converted.
+    Handles key=value pairs and treats backslash as a literal character so
+    Windows-style paths (e.g. ``F:\\Cons\\Go_Files\\``) survive intact.
+    Boolean-like values for known keys (e.g. ``safe_retry``,
+    ``succeed_on_minor_errors``) are automatically converted.
 
     :param line: Single line from a TXT task file
     :return: Dictionary of parsed arguments
     """
     line_arguments = {}
 
-    # Use shlex to split the line with posix=True for proper escaping
-    parts = shlex.split(line, posix=True)
+    parts = shlex_split_literal_backslashes(line)
 
     for part in parts:
         if "=" not in part:
