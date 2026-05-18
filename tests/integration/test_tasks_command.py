@@ -233,7 +233,7 @@ class TestTasksPushToTM1(unittest.TestCase):
             "settings": {"max_workers": 4, "retries": 2},
             "tasks": [
                 {
-                    "id": "extract-1",
+                    "id": 1,
                     "instance": self.tm1_instance,
                     "process": "}bedrock.server.wait",
                     "parameters": {"pWaitSec": "1"},
@@ -241,11 +241,11 @@ class TestTasksPushToTM1(unittest.TestCase):
                     "safe_retry": True,
                 },
                 {
-                    "id": "transform-1",
+                    "id": 2,
                     "instance": self.tm1_instance,
                     "process": "}bedrock.server.wait",
                     "parameters": {"pWaitSec": "2"},
-                    "predecessors": ["extract-1"],
+                    "predecessors": [1],
                     "stage": "Transform",
                 },
             ],
@@ -282,12 +282,12 @@ class TestTasksPushToTM1(unittest.TestCase):
 
                 # Verify task properties
                 task1 = retrieved_data["tasks"][0]
-                self.assertEqual(task1["id"], "extract-1")
+                self.assertEqual(task1["id"], 1)
                 self.assertEqual(task1["stage"], "Extract")
                 self.assertTrue(task1["safe_retry"])
 
                 task2 = retrieved_data["tasks"][1]
-                self.assertEqual(task2["predecessors"], ["extract-1"])
+                self.assertEqual(task2["predecessors"], [1])
 
                 # Cleanup
                 tm1.files.delete(file_name)

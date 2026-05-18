@@ -456,8 +456,12 @@ def _visualize_dag_html(
     :param title: Title for the HTML page
     :return: Path to the generated HTML file
     """
-    # Stage colors for visual distinction (dark theme optimized)
-    stage_colors = {
+    # Stage colors. Known stage names get a curated hue; unknown ones receive
+    # an auto-assigned color from the fallback palette (sorted by stage name
+    # for deterministic per-render assignment) so workflows with custom
+    # stage names — ``transfer``, ``calc``, etc. — render distinctly instead
+    # of all collapsing to the default gray.
+    _CURATED_STAGE_COLORS = {
         "extract": "#3b82f6",  # blue
         "load": "#10b981",  # green
         "input": "#f59e0b",  # amber
@@ -465,9 +469,56 @@ def _visualize_dag_html(
         "export": "#ec4899",  # pink
         "import": "#06b6d4",  # cyan
         "reporting": "#6366f1",  # indigo
-        "NoStage": "#6b7280",  # gray
-        "default": "#6b7280",  # gray
     }
+    _FALLBACK_STAGE_PALETTE = [
+        "#ef4444",  # red
+        "#14b8a6",  # teal
+        "#f97316",  # orange
+        "#84cc16",  # lime
+        "#a855f7",  # violet
+        "#0ea5e9",  # sky
+        "#22c55e",  # emerald
+        "#eab308",  # yellow
+        "#d946ef",  # fuchsia
+        "#0891b2",  # dark cyan
+        "#dc2626",  # dark red
+        "#7c3aed",  # dark purple
+        "#059669",  # dark green
+        "#ea580c",  # dark orange
+    ]
+
+    stage_colors = {"NoStage": "#6b7280", "default": "#6b7280"}
+    unknown_stages = sorted(
+        {
+            (task.stage if task.stage else "NoStage")
+            for task in tasks_by_id.values()
+            if task.stage and task.stage not in _CURATED_STAGE_COLORS
+        }
+    )
+    for known_name, hex_color in _CURATED_STAGE_COLORS.items():
+        stage_colors[known_name] = hex_color
+    for idx, stage_name in enumerate(unknown_stages):
+        stage_colors[stage_name] = _FALLBACK_STAGE_PALETTE[idx % len(_FALLBACK_STAGE_PALETTE)]
+
+    # Topological depth per node. vis.js's auto-sort sometimes places root
+    # nodes (no predecessors) closer to their dependents instead of the
+    # leftmost column; pinning ``level`` explicitly forces every same-depth
+    # node into the same column.
+    levels: Dict[str, int] = {nid: 0 for nid in tasks_by_id}
+    in_degree: Dict[str, int] = {
+        nid: sum(1 for p in t.predecessors if p in tasks_by_id) for nid, t in tasks_by_id.items()
+    }
+    queue = [nid for nid, deg in in_degree.items() if deg == 0]
+    while queue:
+        nid = queue.pop(0)
+        for child in adjacency.get(nid, []):
+            if child not in levels:
+                continue
+            if levels[nid] + 1 > levels[child]:
+                levels[child] = levels[nid] + 1
+            in_degree[child] -= 1
+            if in_degree[child] == 0:
+                queue.append(child)
 
     # Build nodes list for vis.js with all data needed for all views
     nodes = []
@@ -508,6 +559,7 @@ def _visualize_dag_html(
         nodes.append(
             {
                 "id": task_id,
+                "level": levels.get(task_id, 0),
                 "label": compact_label,
                 "compactLabel": compact_label,
                 "detailedLabel": detailed_label,
@@ -836,10 +888,30 @@ def visualize_dag_from_db_results(
     tasks_by_id: Dict[str, "TaskDefinition"] = {}
     adjacency: Dict[str, List[str]] = {}
 
-    for tr in task_results:
-        task_id = tr.get("task_id")
-        if not task_id or task_id in tasks_by_id:
+    # Each row in task_results is ONE executed TI. When a task expanded via MDX
+    # wildcards, the DB has multiple rows sharing one task_id. Render each row
+    # as its own node so the DAG reflects what actually ran. Suffix shared IDs
+    # (``2.1``, ``2.2``, ``2.3``) to keep node identifiers unique for vis.js.
+    rows_by_original: Dict[str, List[int]] = {}
+    for idx, tr in enumerate(task_results):
+        orig = str(tr.get("task_id") or "")
+        if not orig:
             continue
+        rows_by_original.setdefault(orig, []).append(idx)
+
+    unique_id_for_row: Dict[int, str] = {}
+    for orig, indices in rows_by_original.items():
+        if len(indices) == 1:
+            unique_id_for_row[indices[0]] = orig
+        else:
+            for n, idx in enumerate(indices, start=1):
+                unique_id_for_row[idx] = f"{orig}.{n}"
+
+    for idx, tr in enumerate(task_results):
+        if idx not in unique_id_for_row:
+            continue
+
+        node_id = unique_id_for_row[idx]
 
         params = tr.get("parameters")
         if isinstance(params, str):
@@ -849,27 +921,33 @@ def visualize_dag_from_db_results(
                 params = {}
         params = params or {}
 
-        predecessors = tr.get("predecessors")
-        if isinstance(predecessors, str):
+        raw_preds = tr.get("predecessors")
+        if isinstance(raw_preds, str):
             try:
-                predecessors = json.loads(predecessors)
+                raw_preds = json.loads(raw_preds)
             except Exception:
-                predecessors = []
-        predecessors = predecessors or []
+                raw_preds = []
+        raw_preds = raw_preds or []
 
-        tasks_by_id[task_id] = TaskDefinition(
-            id=task_id,
+        # Predecessors in the DB reference the ORIGINAL task_id. Fan them out
+        # to every expansion of that parent so each child correctly waits on
+        # all parent executions in the rendered graph.
+        expanded_preds: List[str] = []
+        for pred_orig in raw_preds:
+            for parent_idx in rows_by_original.get(str(pred_orig), []):
+                expanded_preds.append(unique_id_for_row[parent_idx])
+
+        tasks_by_id[node_id] = TaskDefinition(
+            id=node_id,
             instance=tr.get("instance") or "",
             process=tr.get("process") or "",
             parameters=params,
-            predecessors=predecessors,
+            predecessors=expanded_preds,
             stage=tr.get("stage"),
         )
 
-        for pred in predecessors:
-            if pred not in adjacency:
-                adjacency[pred] = []
-            adjacency[pred].append(task_id)
+        for pred in expanded_preds:
+            adjacency.setdefault(pred, []).append(node_id)
 
     output_path_obj = Path(output_path)
     output_base = (

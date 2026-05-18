@@ -105,6 +105,71 @@ id=4 instance=tm1srv01 process=Load.Cube pYear=2026 predecessors=3
 
 ---
 
+## Numeric `task_id` Required {#numeric-task_id-required}
+
+Starting with the version that introduces `--detailed-results`, the JSON taskfile schema rejects non-integer `task_id` values. RushTI was always intended to use numeric IDs — the `rushti_task_id` cube dimension is pre-populated with integer-named elements `"1".."5000"` and result rows can only land in the cube if their `task_id` matches an element. Earlier releases were lax about this; the validator now enforces it explicitly.
+
+**Accepted forms:**
+
+- JSON integer: `"id": 5`
+- Integer-shaped string: `"id": "5"`
+
+**Rejected (now raises a `TaskfileValidationError` at parse time):**
+
+| Bad value | Reason |
+|-----------|--------|
+| `"id": 0` | Zero is not a positive integer; cube dimension starts at 1 |
+| `"id": -3` | Negatives have no cube element |
+| `"id": "05"` | Leading-zero strings don't match the integer-named cube elements (`"5"` not `"05"`) |
+| `"id": 5.0` | Floats are not integers |
+| `"id": "task-1"` | Non-integer string |
+| `"id": "abc"` | Non-integer string |
+
+The same rule applies to entries in `predecessors`.
+
+### How to Migrate Legacy Taskfiles
+
+If your taskfile uses string IDs like `"task-1"`, `"extract-load"`, or `"e1"`, rewrite them as integers (`1`, `2`, `3`, ...) and update every `predecessors` reference accordingly. The order doesn't matter — pick whatever sequence is convenient.
+
+```json
+// Before
+{
+  "tasks": [
+    {"id": "extract-1", "instance": "tm1srv01", "process": "..." },
+    {"id": "transform-1", "predecessors": ["extract-1"], "instance": "tm1srv01", "process": "..." }
+  ]
+}
+
+// After
+{
+  "tasks": [
+    {"id": 1, "instance": "tm1srv01", "process": "..." },
+    {"id": 2, "predecessors": [1], "instance": "tm1srv01", "process": "..." }
+  ]
+}
+```
+
+The error message you'll see if validation fails:
+
+```
+Task file validation failed:
+  - Task 0: 'id' must be a positive integer. Got: 'extract-1'. Task IDs must be positive integers (the rushti_task_id cube dimension uses integer member names).
+```
+
+---
+
+## TM1 Model Auto-Upgrade
+
+`rushti build` is now non-destructive by default. When you upgrade RushTI to a release that adds new measure elements (e.g. `original_task_id`), the next `rushti build --tm1-instance <inst>` patches the existing model in place:
+
+- **Dimensions.** Missing measure elements are added; existing elements and their attribute values are left alone. Cube data is preserved.
+- **`}rushti.load.results`.** The TI process is application-owned and is always replaced with the latest body — TI processes are stateless, so this is safe.
+- **`--force`.** Still wipes and rebuilds dimensions and the cube (data loss). Use only on dev/test environments.
+
+You don't need a separate command — bare `rushti build` does the right thing. CI/CD pipelines that run `rushti build` on every release continue to work across version upgrades without manual intervention.
+
+---
+
 ## Step-by-Step Migration
 
 ### Phase 1: Install and Verify (Day 1)

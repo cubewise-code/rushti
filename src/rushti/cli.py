@@ -338,6 +338,18 @@ Configuration:
     )
 
     parser.add_argument(
+        "--detailed-results",
+        dest="detailed_results",
+        action="store_true",
+        default=None,
+        help=(
+            "Emit one row per executed TI in the cube results, instead of "
+            "summarizing expansions. Each row gets a fresh sequential task_id "
+            "and the original_task_id measure preserves the pre-renumber identity."
+        ),
+    )
+
+    parser.add_argument(
         "--optimize",
         dest="optimize",
         choices=["longest_first", "shortest_first"],
@@ -410,6 +422,7 @@ def parse_named_arguments(argv: list):
         "tm1_instance": tm1_instance,
         "workflow": workflow,
         "log_level": args.log_level,
+        "detailed_results": args.detailed_results,
     }
 
     return tasks_file_path, cli_args
@@ -618,6 +631,15 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
 
     # Apply CLI overrides to settings
     settings = get_effective_settings(settings, cli_args=cli_args)
+
+    if settings.tm1_integration.detailed_results:
+        logging.info(
+            "Detailed results enabled: one cube row per executed TI. "
+            "If you upgraded RushTI from an earlier release, run "
+            "'rushti build --tm1-instance <instance>' once to add the "
+            "'original_task_id' measure to the rushti_measure dimension. "
+            "The build is non-destructive — existing cube data is preserved."
+        )
 
     # Extract final values (CLI overrides settings.ini)
     max_workers = (
@@ -1092,12 +1114,17 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                         connect_to_tm1_instance,
                         build_results_dataframe,
                         summarize_expanded_tasks,
+                        assign_unique_task_ids,
                     )
 
-                    tm1_instance = settings.tm1_integration.default_tm1_instance
-                    if tm1_instance:
+                    # CLI --tm1-instance wins over default_tm1_instance for every
+                    # TM1 operation in this run (taskfile read, results push,
+                    # auto_load_results). Silent precedence — no extra warning
+                    # when CLI overrides default.
+                    upload_instance = tm1_instance or settings.tm1_integration.default_tm1_instance
+                    if upload_instance:
                         tm1_upload = connect_to_tm1_instance(
-                            tm1_instance,
+                            upload_instance,
                             CONFIG,
                         )
                         try:
@@ -1106,7 +1133,10 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                                 workflow,
                                 ctx.execution_logger.run_id if ctx.execution_logger else "",
                             )
-                            results_df = summarize_expanded_tasks(results_df)
+                            if settings.tm1_integration.detailed_results:
+                                results_df = assign_unique_task_ids(results_df)
+                            else:
+                                results_df = summarize_expanded_tasks(results_df)
                             if not results_df.empty:
                                 file_name = upload_results_to_tm1(
                                     tm1_upload,
@@ -1130,13 +1160,13 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                                     )
                                     logger.info(
                                         "Executed }rushti.load.results on %s",
-                                        tm1_instance,
+                                        upload_instance,
                                     )
                                     if not success:
                                         logger.warning(
                                             "auto_load_results: Failed to execute "
                                             "}rushti.load.results on %s: %s",
-                                            tm1_instance,
+                                            upload_instance,
                                             status,
                                         )
                         finally:

@@ -29,8 +29,10 @@ TXT files are the simplest way to get started. Each line is a task, and you have
     id="4" predecessors="1,3" instance="tm1srv01" process="}bedrock.server.wait" pWaitSec=3
     ```
 
-!!! tip "Use integer IDs"
-    Always use integers (`"1"`, `"2"`, `"3"`, ...) for task IDs. This keeps things simple and is required if you plan to use [expandable parameters](../advanced/advanced-task-files.md) with MDX expressions.
+!!! warning "Task IDs must be positive integers"
+    `id` must be a positive integer (`1`, `2`, `3`, ...) — either a JSON integer (`"id": 1`) or an integer-shaped string (`"id": "1"`). Zero, negatives, leading-zero strings (`"05"`), floats, and non-numeric strings (`"task-1"`, `"abc"`) are rejected at parse time. Predecessors must follow the same rule.
+
+    The reason is concrete: the `rushti_task_id` cube dimension is pre-populated with integer-named elements `"1".."5000"`. Result rows can only land in the cube if their `task_id` matches an existing dimension element. See the [migration guide](../advanced/migration-guide.md) if you have legacy taskfiles using string IDs.
 
 ---
 

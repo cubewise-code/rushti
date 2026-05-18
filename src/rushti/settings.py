@@ -68,6 +68,7 @@ class TM1IntegrationSettings:
 
     push_results: bool = False
     auto_load_results: bool = False
+    detailed_results: bool = False
     default_tm1_instance: Optional[str] = None
     default_rushti_cube: str = "rushti"
     default_workflow_dim: str = "rushti_workflow"
@@ -153,6 +154,7 @@ SETTINGS_SCHEMA = {
     "tm1_integration": {
         "push_results": bool,
         "auto_load_results": bool,
+        "detailed_results": bool,
         "default_tm1_instance": str,
         "default_rushti_cube": str,
         "default_workflow_dim": str,
@@ -416,6 +418,7 @@ def _apply_json_settings(settings: Settings, json_settings: Dict[str, Any]) -> N
         "exclusive": ("exclusive_mode", "enabled"),
         "push_results": ("tm1_integration", "push_results"),
         "auto_load_results": ("tm1_integration", "auto_load_results"),
+        "detailed_results": ("tm1_integration", "detailed_results"),
     }
 
     for json_key, (section, attr) in json_to_settings.items():
@@ -438,6 +441,7 @@ def _apply_cli_args(settings: Settings, cli_args: Dict[str, Any]) -> None:
         "retries": ("defaults", "retries"),
         "output_file": ("defaults", "result_file"),
         "execution_mode": ("defaults", "mode"),
+        "detailed_results": ("tm1_integration", "detailed_results"),
     }
 
     for cli_key, (section, attr) in cli_to_settings.items():

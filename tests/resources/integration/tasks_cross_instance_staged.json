@@ -6,33 +6,46 @@
   },
   "tasks": [
     {
-      "id": "extract-v11",
+      "id": 1,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "1"},
+      "parameters": {
+        "pWaitSec": "1"
+      },
       "stage": "Extract"
     },
     {
-      "id": "extract-v12",
+      "id": 2,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "1"},
+      "parameters": {
+        "pWaitSec": "1"
+      },
       "stage": "Extract"
     },
     {
-      "id": "transform-v11",
+      "id": 3,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "1"},
-      "predecessors": ["extract-v11", "extract-v12"],
+      "parameters": {
+        "pWaitSec": "1"
+      },
+      "predecessors": [
+        1,
+        2
+      ],
       "stage": "Transform"
     },
     {
-      "id": "load-v12",
+      "id": 4,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "1"},
-      "predecessors": ["transform-v11"],
+      "parameters": {
+        "pWaitSec": "1"
+      },
+      "predecessors": [
+        3
+      ],
       "stage": "Load"
     }
   ]

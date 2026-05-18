@@ -403,19 +403,11 @@ def generate_dashboard(
     )
     data_json = json.dumps(data, default=str)
 
-    # Build conditional DAG link HTML
+    # Build conditional DAG link HTML — styled via .dag-link CSS class so it
+    # sits cleanly inside the header without inline-style cramming.
     dag_link_html = ""
     if dag_url:
-        dag_link_html = (
-            f'<a href="{dag_url}" style="display:inline-flex;'
-            f"align-items:center;gap:6px;padding:8px 16px;"
-            f"background:#00AEEF;color:white;border-radius:8px;"
-            f"font-size:0.85rem;font-weight:500;text-decoration:none;"
-            f'transition:all 0.3s ease;" '
-            f"onmouseover=\"this.style.boxShadow='0 4px 12px rgba(0,174,239,0.3)'\" "
-            f"onmouseout=\"this.style.boxShadow='none'\">"
-            f"View DAG &#8594;</a>"
-        )
+        dag_link_html = f'<a class="dag-link" href="{dag_url}">' f"View DAG &#8594;</a>"
 
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -436,11 +428,12 @@ def generate_dashboard(
         }}
         .dashboard {{ max-width: 1440px; margin: 0 auto; padding: 24px; }}
 
-        /* Header */
+        /* Header — two rows: top row holds title + primary action,
+           bottom row holds workflow/run controls and the generated-at meta. */
         .header {{
             display: flex;
-            align-items: center;
-            justify-content: space-between;
+            flex-direction: column;
+            gap: 14px;
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
             border-radius: 12px;
@@ -448,11 +441,29 @@ def generate_dashboard(
             margin-bottom: 24px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }}
-        .header-left {{ display: flex; align-items: center; gap: 16px; }}
-        .header-left svg {{ height: 32px; width: auto; }}
+        .header-row {{
+            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+        }}
+        .header-row-top {{ justify-content: space-between; }}
+        .header-row-controls {{
+            border-top: 1px solid #F1F5F9; padding-top: 14px;
+        }}
+        .header-left {{ display: flex; align-items: center; gap: 16px; min-width: 0; }}
+        .header-left svg {{ height: 32px; width: auto; flex-shrink: 0; }}
         .header-title {{ font-size: 1.5rem; font-weight: 700; color: #1E293B; }}
         .header-subtitle {{ font-size: 0.85rem; color: #64748B; margin-top: 2px; }}
-        .header-right {{ display: flex; align-items: center; gap: 16px; }}
+        .dag-link {{
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #00AEEF; color: #FFFFFF; border-radius: 8px;
+            padding: 9px 18px; font-size: 0.85rem; font-weight: 600;
+            text-decoration: none; white-space: nowrap;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }}
+        .dag-link:hover {{
+            box-shadow: 0 4px 14px rgba(0,174,239,0.35);
+            transform: translateY(-1px);
+        }}
         .run-selector {{
             display: flex; align-items: center; gap: 8px;
             background: #F1F5F9; border-radius: 8px; padding: 8px 12px;
@@ -465,7 +476,10 @@ def generate_dashboard(
             padding: 4px 24px 4px 8px; cursor: pointer;
             appearance: auto;
         }}
-        .generated-at {{ font-size: 0.75rem; color: #94A3B8; }}
+        .generated-at {{
+            font-size: 0.75rem; color: #94A3B8;
+            margin-left: auto; white-space: nowrap;
+        }}
 
         /* Metadata bar */
         .metadata {{
@@ -647,15 +661,17 @@ def generate_dashboard(
 <body>
     <div class="dashboard">
         <div class="header">
-            <div class="header-left">
-                {_LOGO_SVG}
-                <div>
-                    <div class="header-title">Performance Dashboard</div>
-                    <div class="header-subtitle" id="headerSubtitle"></div>
+            <div class="header-row header-row-top">
+                <div class="header-left">
+                    {_LOGO_SVG}
+                    <div>
+                        <div class="header-title">Performance Dashboard</div>
+                        <div class="header-subtitle" id="headerSubtitle"></div>
+                    </div>
                 </div>
-            </div>
-            <div class="header-right">
                 {dag_link_html}
+            </div>
+            <div class="header-row header-row-controls">
                 <div class="run-selector">
                     <label for="workflowSelect">Workflow</label>
                     <select id="workflowSelect" onchange="onWorkflowChange()"></select>

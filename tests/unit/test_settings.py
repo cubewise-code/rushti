@@ -204,6 +204,34 @@ class TestSettingsPrecedence(unittest.TestCase):
         # CLI should win
         self.assertEqual(result.defaults.max_workers, 20)
 
+    def test_detailed_results_default_is_false(self):
+        settings = Settings()
+        self.assertFalse(settings.tm1_integration.detailed_results)
+
+    def test_detailed_results_json_overrides_settings(self):
+        settings = Settings()
+        settings.tm1_integration.detailed_results = False  # ini default
+        json_settings = {"detailed_results": True}
+        result = get_effective_settings(settings, json_settings=json_settings)
+        self.assertTrue(result.tm1_integration.detailed_results)
+
+    def test_detailed_results_cli_overrides_json(self):
+        # CLI True must beat JSON False (and vice-versa).
+        settings = Settings()
+        json_settings = {"detailed_results": False}
+        cli_args = {"detailed_results": True}
+        result = get_effective_settings(settings, cli_args=cli_args, json_settings=json_settings)
+        self.assertTrue(result.tm1_integration.detailed_results)
+
+    def test_detailed_results_cli_none_does_not_override(self):
+        # Argparse default for the flag is None when not passed; that must
+        # NOT clobber an ini-supplied True.
+        settings = Settings()
+        settings.tm1_integration.detailed_results = True
+        cli_args = {"detailed_results": None}
+        result = get_effective_settings(settings, cli_args=cli_args)
+        self.assertTrue(result.tm1_integration.detailed_results)
+
 
 class TestConfigPathResolution(unittest.TestCase):
     """Tests for configuration path resolution with fallback"""

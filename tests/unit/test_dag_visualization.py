@@ -11,7 +11,11 @@ import os
 import tempfile
 import unittest
 
-from rushti.taskfile_ops import visualize_dag, _visualize_dag_html
+from rushti.taskfile_ops import (
+    visualize_dag,
+    visualize_dag_from_db_results,
+    _visualize_dag_html,
+)
 from rushti.taskfile import TaskDefinition
 
 
@@ -247,6 +251,181 @@ class TestVisualizeDag(unittest.TestCase):
             content = f.read()
         self.assertIn("my_dashboard.html", content)
         self.assertIn("Performance Dashboard", content)
+
+
+class TestVisualizeDagFromDbResults(unittest.TestCase):
+    """``stats visualize`` builds the DAG from DB task_results.
+
+    Expanded tasks land as multiple rows sharing one task_id. The DAG must
+    render each row as its own node so the visualization reflects what
+    actually executed (issue #146 follow-up).
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _read_nodes(self, html_path):
+        import json
+        import re
+
+        text = open(html_path, encoding="utf-8").read()
+        # Find first JSON array of nodes embedded in the HTML.
+        for m in re.finditer(r'\[\s*\{\s*"id"\s*:', text):
+            start = m.start()
+            depth = 0
+            for i, ch in enumerate(text[start:], start=start):
+                if ch == "[":
+                    depth += 1
+                elif ch == "]":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            try:
+                parsed = json.loads(text[start:end])
+                if isinstance(parsed, list) and parsed and "id" in parsed[0]:
+                    return parsed
+            except Exception:
+                continue
+        return []
+
+    def test_no_expansions_renders_one_node_per_task(self):
+        task_results = [
+            {"task_id": "1", "instance": "tm1srv01", "process": "p", "predecessors": "[]"},
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "predecessors": '["1"]'},
+        ]
+        out = os.path.join(self.temp_dir, "dag.html")
+        visualize_dag_from_db_results(task_results=task_results, output_path=out)
+        nodes = self._read_nodes(out)
+        self.assertEqual({n["id"] for n in nodes}, {"1", "2"})
+
+    def test_expansions_render_one_node_per_execution(self):
+        # Three expansions of task 2 → three sibling nodes (2.1, 2.2, 2.3).
+        task_results = [
+            {"task_id": "1", "instance": "tm1srv01", "process": "p", "predecessors": "[]"},
+            {
+                "task_id": "2",
+                "instance": "tm1srv01",
+                "process": "p",
+                "predecessors": '["1"]',
+                "parameters": '{"pX":"a"}',
+            },
+            {
+                "task_id": "2",
+                "instance": "tm1srv01",
+                "process": "p",
+                "predecessors": '["1"]',
+                "parameters": '{"pX":"b"}',
+            },
+            {
+                "task_id": "2",
+                "instance": "tm1srv01",
+                "process": "p",
+                "predecessors": '["1"]',
+                "parameters": '{"pX":"c"}',
+            },
+            {"task_id": "3", "instance": "tm1srv01", "process": "p", "predecessors": '["2"]'},
+        ]
+        out = os.path.join(self.temp_dir, "dag.html")
+        visualize_dag_from_db_results(task_results=task_results, output_path=out)
+        nodes = self._read_nodes(out)
+        ids = {n["id"] for n in nodes}
+        # Five nodes total: 1, 2.1, 2.2, 2.3, 3.
+        self.assertEqual(ids, {"1", "2.1", "2.2", "2.3", "3"})
+
+        # Task 3's predecessors fan out to all three expansions of task 2.
+        node3 = next(n for n in nodes if n["id"] == "3")
+        self.assertEqual(set(node3.get("predecessors") or []), {"2.1", "2.2", "2.3"})
+
+    def test_root_nodes_share_level_zero(self):
+        # Multiple root nodes (no preds) and a downstream task that depends on
+        # one root + one expansion. All roots must share level 0 so they line
+        # up in the leftmost column instead of being scattered by vis.js.
+        task_results = [
+            {"task_id": "1", "instance": "tm1srv01", "process": "p", "predecessors": "[]"},
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "predecessors": "[]"},
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "predecessors": "[]"},
+            {"task_id": "3", "instance": "tm1srv01", "process": "p", "predecessors": '["2"]'},
+            {"task_id": "4", "instance": "tm1srv01", "process": "p", "predecessors": '["1", "3"]'},
+        ]
+        out = os.path.join(self.temp_dir, "dag.html")
+        visualize_dag_from_db_results(task_results=task_results, output_path=out)
+        nodes = self._read_nodes(out)
+        by_id = {n["id"]: n for n in nodes}
+        # Roots at level 0.
+        self.assertEqual(by_id["1"]["level"], 0)
+        self.assertEqual(by_id["2.1"]["level"], 0)
+        self.assertEqual(by_id["2.2"]["level"], 0)
+        # Direct child of root at level 1.
+        self.assertEqual(by_id["3"]["level"], 1)
+        # Joins from level-0 and level-1 → max(0,1)+1 = 2.
+        self.assertEqual(by_id["4"]["level"], 2)
+
+    def test_unknown_stages_get_distinct_colors(self):
+        # ``transfer`` and ``calc`` are not in the curated palette. They must
+        # still receive different hex colors so the DAG visually distinguishes
+        # them rather than collapsing both to the default gray.
+        task_results = [
+            {
+                "task_id": "1",
+                "instance": "tm1srv01",
+                "process": "p",
+                "predecessors": "[]",
+                "stage": "transfer",
+            },
+            {
+                "task_id": "2",
+                "instance": "tm1srv01",
+                "process": "p",
+                "predecessors": "[]",
+                "stage": "calc",
+            },
+            {
+                "task_id": "3",
+                "instance": "tm1srv01",
+                "process": "p",
+                "predecessors": '["1"]',
+                "stage": "load",
+            },
+        ]
+        out = os.path.join(self.temp_dir, "dag.html")
+        visualize_dag_from_db_results(task_results=task_results, output_path=out)
+        nodes = self._read_nodes(out)
+        by_stage = {n["stage"]: n["color"]["background"] for n in nodes}
+
+        self.assertIn("transfer", by_stage)
+        self.assertIn("calc", by_stage)
+        self.assertIn("load", by_stage)
+        # All three stages must have distinct hex colors. The default gray
+        # (#6b7280) is reserved for genuinely unstaged tasks; custom stage
+        # names must never collide with it or each other.
+        unique_colors = {by_stage["transfer"], by_stage["calc"], by_stage["load"]}
+        self.assertEqual(len(unique_colors), 3)
+        self.assertNotIn("#6b7280", unique_colors)
+
+    def test_chained_expansions(self):
+        # 2 expanded ×2, 3 expanded ×2 with preds=[2]. Each child connects to
+        # both parent expansions → 2×2 = 4 edges from the 2-group to the 3-group.
+        task_results = [
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "predecessors": "[]"},
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "predecessors": "[]"},
+            {"task_id": "3", "instance": "tm1srv01", "process": "p", "predecessors": '["2"]'},
+            {"task_id": "3", "instance": "tm1srv01", "process": "p", "predecessors": '["2"]'},
+        ]
+        out = os.path.join(self.temp_dir, "dag.html")
+        visualize_dag_from_db_results(task_results=task_results, output_path=out)
+        nodes = self._read_nodes(out)
+        ids = {n["id"] for n in nodes}
+        self.assertEqual(ids, {"2.1", "2.2", "3.1", "3.2"})
+        # Each "3.X" has both 2.1 and 2.2 as predecessors.
+        for n in nodes:
+            if n["id"].startswith("3."):
+                self.assertEqual(set(n.get("predecessors") or []), {"2.1", "2.2"})
 
 
 if __name__ == "__main__":

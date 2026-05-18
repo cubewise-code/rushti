@@ -86,6 +86,94 @@ class TestJSONTaskfileValidation(unittest.TestCase):
         self.assertTrue(any("max_workers must be a positive integer" in e for e in errors))
 
 
+class TestNumericTaskIdValidation(unittest.TestCase):
+    """Positive integer task_id rule (matches the rushti_task_id cube dimension)."""
+
+    def _taskfile(self, task_id, predecessors=None):
+        task = {"id": task_id, "instance": "tm1srv01", "process": "test.process"}
+        if predecessors is not None:
+            task["predecessors"] = predecessors
+        return {"version": "2.0", "tasks": [task]}
+
+    # ---------------- accept -----------------
+
+    def test_accepts_json_integer(self):
+        errors = validate_taskfile(self._taskfile(5))
+        self.assertEqual(errors, [])
+
+    def test_accepts_integer_shaped_string(self):
+        errors = validate_taskfile(self._taskfile("5"))
+        self.assertEqual(errors, [])
+
+    def test_accepts_large_integer(self):
+        errors = validate_taskfile(self._taskfile(4999))
+        self.assertEqual(errors, [])
+
+    # ---------------- reject -----------------
+
+    def test_rejects_zero_int(self):
+        errors = validate_taskfile(self._taskfile(0))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_zero_string(self):
+        errors = validate_taskfile(self._taskfile("0"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_negative_int(self):
+        errors = validate_taskfile(self._taskfile(-3))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_leading_zero_string(self):
+        errors = validate_taskfile(self._taskfile("05"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_float(self):
+        errors = validate_taskfile(self._taskfile(5.0))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_alphanumeric_string(self):
+        errors = validate_taskfile(self._taskfile("1a"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_pure_alpha_string(self):
+        errors = validate_taskfile(self._taskfile("abc"))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_rejects_empty_string(self):
+        # Empty string trips REQUIRED_TASK_PROPERTIES first; the validator emits
+        # the missing-required-property error and short-circuits the id check.
+        errors = validate_taskfile(self._taskfile(""))
+        self.assertTrue(any("Missing required property 'id'" in e for e in errors))
+
+    def test_rejects_boolean_true(self):
+        # bool is a subtype of int in Python; explicitly rejected to avoid
+        # accidental True/False sneaking in via JSON-shape mishaps.
+        errors = validate_taskfile(self._taskfile(True))
+        self.assertTrue(any("must be a positive integer" in e for e in errors))
+
+    def test_error_message_includes_hint(self):
+        errors = validate_taskfile(self._taskfile("abc"))
+        self.assertTrue(any("rushti_task_id cube dimension" in e for e in errors))
+
+    # ---------------- predecessors -----------------
+
+    def test_rejects_non_integer_predecessor(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=["task-1"]))
+        self.assertTrue(any("predecessors[0]" in e and "positive integer" in e for e in errors))
+
+    def test_rejects_zero_predecessor(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=[0]))
+        self.assertTrue(any("predecessors[0]" in e and "positive integer" in e for e in errors))
+
+    def test_accepts_integer_predecessors(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=[1]))
+        self.assertEqual(errors, [])
+
+    def test_accepts_integer_string_predecessors(self):
+        errors = validate_taskfile(self._taskfile(2, predecessors=["1"]))
+        self.assertEqual(errors, [])
+
+
 class TestJSONTaskfileParsing(unittest.TestCase):
     """Tests for JSON task file parsing"""
 
@@ -315,8 +403,10 @@ class TestParseLineArguments(unittest.TestCase):
         }
         self.assertEqual(result, expected)
 
-    def test_nested_double_quotes(self):
-        line = 'instance=tm1 process=process1 param1="value with \\"quotes\\"" param2="simple"'
+    def test_double_quotes_inside_single_quoted_value(self):
+        # Backslash is now literal, so the way to embed a double quote in a
+        # value is to wrap the value in single quotes.
+        line = "instance=tm1 process=process1 param1='value with \"quotes\"' param2='simple'"
         result = parse_line_arguments(line)
         expected = {
             "instance": "tm1",
@@ -326,26 +416,55 @@ class TestParseLineArguments(unittest.TestCase):
         }
         self.assertEqual(result, expected)
 
-    def test_backslashes(self):
+    def test_backslashes_are_literal(self):
+        # Each `\\` in the raw string source is a literal pair of backslashes
+        # in the actual input. The new parser preserves them verbatim — no
+        # POSIX escape collapsing.
         line = r'instance=tm1 process=process1 param1="value\\with\\backslashes" param2="normal"'
         result = parse_line_arguments(line)
         expected = {
             "instance": "tm1",
             "process": "process1",
-            "param1": r"value\with\backslashes",
+            "param1": r"value\\with\\backslashes",
             "param2": "normal",
         }
         self.assertEqual(result, expected)
 
-    def test_complex_nested_quotes(self):
-        line = r'instance=tm1 process=process1 param1="outer \"inner \\\"deepest\\\" inner\" outer"'
+    def test_windows_path_trailing_backslash(self):
+        # Issue #146 regression: a Windows path ending in a single backslash
+        # inside double quotes must parse as the literal path, not trip the
+        # quoting check.
+        line = 'pGoFileDirectory="F:\\Cons\\Go_Files\\" iVerifyClear="0"'
         result = parse_line_arguments(line)
-        expected = {
-            "instance": "tm1",
-            "process": "process1",
-            "param1": 'outer "inner \\"deepest\\" inner" outer',
-        }
-        self.assertEqual(result, expected)
+        # Path preserved verbatim, single trailing backslash intact.
+        self.assertEqual(result["pGoFileDirectory"], "F:\\Cons\\Go_Files\\")
+        self.assertEqual(result["iVerifyClear"], "0")
+
+    def test_mixed_mdx_and_windows_path(self):
+        # Symptom line from the bug report — exercises wildcard MDX, quoted
+        # spaces, a Windows path with trailing backslash, and a bare numeric
+        # value all together. Must parse cleanly with no warnings dropped.
+        line = (
+            'pPeriod*=*"{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}" '
+            'pSegment*=*"{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}" '
+            'pVersion="Working Forecast" '
+            'pGoFileDirectory="F:\\Cons\\Go_Files\\" '
+            'iVerifyClear="0"'
+        )
+        result = parse_line_arguments(line)
+        # Wildcard keys keep their `*` suffix and values keep their `*` prefix
+        # (consumed later by parsing.expand_task).
+        self.assertEqual(
+            result["pPeriod*"],
+            "*{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}",
+        )
+        self.assertEqual(
+            result["pSegment*"],
+            "*{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}",
+        )
+        self.assertEqual(result["pVersion"], "Working Forecast")
+        self.assertEqual(result["pGoFileDirectory"], "F:\\Cons\\Go_Files\\")
+        self.assertEqual(result["iVerifyClear"], "0")
 
     def test_predecessors_and_require_predecessor_success(self):
         line = 'id=1 instance=tm1 process=process1 predecessors="2,3,4" require_predecessor_success="true"'
@@ -360,8 +479,16 @@ class TestParseLineArguments(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_sql_query_parsing(self):
+        # Under the new literal-backslash semantics, the way to embed a
+        # double-quote in a value is to wrap that value in single quotes
+        # instead of relying on `\"` escapes.
         self.maxDiff = None
-        line = 'id="1" predecessors="" require_predecessor_success="" instance="tm1srv01" process="}bedrock.server.query" pQuery="SELECT Id,IsDeleted FROM Account WHERE date=\\"20241031092120\\"" pParam2="" pParam3="testing\\"2\\""'
+        line = (
+            'id="1" predecessors="" require_predecessor_success="" '
+            'instance="tm1srv01" process="}bedrock.server.query" '
+            "pQuery='SELECT Id,IsDeleted FROM Account WHERE date=\"20241031092120\"' "
+            'pParam2="" pParam3=\'testing"2"\''
+        )
         result = parse_line_arguments(line)
         expected = {
             "id": "1",

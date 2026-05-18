@@ -589,6 +589,35 @@ class TestResumeCliArguments(unittest.TestCase):
         finally:
             os.unlink(task_file)
 
+    def test_detailed_results_flag_default_is_none(self):
+        """Without --detailed-results, cli_args carries None (no override)."""
+        from rushti.cli import parse_arguments
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write('instance="tm1srv01" process="test"\n')
+            f.flush()
+            task_file = f.name
+        try:
+            _, cli_args = parse_arguments(["rushti", "--tasks", task_file])
+            self.assertIn("detailed_results", cli_args)
+            self.assertIsNone(cli_args["detailed_results"])
+        finally:
+            os.unlink(task_file)
+
+    def test_detailed_results_flag_sets_true(self):
+        """--detailed-results flips cli_args['detailed_results'] to True."""
+        from rushti.cli import parse_arguments
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write('instance="tm1srv01" process="test"\n')
+            f.flush()
+            task_file = f.name
+        try:
+            _, cli_args = parse_arguments(["rushti", "--tasks", task_file, "--detailed-results"])
+            self.assertTrue(cli_args["detailed_results"])
+        finally:
+            os.unlink(task_file)
+
 
 class TestResumeContext(unittest.TestCase):
     """Tests for the resume context returned by run_resume_command."""

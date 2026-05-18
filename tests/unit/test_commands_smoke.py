@@ -57,17 +57,17 @@ def _write_minimal_json_taskfile(path: Path) -> Path:
                 },
                 "tasks": [
                     {
-                        "id": "task1",
+                        "id": 1,
                         "instance": "tm1srv01",
                         "process": "}bedrock.server.wait",
                         "parameters": {"pWaitSec": "1"},
                     },
                     {
-                        "id": "task2",
+                        "id": 2,
                         "instance": "tm1srv01",
                         "process": "}bedrock.server.wait",
                         "parameters": {"pWaitSec": "2"},
-                        "predecessors": ["task1"],
+                        "predecessors": [1],
                     },
                 ],
             },

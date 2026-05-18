@@ -7,115 +7,172 @@
   },
   "tasks": [
     {
-      "id": "e1",
+      "id": 1,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "extract"
     },
     {
-      "id": "e2",
+      "id": 2,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "extract"
     },
     {
-      "id": "e3",
+      "id": 3,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "extract"
     },
     {
-      "id": "e4",
+      "id": 4,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "extract"
     },
     {
-      "id": "e5",
+      "id": 5,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "extract"
     },
     {
-      "id": "e6",
+      "id": 6,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "extract"
     },
     {
-      "id": "t1",
+      "id": 7,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "transform",
-      "predecessors": ["e1", "e2"]
+      "predecessors": [
+        1,
+        2
+      ]
     },
     {
-      "id": "t2",
+      "id": 8,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "transform",
-      "predecessors": ["e3", "e4"]
+      "predecessors": [
+        3,
+        4
+      ]
     },
     {
-      "id": "t3",
+      "id": 9,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "transform",
-      "predecessors": ["e5", "e6"]
+      "predecessors": [
+        5,
+        6
+      ]
     },
     {
-      "id": "t4",
+      "id": 10,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "transform",
-      "predecessors": ["e1", "e3", "e5"]
+      "predecessors": [
+        1,
+        3,
+        5
+      ]
     },
     {
-      "id": "l1",
+      "id": 11,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "load",
-      "predecessors": ["t1", "t2"]
+      "predecessors": [
+        7,
+        8
+      ]
     },
     {
-      "id": "l2",
+      "id": 12,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "load",
-      "predecessors": ["t2", "t3"]
+      "predecessors": [
+        8,
+        9
+      ]
     },
     {
-      "id": "l3",
+      "id": 13,
       "instance": "tm1srv01",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "load",
-      "predecessors": ["t3", "t4"]
+      "predecessors": [
+        9,
+        10
+      ]
     },
     {
-      "id": "l4",
+      "id": 14,
       "instance": "tm1srv02",
       "process": "}bedrock.server.wait",
-      "parameters": {"pWaitSec": "2"},
+      "parameters": {
+        "pWaitSec": "2"
+      },
       "stage": "load",
-      "predecessors": ["t1", "t4"]
+      "predecessors": [
+        7,
+        10
+      ]
     }
   ],
   "settings": {
     "max_workers": 2,
-    "stage_order": ["extract", "transform", "load"],
+    "stage_order": [
+      "extract",
+      "transform",
+      "load"
+    ],
     "stage_workers": {
       "extract": 4,
       "transform": 2,

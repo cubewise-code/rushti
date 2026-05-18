@@ -44,31 +44,31 @@ INPUT_TASKFILE = {
     "settings": {"max_workers": 4},
     "tasks": [
         {
-            "id": "task_a",
+            "id": 1,
             "instance": "tm1srv01",
             "process": "}bedrock.cube.data.copy",
             "parameters": {"pCube": "Sales", "pYear": "2024"},
         },
         {
-            "id": "task_b",
+            "id": 2,
             "instance": "tm1srv01",
             "process": "}bedrock.cube.data.copy",
             "parameters": {"pCube": "Sales", "pYear": "2025"},
         },
         {
-            "id": "task_c",
+            "id": 3,
             "instance": "tm1srv01",
             "process": "}bedrock.cube.data.copy",
             "parameters": {"pCube": "Inventory", "pYear": "2024"},
         },
         {
-            "id": "task_d",
+            "id": 4,
             "instance": "tm1srv01",
             "process": "}bedrock.cube.data.copy",
             "parameters": {"pCube": "Inventory", "pYear": "2025"},
         },
         {
-            "id": "task_e",
+            "id": 5,
             "instance": "tm1srv01",
             "process": "}bedrock.cube.data.copy",
             "parameters": {"pCube": "Forecast", "pYear": "2025"},
@@ -98,7 +98,7 @@ class TestEwmaOptimizedSnapshot:
             run_count=5,
             tasks=[
                 TaskAnalysis(
-                    task_id="task_a",
+                    task_id="1",
                     avg_duration=10.0,
                     ewma_duration=9.5,
                     run_count=5,
@@ -107,7 +107,7 @@ class TestEwmaOptimizedSnapshot:
                     estimated=False,
                 ),
                 TaskAnalysis(
-                    task_id="task_b",
+                    task_id="2",
                     avg_duration=20.0,
                     ewma_duration=18.0,
                     run_count=5,
@@ -116,7 +116,7 @@ class TestEwmaOptimizedSnapshot:
                     estimated=False,
                 ),
                 TaskAnalysis(
-                    task_id="task_c",
+                    task_id="3",
                     avg_duration=5.0,
                     ewma_duration=4.5,
                     run_count=5,
@@ -125,7 +125,7 @@ class TestEwmaOptimizedSnapshot:
                     estimated=False,
                 ),
                 TaskAnalysis(
-                    task_id="task_d",
+                    task_id="4",
                     avg_duration=15.0,
                     ewma_duration=14.0,
                     run_count=5,
@@ -134,7 +134,7 @@ class TestEwmaOptimizedSnapshot:
                     estimated=False,
                 ),
                 TaskAnalysis(
-                    task_id="task_e",
+                    task_id="5",
                     avg_duration=8.0,
                     ewma_duration=7.5,
                     run_count=5,
@@ -143,8 +143,8 @@ class TestEwmaOptimizedSnapshot:
                     estimated=False,
                 ),
             ],
-            recommendations=["Consider parallelizing task_b — longest runtime"],
-            optimized_order=["task_b", "task_d", "task_a", "task_e", "task_c"],
+            recommendations=["Consider parallelizing task 2 — longest runtime"],
+            optimized_order=["2", "4", "1", "5", "3"],
             ewma_alpha=0.3,
             lookback_runs=10,
         )
@@ -174,19 +174,19 @@ class TestContentionOptimizedSnapshot:
         # Driver is "pCube"; "Sales" is the heavy group; the rest are light.
         sales_group = ContentionGroup(
             driver_value="Sales",
-            task_ids=["task_a", "task_b"],
+            task_ids=["1", "2"],
             avg_duration=18.0,
             is_heavy=True,
         )
         inventory_group = ContentionGroup(
             driver_value="Inventory",
-            task_ids=["task_c", "task_d"],
+            task_ids=["3", "4"],
             avg_duration=10.0,
             is_heavy=False,
         )
         forecast_group = ContentionGroup(
             driver_value="Forecast",
-            task_ids=["task_e"],
+            task_ids=["5"],
             avg_duration=7.5,
             is_heavy=False,
         )
@@ -208,7 +208,7 @@ class TestContentionOptimizedSnapshot:
                 "iqr": 6.5,
                 "upper_fence": 23.75,
             },
-            predecessor_map={"task_b": ["task_a"]},
+            predecessor_map={"2": ["1"]},
             warnings=[],
             parameter_analyses=[],
         )

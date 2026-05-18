@@ -8,11 +8,11 @@ This module provides:
 
 import json
 import logging
-import shlex
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from rushti._shlex_utils import shlex_split_literal_backslashes
 from rushti.messages import TRUE_VALUES
 
 logger = logging.getLogger(__name__)
@@ -338,6 +338,31 @@ def load_taskfile_from_source(
         raise ValueError("Invalid TaskfileSource: no source specified")
 
 
+_TASK_ID_ERROR_HINT = (
+    "Task IDs must be positive integers (the rushti_task_id cube dimension "
+    "uses integer member names)"
+)
+
+
+def _is_positive_integer_id(value: Any) -> bool:
+    """True for positive integers or canonical integer-shaped strings.
+
+    Accepts ``5`` and ``"5"``; rejects booleans, zero, negatives, leading-zero
+    strings (``"05"``), floats, and any non-digit string.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value > 0
+    if isinstance(value, str):
+        if not value or not value.isdigit():
+            return False
+        if len(value) > 1 and value[0] == "0":
+            return False
+        return int(value) > 0
+    return False
+
+
 def validate_task(task_data: Dict[str, Any], index: int) -> List[str]:
     """Validate a single task definition.
 
@@ -352,13 +377,22 @@ def validate_task(task_data: Dict[str, Any], index: int) -> List[str]:
         if prop not in task_data or not task_data[prop]:
             errors.append(f"Task {index}: Missing required property '{prop}'")
 
-    # Validate types
-    if "id" in task_data and not isinstance(task_data["id"], (str, int)):
-        errors.append(f"Task {index}: 'id' must be a string or integer")
+    if "id" in task_data and not _is_positive_integer_id(task_data["id"]):
+        errors.append(
+            f"Task {index}: 'id' must be a positive integer. "
+            f"Got: {task_data['id']!r}. {_TASK_ID_ERROR_HINT}."
+        )
 
     if "predecessors" in task_data:
         if not isinstance(task_data["predecessors"], list):
             errors.append(f"Task {index}: 'predecessors' must be an array")
+        else:
+            for pi, pred in enumerate(task_data["predecessors"]):
+                if not _is_positive_integer_id(pred):
+                    errors.append(
+                        f"Task {index}: predecessors[{pi}] must be a positive "
+                        f"integer. Got: {pred!r}. {_TASK_ID_ERROR_HINT}."
+                    )
 
     if "timeout" in task_data and task_data["timeout"] is not None:
         if not isinstance(task_data["timeout"], int) or task_data["timeout"] < 0:
@@ -519,17 +553,17 @@ def detect_execution_mode(file_path: Union[str, Path]) -> str:
 def parse_line_arguments(line: str) -> Dict[str, Any]:
     """Parse a task definition line into a dictionary of arguments.
 
-    Handles key=value pairs with proper escaping via shlex. Boolean-like
-    values for known keys (e.g. ``safe_retry``, ``succeed_on_minor_errors``)
-    are automatically converted.
+    Handles key=value pairs and treats backslash as a literal character so
+    Windows-style paths (e.g. ``F:\\Cons\\Go_Files\\``) survive intact.
+    Boolean-like values for known keys (e.g. ``safe_retry``,
+    ``succeed_on_minor_errors``) are automatically converted.
 
     :param line: Single line from a TXT task file
     :return: Dictionary of parsed arguments
     """
     line_arguments = {}
 
-    # Use shlex to split the line with posix=True for proper escaping
-    parts = shlex.split(line, posix=True)
+    parts = shlex_split_literal_backslashes(line)
 
     for part in parts:
         if "=" not in part:

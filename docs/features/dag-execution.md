@@ -139,6 +139,8 @@ Open the HTML file in any browser to see an interactive graph with:
 - Click a node to see task details (instance, process, parameters)
 - Search and filter by task ID or process name
 
+`rushti tasks visualize` shows the **definition** (one node per task in the file). For a post-execution view that includes MDX expansions as separate nodes, use `rushti stats visualize --workflow <id>` instead — that one rebuilds the DAG from the latest recorded run, with one node per executed TI.
+
 ### Validate Before Running
 
 Check for structural problems without connecting to TM1:
@@ -184,3 +186,4 @@ Settings are resolved in priority order: CLI arguments > JSON task file settings
 - **[Advanced Task Files](../advanced/advanced-task-files.md)** — Stages, timeouts, expandable parameters
 - **[Task File Basics](../getting-started/task-files.md)** — Complete format reference (JSON and TXT)
 - **[Self-Optimization](optimization.md)** — Let RushTI learn from past runs and optimize task ordering
+- **[TM1 Integration: Detailed Results](tm1-integration.md#detailed-results)** — Per-execution rows in the cube for expanded tasks, joined via `original_task_id`

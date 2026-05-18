@@ -14,9 +14,13 @@ from rushti.tm1_integration import (
     _dataframe_to_task_definitions,
     _parse_bool,
     _parse_parameters_string,
+    _render_parameters_column_for_upload,
+    _render_parameters_inline,
+    assign_unique_task_ids,
     build_results_dataframe,
     connect_to_tm1_instance,
     read_taskfile_from_tm1,
+    upload_results_to_tm1,
 )
 
 # Default cube name for testing
@@ -106,6 +110,147 @@ class TestParseParametersString(unittest.TestCase):
         """Test that unmatched quotes return empty dict gracefully."""
         result = _parse_parameters_string('pBad="unclosed')
         self.assertEqual(result, {})
+
+    def test_windows_path_trailing_backslash(self):
+        # Issue #146 regression: a Windows-style path ending in a backslash
+        # inside quotes must parse, not raise/skip.
+        result = _parse_parameters_string('pGoFileDirectory="F:\\Cons\\Go_Files\\"')
+        self.assertEqual(result, {"pGoFileDirectory": "F:\\Cons\\Go_Files\\"})
+
+    def test_full_symptom_line(self):
+        # The exact full line from the bug report — must parse cleanly with
+        # every parameter present.
+        params_str = (
+            'pPeriod*=*"{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}" '
+            'pSegment*=*"{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}" '
+            'pVersion="Working Forecast" '
+            'pGoFileDirectory="F:\\Cons\\Go_Files\\" '
+            'iVerifyClear="0"'
+        )
+        result = _parse_parameters_string(params_str)
+        self.assertEqual(
+            result["pPeriod*"],
+            "*{[Period].[Period].[FCST_BEGIN]:[Period].[Period].[FCST_END]}",
+        )
+        self.assertEqual(
+            result["pSegment*"],
+            "*{TM1FILTERBYLEVEL({TM1SUBSETALL([Segment].[Segment])}, 0)}",
+        )
+        self.assertEqual(result["pVersion"], "Working Forecast")
+        self.assertEqual(result["pGoFileDirectory"], "F:\\Cons\\Go_Files\\")
+        self.assertEqual(result["iVerifyClear"], "0")
+
+
+class TestRenderParametersInline(unittest.TestCase):
+    """Tests for _render_parameters_inline — the upload-format helper."""
+
+    def test_empty_dict_returns_empty_string(self):
+        self.assertEqual(_render_parameters_inline({}), "")
+
+    def test_none_returns_empty_string(self):
+        self.assertEqual(_render_parameters_inline(None), "")
+
+    def test_simple_dict_quoted_values(self):
+        # Every value is always double-quoted in the output, regardless of
+        # whether the original input had quotes.
+        result = _render_parameters_inline(
+            {"pWaitSec": "1", "pStrictErrorHandling": "0", "pLogOutput": "1"}
+        )
+        self.assertEqual(result, 'pWaitSec="1" pStrictErrorHandling="0" pLogOutput="1"')
+
+    def test_insertion_order_preserved(self):
+        result = _render_parameters_inline({"z": "1", "a": "2", "m": "3"})
+        self.assertEqual(result, 'z="1" a="2" m="3"')
+
+    def test_value_with_whitespace(self):
+        result = _render_parameters_inline({"pVersion": "Working Forecast"})
+        self.assertEqual(result, 'pVersion="Working Forecast"')
+
+    def test_numeric_value_coerced_to_string(self):
+        result = _render_parameters_inline({"pLogOutput": 1})
+        self.assertEqual(result, 'pLogOutput="1"')
+
+    def test_value_with_double_quote_logs_warning(self):
+        # Logger warning fires once per offending parameter; value emitted
+        # as-is between the surrounding quotes (broken output user can spot).
+        # Patch the module-level logger directly so the test is independent
+        # of any global log-level/propagation state.
+        with patch("rushti.tm1_integration.logger") as mock_logger:
+            result = _render_parameters_inline({"pName": 'has "quotes"'}, task_id="42")
+
+        self.assertEqual(result, 'pName="has "quotes""')
+        mock_logger.warning.assert_called_once()
+        warning_args = mock_logger.warning.call_args.args
+        # Format string + (key, task_id) — verify both surface in the call.
+        self.assertIn("pName", warning_args)
+        self.assertIn("42", warning_args)
+
+    def test_json_string_input_parsed_to_inline(self):
+        # _render_parameters_inline accepts JSON strings for convenience.
+        result = _render_parameters_inline('{"a": "1", "b": "2"}')
+        self.assertEqual(result, 'a="1" b="2"')
+
+
+class TestRenderParametersColumnForUpload(unittest.TestCase):
+    """Tests for the upload-boundary wrapper that handles summary shapes."""
+
+    def test_plain_dict_renders_inline(self):
+        result = _render_parameters_column_for_upload('{"pMonth": "Jan"}')
+        self.assertEqual(result, 'pMonth="Jan"')
+
+    def test_empty_string_returns_empty(self):
+        self.assertEqual(_render_parameters_column_for_upload(""), "")
+
+    def test_empty_json_dict_returns_empty(self):
+        self.assertEqual(_render_parameters_column_for_upload("{}"), "")
+
+    def test_summarize_expanded_shape(self):
+        # summarize_expanded_tasks wraps multiple param sets in
+        # {"expanded": N, "parameters": [...]}; render each inline, join
+        # with "; ".
+        summary = '{"expanded": 3, "parameters": [{"pMonth": "Jan"}, {"pMonth": "Feb"}, {"pMonth": "Mar"}]}'
+        result = _render_parameters_column_for_upload(summary)
+        self.assertEqual(result, 'pMonth="Jan"; pMonth="Feb"; pMonth="Mar"')
+
+    def test_non_json_string_passes_through(self):
+        # If the cell was already in inline form (unexpected but defensible),
+        # leave it alone.
+        result = _render_parameters_column_for_upload('pAlready="inline"')
+        self.assertEqual(result, 'pAlready="inline"')
+
+
+class TestUploadResultsToTM1ParameterFormat(unittest.TestCase):
+    """The Parameters column in the uploaded CSV must be inline, not JSON."""
+
+    def _df_from_parameters(self, parameters):
+        return pd.DataFrame(
+            [
+                {
+                    "task_id": "1",
+                    "instance": "tm1srv01",
+                    "process": "p",
+                    "parameters": parameters,
+                    "status": "Success",
+                }
+            ]
+        )
+
+    def test_dict_parameters_uploaded_inline(self):
+        import csv
+        import io
+
+        df = self._df_from_parameters(
+            '{"pWaitSec": "1", "pStrictErrorHandling": "0", "pLogOutput": "1"}'
+        )
+        mock_tm1 = MagicMock()
+        upload_results_to_tm1(mock_tm1, "wf", "run1", df)
+
+        file_content = mock_tm1.files.create.call_args.kwargs["file_content"]
+        rows = list(csv.DictReader(io.StringIO(file_content.decode("utf-8"))))
+        self.assertEqual(
+            rows[0]["parameters"],
+            'pWaitSec="1" pStrictErrorHandling="0" pLogOutput="1"',
+        )
 
 
 class TestConnectToTM1Instance(unittest.TestCase):
@@ -409,6 +554,23 @@ class TestBuildResultsDataFrame(unittest.TestCase):
         self.assertEqual(df.iloc[0]["task_id"], "1")
         self.assertEqual(df.iloc[0]["status"], "Success")
         self.assertEqual(df.iloc[0]["duration_seconds"], 5.0)
+        # original_task_id is populated unconditionally; equals task_id pre-renumber.
+        self.assertIn("original_task_id", df.columns)
+        self.assertEqual(df.iloc[0]["original_task_id"], "1")
+
+    def test_build_results_dataframe_original_task_id_for_expansions(self):
+        """All expansions of one original task share the same original_task_id."""
+        mock_stats_db = Mock()
+        mock_stats_db.get_run_results.return_value = [
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "status": "Success"},
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "status": "Success"},
+            {"task_id": "2", "instance": "tm1srv01", "process": "p", "status": "Fail"},
+        ]
+        df = build_results_dataframe(mock_stats_db, "wf", "run1")
+        self.assertEqual(len(df), 3)
+        # All three rows share the same original_task_id (= task_id pre-renumber).
+        self.assertTrue((df["original_task_id"] == "2").all())
+        self.assertTrue((df["task_id"] == df["original_task_id"]).all())
 
     def test_build_results_dataframe_empty(self):
         """Test building results DataFrame with no results."""
@@ -418,6 +580,182 @@ class TestBuildResultsDataFrame(unittest.TestCase):
         df = build_results_dataframe(mock_stats_db, "taskfile1", "run1")
 
         self.assertTrue(df.empty)
+
+
+class TestAssignUniqueTaskIds(unittest.TestCase):
+    """Tests for assign_unique_task_ids — detailed-results renumbering."""
+
+    @staticmethod
+    def _frame(rows):
+        """Build a minimal results DataFrame from (task_id, start_time, ...) tuples."""
+        return pd.DataFrame(
+            [
+                {
+                    "task_id": tid,
+                    "original_task_id": tid,
+                    "start_time": st,
+                    "instance": "tm1srv01",
+                    "process": "p",
+                    "predecessors": preds,
+                }
+                for tid, st, preds in rows
+            ]
+        )
+
+    def test_empty_dataframe_passes_through(self):
+        df = pd.DataFrame()
+        result = assign_unique_task_ids(df)
+        self.assertTrue(result.empty)
+
+    def test_no_expansions_renumbers_in_order(self):
+        # Five distinct tasks, no duplicates → renumbered 1..5 in original order.
+        df = self._frame(
+            [
+                ("1", "2026-05-01T10:00:00", ""),
+                ("2", "2026-05-01T10:00:01", ""),
+                ("3", "2026-05-01T10:00:02", ""),
+                ("4", "2026-05-01T10:00:03", ""),
+                ("5", "2026-05-01T10:00:04", ""),
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        self.assertEqual(list(result["task_id"]), ["1", "2", "3", "4", "5"])
+        # original_task_id preserved.
+        self.assertEqual(list(result["original_task_id"]), ["1", "2", "3", "4", "5"])
+
+    def test_single_expansion_gap_free(self):
+        # Original [1, 2*(3), 3] → renumbered [1, 2, 3, 4, 5], gap-free.
+        df = self._frame(
+            [
+                ("1", "2026-05-01T10:00:00", ""),
+                ("2", "2026-05-01T10:01:00", ""),  # expansion 1
+                ("2", "2026-05-01T10:01:01", ""),  # expansion 2
+                ("2", "2026-05-01T10:01:02", ""),  # expansion 3
+                ("3", "2026-05-01T10:02:00", ""),
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        self.assertEqual(list(result["task_id"]), ["1", "2", "3", "4", "5"])
+        # Three middle rows share the original task_id 2.
+        expansions = result[result["task_id"].isin(["2", "3", "4"])]
+        self.assertTrue((expansions["original_task_id"] == "2").all())
+
+    def test_multiple_expansions_gap_free(self):
+        # Two expandable tasks: [1, 2*(2), 3, 4*(3)] → [1, 2, 3, 4, 5, 6, 7].
+        df = self._frame(
+            [
+                ("1", "2026-05-01T10:00:00", ""),
+                ("2", "2026-05-01T10:01:00", ""),
+                ("2", "2026-05-01T10:01:01", ""),
+                ("3", "2026-05-01T10:02:00", ""),
+                ("4", "2026-05-01T10:03:00", ""),
+                ("4", "2026-05-01T10:03:01", ""),
+                ("4", "2026-05-01T10:03:02", ""),
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        self.assertEqual(list(result["task_id"]), ["1", "2", "3", "4", "5", "6", "7"])
+        # original_task_id reflects pre-renumbering identity.
+        self.assertEqual(
+            list(result["original_task_id"]),
+            ["1", "2", "2", "3", "4", "4", "4"],
+        )
+
+    def test_predecessors_untouched(self):
+        # predecessors column must reference the original_task_id, not the
+        # renumbered IDs. assign_unique_task_ids must not modify it.
+        df = self._frame(
+            [
+                ("1", "2026-05-01T10:00:00", ""),
+                ("2", "2026-05-01T10:01:00", "[1]"),
+                ("2", "2026-05-01T10:01:01", "[1]"),
+                ("3", "2026-05-01T10:02:00", "[2]"),
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        self.assertEqual(list(result["task_id"]), ["1", "2", "3", "4"])
+        # Original predecessors strings preserved verbatim.
+        self.assertEqual(list(result["predecessors"]), ["", "[1]", "[1]", "[2]"])
+
+    def test_sort_by_start_time_within_group(self):
+        # Out-of-order start times → renumbering follows time order within a group.
+        df = self._frame(
+            [
+                ("1", "2026-05-01T10:00:00", ""),
+                ("2", "2026-05-01T10:01:05", ""),  # later
+                ("2", "2026-05-01T10:01:00", ""),  # earlier
+                ("2", "2026-05-01T10:01:02", ""),  # middle
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        # Within the original-2 group: earliest start_time gets new ID 2,
+        # then 3, then 4.
+        group = result[result["original_task_id"] == "2"].reset_index(drop=True)
+        self.assertEqual(list(group["task_id"]), ["2", "3", "4"])
+        self.assertEqual(
+            list(group["start_time"]),
+            [
+                "2026-05-01T10:01:00",
+                "2026-05-01T10:01:02",
+                "2026-05-01T10:01:05",
+            ],
+        )
+
+    def test_deterministic_on_repeat(self):
+        # Running twice on the same input produces identical output.
+        df = self._frame(
+            [
+                ("1", "2026-05-01T10:00:00", ""),
+                ("2", "2026-05-01T10:01:00", ""),
+                ("2", "2026-05-01T10:01:00", ""),  # tie on start_time
+                ("3", "2026-05-01T10:02:00", ""),
+            ]
+        )
+        a = assign_unique_task_ids(df)
+        b = assign_unique_task_ids(df)
+        pd.testing.assert_frame_equal(a, b)
+
+    def test_skipped_group_with_empty_start_time(self):
+        # A whole-group skip — all expansions have empty start_time. They should
+        # still receive sequential IDs (sort-last within their group).
+        df = self._frame(
+            [
+                ("1", "2026-05-01T10:00:00", ""),
+                ("2", "", ""),
+                ("2", "", ""),
+                ("3", "2026-05-01T10:02:00", ""),
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        self.assertEqual(list(result["task_id"]), ["1", "2", "3", "4"])
+        self.assertEqual(list(result["original_task_id"]), ["1", "2", "2", "3"])
+
+    def test_missing_original_task_id_column_falls_back(self):
+        # Defensive fallback: if a caller hands a frame without the column,
+        # synthesize it from task_id rather than crash.
+        df = pd.DataFrame(
+            [
+                {"task_id": "1", "start_time": "2026-05-01T10:00:00"},
+                {"task_id": "2", "start_time": "2026-05-01T10:01:00"},
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        self.assertEqual(list(result["task_id"]), ["1", "2"])
+        self.assertEqual(list(result["original_task_id"]), ["1", "2"])
+
+    def test_groups_iterated_in_numeric_order_not_lex(self):
+        # Sort key is int(original_task_id). With original IDs 1, 2, 10:
+        # iteration must be 1, 2, 10 — not lex 1, 10, 2.
+        df = self._frame(
+            [
+                ("10", "2026-05-01T10:00:02", ""),
+                ("2", "2026-05-01T10:00:01", ""),
+                ("1", "2026-05-01T10:00:00", ""),
+            ]
+        )
+        result = assign_unique_task_ids(df)
+        self.assertEqual(list(result["original_task_id"]), ["1", "2", "10"])
+        self.assertEqual(list(result["task_id"]), ["1", "2", "3"])
 
 
 class TestConstants(unittest.TestCase):

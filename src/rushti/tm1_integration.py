@@ -20,12 +20,12 @@ Usage:
 import configparser
 import json
 import logging
-import shlex
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from TM1py import TM1Service
 
+from rushti._shlex_utils import shlex_split_literal_backslashes
 from rushti.stats import StatsRepository
 from rushti.taskfile import Taskfile, TaskDefinition, TaskfileMetadata, TaskfileSettings
 
@@ -363,12 +363,14 @@ def _parse_parameters_string(parameters_str: str) -> Dict[str, str]:
     except (json.JSONDecodeError, TypeError):
         pass
 
-    # Fall back to space-separated key=value parsing (same as TXT taskfiles)
+    # Fall back to space-separated key=value parsing (same as TXT taskfiles).
+    # Use the shared helper so backslashes survive as literal path separators —
+    # see rushti._shlex_utils for the rationale.
     params: Dict[str, str] = {}
     try:
-        parts = shlex.split(parameters_str, posix=True)
+        parts = shlex_split_literal_backslashes(parameters_str)
     except ValueError:
-        # shlex.split can fail on unmatched quotes
+        # Raised by underlying shlex on unbalanced quotes.
         logger.warning("Failed to parse parameters (bad quoting?): %s", parameters_str)
         return {}
 
@@ -380,6 +382,56 @@ def _parse_parameters_string(parameters_str: str) -> Dict[str, str]:
             params[key] = value
 
     return params
+
+
+def _render_parameters_inline(parameters: Any, task_id: str = "") -> str:
+    """Render a parameters mapping as inline ``key="value"`` pairs.
+
+    Used at the TM1 upload boundary so the ``Parameters`` column in the
+    pushed results matches the input format users write in the rushti
+    control cube (e.g. ``pWaitSec="1" pStrictErrorHandling="0"``) instead of
+    a JSON dict. Storage in the stats DB still uses JSON; only the cube
+    payload is reshaped.
+
+    Rules:
+
+    1. Every value is always double-quoted, regardless of input shape.
+       ``pLogOutput=1`` becomes ``pLogOutput="1"``.
+    2. Key insertion order is preserved (relies on dict ordering).
+    3. Empty/None parameters yield an empty string.
+    4. Values containing a literal ``"`` are emitted as-is between quotes
+       (potentially broken output), with a warning logged so the user can
+       spot it. Automatic escaping is intentionally avoided.
+
+    :param parameters: dict-like, JSON string, or None.
+    :param task_id: Task id used only for warning messages.
+    :return: Inline ``key="value"`` string, or empty string when no params.
+    """
+    if not parameters:
+        return ""
+
+    if isinstance(parameters, str):
+        try:
+            parameters = json.loads(parameters)
+        except (json.JSONDecodeError, TypeError):
+            # Not JSON — assume it is already an inline string and pass through.
+            return parameters
+
+    if not isinstance(parameters, dict) or not parameters:
+        return ""
+
+    parts: List[str] = []
+    for key, value in parameters.items():
+        sval = "" if value is None else str(value)
+        if '"' in sval:
+            logger.warning(
+                "Parameter %r on task %r contains a double-quote; "
+                "output may not round-trip cleanly",
+                key,
+                task_id,
+            )
+        parts.append(f'{key}="{sval}"')
+    return " ".join(parts)
 
 
 def _parse_bool(value: Any) -> bool:
@@ -421,8 +473,10 @@ def build_results_dataframe(
     # Build rows for DataFrame
     rows = []
     for result in results:
+        task_id = result.get("task_id", "")
         row = {
-            "task_id": result.get("task_id", ""),
+            "task_id": task_id,
+            "original_task_id": task_id,
             "instance": result.get("instance", ""),
             "process": result.get("process", ""),
             "parameters": result.get("parameters", "{}"),
@@ -445,6 +499,53 @@ def build_results_dataframe(
 
     df = pd.DataFrame(rows)
     logger.debug(f"Built results DataFrame with {len(df)} rows")
+    return df
+
+
+def assign_unique_task_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """Renumber task_id sequentially so every result row has a unique ID.
+
+    Used by ``--detailed-results`` to expose per-execution detail in the cube
+    (one row per executed TI, instead of the summarized view from
+    ``summarize_expanded_tasks``).
+
+    The ``original_task_id`` column is left untouched — callers join on it to
+    reconcile cube rows back to the stats DB, where execution rows remain
+    stored under the original task_id.
+
+    Sort order: rows are ordered by ``(int(original_task_id), start_time)``
+    ascending. Pandas' stable sort preserves insertion order for ties; rows
+    with empty ``start_time`` (whole-group skips) sort last within their
+    group.
+
+    :param df: DataFrame with task results (may have duplicate task_ids
+        from MDX expansion). Must contain an ``original_task_id`` column
+        populated by ``build_results_dataframe``.
+    :return: DataFrame with ``task_id`` rewritten to gap-free integers
+        starting at 1. ``original_task_id`` and all other columns are
+        preserved.
+    """
+    if df.empty:
+        return df
+
+    # ``original_task_id`` is populated unconditionally by build_results_dataframe.
+    # Defensive fallback for callers that bypass that path.
+    if "original_task_id" not in df.columns:
+        df = df.copy()
+        df["original_task_id"] = df["task_id"]
+
+    df = df.copy()
+    df["_original_int"] = pd.to_numeric(df["original_task_id"], errors="coerce")
+    df = df.sort_values(
+        by=["_original_int", "start_time"],
+        kind="stable",
+        na_position="last",
+    ).reset_index(drop=True)
+
+    df["task_id"] = (df.index + 1).astype(str)
+    df = df.drop(columns=["_original_int"])
+
+    logger.info(f"Renumbered {len(df)} rows for detailed-results upload")
     return df
 
 
@@ -590,6 +691,39 @@ def _get_runs_for_workflow(
     return stats_db.get_runs_for_workflow(workflow)
 
 
+def _render_parameters_column_for_upload(value: Any, task_id: str = "") -> str:
+    """Convert a stored parameters cell to the inline upload format.
+
+    Handles both shapes produced earlier in the pipeline:
+
+    - Plain dict / JSON dict (one row per execution, detailed-results path):
+      rendered as ``pKey1="v1" pKey2="v2"``.
+    - Expansion-summary shape ``{"expanded": N, "parameters": [dict, ...]}``
+      (produced by :func:`summarize_expanded_tasks`): each inner dict is
+      rendered inline and the results joined with ``; ``.
+    """
+    if value is None or value == "":
+        return ""
+
+    parsed: Any = value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            # Not JSON — pass through unchanged (already inline or free-form).
+            return value
+
+    if (
+        isinstance(parsed, dict)
+        and "parameters" in parsed
+        and isinstance(parsed.get("parameters"), list)
+    ):
+        rendered = [_render_parameters_inline(item, task_id) for item in parsed["parameters"]]
+        return "; ".join(part for part in rendered if part)
+
+    return _render_parameters_inline(parsed, task_id)
+
+
 def upload_results_to_tm1(
     tm1: TM1Service,
     workflow: str,
@@ -616,6 +750,16 @@ def upload_results_to_tm1(
     try:
         # Add workflow and run_id columns for cube import
         df = results_df.copy()
+        # Reshape parameters column to inline key="value" format so the cube
+        # payload matches the input shape users write in the rushti cube.
+        # Stats DB storage is untouched — only the upload payload changes.
+        if "parameters" in df.columns:
+            df["parameters"] = [
+                _render_parameters_column_for_upload(
+                    row.get("parameters"), str(row.get("task_id", ""))
+                )
+                for _, row in df.iterrows()
+            ]
         df.insert(0, "run_id", run_id)
         df.insert(0, "workflow", workflow)
 

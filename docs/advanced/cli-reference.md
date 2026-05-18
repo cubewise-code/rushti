@@ -60,6 +60,7 @@ rushti --tasks FILE [options]          # 'run' is the default command
 | `--force` | `-f` | FLAG | `false` | Bypass exclusive mode checks and run immediately. |
 | `--optimize` | | CHOICE | *(none)* | Enable task optimization with a scheduling algorithm: `longest_first` or `shortest_first`. |
 | `--no-checkpoint` | | FLAG | `false` | Disable checkpoint saving for this run. |
+| `--detailed-results` | | FLAG | `false` | When pushing results to TM1, emit one row per executed TI instead of summarizing expanded tasks. Each row gets a fresh sequential `task_id`; the original `task_id` is preserved in the new `original_task_id` measure. See the [TM1 integration docs](../features/tm1-integration.md#detailed-results) for the join contract. |
 | `--tm1-instance` | | STR | *(none)* | Read task file from TM1 instead of disk. Requires `--workflow`. |
 | `--workflow` | `-W` | STR | *(none)* | Workflow identifier. Defaults to JSON metadata `workflow` field or the taskfile filename stem if omitted. Required when using `--tm1-instance`. |
 | `--log-level` | `-L` | CHOICE | `INFO` | Override log level for this run. |
@@ -284,7 +285,7 @@ rushti stats export --workflow daily-etl --run-id 20260115_103000 --output run.c
 
 ### rushti stats visualize
 
-Generate an interactive HTML dashboard with Gantt charts, success rates, and execution trends. Automatically opens the dashboard in the default browser.
+Generate an interactive HTML dashboard with Gantt charts, success rates, and execution trends, plus a companion DAG visualization rebuilt from the latest run's recorded predecessors. Automatically opens the dashboard in the default browser.
 
 ```bash
 rushti stats visualize --workflow daily-etl
@@ -297,6 +298,11 @@ rushti stats visualize --workflow daily-etl --runs 10 --output dashboard.html
 | `--runs` | `-n` | INT | Number of recent runs to display (default: 5) |
 | `--output` | `-o` | PATH | Output HTML file path (default: `visualizations/rushti_dashboard_<id>.html`) |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+
+!!! info "DAG reflects the latest executed run"
+    Both the dashboard and the DAG are sourced from the stats database — not from the live taskfile or TM1 cube definition. Editing a workflow definition without re-running it will not update either visualization. Re-run the workflow to refresh.
+
+    When a task expanded via MDX wildcards (one parent task fanned out to N executions), the DAG now renders **one node per executed TI**, suffixing shared `task_id` values (`2.1`, `2.2`, `2.3`). Predecessors fan out to all expansions of the parent. Earlier versions deduped by `task_id`, hiding fan-out and making the DAG appear unchanged across edits to expandable parameters.
 
 ---
 
