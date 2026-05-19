@@ -113,7 +113,7 @@
 # To set up TM1 integration:
 # 1. Run: python rushti.py build --tm1-instance tm1srv01
 #    This creates the required dimensions and cube automatically.
-# 2. Set push_results = true and configure default_tm1_instance below
+# 2. Set push_results = true and configure tm1_instance below
 #
 # Default: false
 # push_results = false
@@ -126,9 +126,18 @@
 # Default: false
 # auto_load_results = false
 
-# Default TM1 instance for reading taskfiles and writing results
-# Used when --tm1-instance is specified without an instance, and for auto-upload
-# Must be defined in config.ini
+# TM1 instance used as the results-push target when no higher-precedence
+# override is set. Resolved against a 4-tier chain (highest wins):
+#   1. CLI --tm1-instance
+#   2. Taskfile JSON settings.tm1_instance
+#   3. This key
+#   4. default_tm1_instance below (deprecated)
+# Must be defined in config.ini.
+# tm1_instance = tm1srv01
+
+# DEPRECATED: use tm1_instance above. Still honoured indefinitely as the
+# final fallback; a one-shot DEPRECATION warning fires at settings load
+# *only* when tm1_instance is unset and this key is the value being used.
 # default_tm1_instance = tm1srv01
 
 # Default cube name for task definitions and results

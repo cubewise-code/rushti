@@ -235,8 +235,8 @@ rushti tasks push --tasks daily-etl.json --tm1-instance tm1srv01
 | Option | Short | Type | Description |
 |--------|-------|------|-------------|
 | `--tasks` | `-t` | PATH | Local JSON task file to push (*required*) |
-| `--tm1-instance` | | STR | Source TM1 instance (if loading from TM1) |
-| `--target-tm1-instance` | | STR | Target TM1 instance for the push |
+| `--tm1-instance` | | STR | TM1 instance to push the taskfile to. Context disambiguates the role — on `tasks push` this is the destination. |
+| `--target-tm1-instance` | | STR | **Deprecated alias** for `--tm1-instance`. Still works; emits a `DEPRECATION:` warning when used. |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
 
 ---

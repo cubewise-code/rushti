@@ -1,8 +1,11 @@
 """rushti tasks push — upload JSON taskfile to TM1 as a file."""
 
+import logging
 import os
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def handle_tasks_push(args, config_path: str) -> None:
@@ -11,6 +14,13 @@ def handle_tasks_push(args, config_path: str) -> None:
     :param args: Parsed arguments
     :param config_path: Path to config.ini
     """
+    if "--target-tm1-instance" in sys.argv[1:]:
+        logger.warning(
+            "DEPRECATION: --target-tm1-instance is deprecated. "
+            "Use --tm1-instance instead. The deprecated flag will continue "
+            "to work but may be removed in a future major version."
+        )
+
     if not args.taskfile_path:
         print("Error: --tasks is required for --push (must be a local JSON file)")
         sys.exit(1)
@@ -19,9 +29,9 @@ def handle_tasks_push(args, config_path: str) -> None:
         print(f"Error: Input file not found: {args.taskfile_path}")
         sys.exit(1)
 
-    target_instance = args.target_tm1_instance or args.tm1_instance
+    target_instance = args.tm1_instance
     if not target_instance:
-        print("Error: --tm1-instance or --target-tm1-instance is required for --push")
+        print("Error: --tm1-instance is required for --push")
         sys.exit(1)
 
     try:
