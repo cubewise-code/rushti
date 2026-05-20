@@ -29,7 +29,7 @@ from rushti.logging_setup import (
 )
 from rushti.results_writer import create_results_file
 from rushti.task import ExecutionMode
-from rushti.settings import load_settings, get_effective_settings
+from rushti.settings import get_effective_settings, load_settings, resolve_tm1_instance
 from rushti.taskfile import (
     detect_file_type,
     parse_json_taskfile,
@@ -629,42 +629,6 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     # Load settings from settings.ini
     settings = load_settings(cli_args.get("settings_file"))
 
-    # Apply CLI overrides to settings
-    settings = get_effective_settings(settings, cli_args=cli_args)
-
-    if settings.tm1_integration.detailed_results:
-        logging.info(
-            "Detailed results enabled: one cube row per executed TI. "
-            "If you upgraded RushTI from an earlier release, run "
-            "'rushti build --tm1-instance <instance>' once to add the "
-            "'original_task_id' measure to the rushti_measure dimension. "
-            "The build is non-destructive — existing cube data is preserved."
-        )
-
-    # Extract final values (CLI overrides settings.ini)
-    max_workers = (
-        cli_args["max_workers"]
-        if cli_args.get("max_workers") is not None
-        else settings.defaults.max_workers
-    )
-    process_execution_retries = (
-        cli_args["retries"] if cli_args.get("retries") is not None else settings.defaults.retries
-    )
-    result_file = (
-        cli_args["output_file"]
-        if cli_args.get("output_file") is not None
-        else settings.defaults.result_file
-    )
-    # Resolve result file path relative to application directory (skip if empty/None)
-    if result_file:
-        from rushti.utils import resolve_app_path
-
-        result_file = resolve_app_path(result_file)
-
-    logger.debug(
-        f"Effective settings: max_workers={max_workers}, retries={process_execution_retries}, result_file={result_file}"
-    )
-
     # Handle TM1 source if specified
     tm1_instance = cli_args.get("tm1_instance")
     workflow = cli_args.get("workflow")
@@ -701,6 +665,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
 
     # Determine workflow and exclusive mode from task file
     # Parse task file early to get metadata for session context
+    taskfile_preview = None
     if tm1_taskfile:
         # Using TM1 source
         file_type = "json"  # TM1 taskfiles are treated as JSON format
@@ -726,6 +691,36 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         except TaskfileValidationError as e:
             logger.error(str(e))
             sys.exit(1)
+
+    # Merge taskfile JSON settings (tier 2) into the effective settings
+    # before any setting is read. CLI args overlay JSON, which overlays
+    # settings.ini, which overlays built-in defaults.
+    effective_taskfile = tm1_taskfile or taskfile_preview
+    json_settings_dict = effective_taskfile.settings.to_dict() if effective_taskfile else {}
+    settings = get_effective_settings(settings, json_settings=json_settings_dict, cli_args=cli_args)
+
+    if settings.tm1_integration.detailed_results:
+        logging.info(
+            "Detailed results enabled: one cube row per executed TI. "
+            "If you upgraded RushTI from an earlier release, run "
+            "'rushti build --tm1-instance <instance>' once to add the "
+            "'original_task_id' measure to the rushti_measure dimension. "
+            "The build is non-destructive — existing cube data is preserved."
+        )
+
+    # Extract effective execution params (CLI > taskfile JSON > settings.ini > defaults)
+    max_workers = settings.defaults.max_workers
+    process_execution_retries = settings.defaults.retries
+    result_file = settings.defaults.result_file
+    if result_file:
+        from rushti.utils import resolve_app_path
+
+        result_file = resolve_app_path(result_file)
+
+    logger.debug(
+        f"Effective settings: max_workers={max_workers}, "
+        f"retries={process_execution_retries}, result_file={result_file}"
+    )
 
     # Apply exclusive from settings.ini if not set via CLI or JSON
     if exclusive_mode is None:
@@ -824,16 +819,6 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
             )
             dag.validate()
             taskfile = tm1_taskfile
-            # Apply settings from TM1 taskfile (CLI still overrides)
-            if taskfile.settings.max_workers and cli_args.get("max_workers") is None:
-                max_workers = taskfile.settings.max_workers
-            if taskfile.settings.retries is not None and cli_args.get("retries") is None:
-                process_execution_retries = taskfile.settings.retries
-            if taskfile.settings.result_file and cli_args.get("output_file") is None:
-                result_file = resolve_app_path(taskfile.settings.result_file)
-            logger.debug(
-                f"Applied TM1 taskfile settings: max_workers={max_workers}, retries={process_execution_retries}"
-            )
         else:
             # Build DAG from file with dependency validation
             dag_result = build_dag(
@@ -846,16 +831,6 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
             taskfile = None
             if isinstance(dag_result, tuple):
                 dag, taskfile = dag_result
-                # Apply JSON settings (CLI still overrides)
-                if taskfile.settings.max_workers and cli_args.get("max_workers") is None:
-                    max_workers = taskfile.settings.max_workers
-                if taskfile.settings.retries is not None and cli_args.get("retries") is None:
-                    process_execution_retries = taskfile.settings.retries
-                if taskfile.settings.result_file and cli_args.get("output_file") is None:
-                    result_file = resolve_app_path(taskfile.settings.result_file)
-                logger.debug(
-                    f"Applied JSON settings: max_workers={max_workers}, retries={process_execution_retries}"
-                )
             else:
                 dag = dag_result
                 # TXT source: convert to Taskfile for archiving
@@ -1117,12 +1092,15 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                         assign_unique_task_ids,
                     )
 
-                    # CLI --tm1-instance wins over default_tm1_instance for every
-                    # TM1 operation in this run (taskfile read, results push,
-                    # auto_load_results). Silent precedence — no extra warning
-                    # when CLI overrides default.
-                    upload_instance = tm1_instance or settings.tm1_integration.default_tm1_instance
+                    upload_instance, source_tier = resolve_tm1_instance(
+                        tm1_instance, settings, json_settings_dict
+                    )
                     if upload_instance:
+                        logger.info(
+                            "Result upload target: %s (source: %s)",
+                            upload_instance,
+                            source_tier,
+                        )
                         tm1_upload = connect_to_tm1_instance(
                             upload_instance,
                             CONFIG,
@@ -1173,7 +1151,9 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                             tm1_upload.logout()
                     else:
                         logger.warning(
-                            "push_results enabled but default_tm1_instance not configured"
+                            "push_results enabled but no TM1 instance configured "
+                            "(CLI --tm1-instance, taskfile settings.tm1_instance, "
+                            "or settings.ini tm1_instance)."
                         )
                 except Exception as e:
                     logger.warning(f"Failed to upload results to TM1 (non-blocking): {e}")

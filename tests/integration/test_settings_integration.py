@@ -12,6 +12,7 @@ from rushti.settings import (
     get_effective_settings,
     load_settings,
     resolve_settings_path,
+    resolve_tm1_instance,
 )
 
 
@@ -259,6 +260,77 @@ unknown_key = value
 
         # Known keys should still load correctly
         self.assertEqual(settings.defaults.max_workers, 4)
+
+
+class TestFourTierTm1InstanceResolution(unittest.TestCase):
+    """End-to-end smoke test for the per-workflow tm1_instance precedence
+    chain. Walks all four tiers using real files (settings.ini on disk +
+    taskfile JSON dict) and asserts both value and source label, matching
+    what the run path does in production."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.config_dir = Path(self.temp_dir) / "config"
+        self.config_dir.mkdir()
+        import logging as _logging
+
+        _logging.getLogger("rushti.settings").disabled = False
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _write_settings(self, body: str, name: str = "settings.ini") -> str:
+        p = self.config_dir / name
+        p.write_text(body)
+        return str(p)
+
+    def test_four_tier_resolution_end_to_end(self):
+        """All four precedence tiers, one harness."""
+        # Settings.ini has both keys; canonical tier 3, deprecated tier 4.
+        settings_path = self._write_settings(
+            "[tm1_integration]\n"
+            "tm1_instance = ini_canonical\n"
+            "default_tm1_instance = ini_deprecated\n",
+            name="settings_both.ini",
+        )
+
+        # ---- Tier 4: only the deprecated key is set; canonical is empty.
+        depr_path = self._write_settings(
+            "[tm1_integration]\ndefault_tm1_instance = ini_deprecated\n",
+            name="settings_deprecated_only.ini",
+        )
+        depr_settings = load_settings(depr_path)
+        value, source = resolve_tm1_instance(None, depr_settings)
+        self.assertEqual(value, "ini_deprecated")
+        self.assertEqual(source, "settings.default_tm1_instance")
+
+        # ---- Tier 3: canonical settings.ini key, no taskfile, no CLI.
+        settings = load_settings(settings_path)
+        value, source = resolve_tm1_instance(None, settings, json_settings={})
+        self.assertEqual(value, "ini_canonical")
+        self.assertEqual(source, "settings.tm1_instance")
+
+        # ---- Tier 2: taskfile JSON overrides settings.ini.
+        merged = get_effective_settings(
+            load_settings(settings_path),
+            json_settings={"tm1_instance": "taskfile_target"},
+        )
+        value, source = resolve_tm1_instance(
+            None, merged, json_settings={"tm1_instance": "taskfile_target"}
+        )
+        self.assertEqual(value, "taskfile_target")
+        self.assertEqual(source, "taskfile")
+
+        # ---- Tier 1: CLI beats everything.
+        value, source = resolve_tm1_instance(
+            "cli_winner",
+            merged,
+            json_settings={"tm1_instance": "taskfile_target"},
+        )
+        self.assertEqual(value, "cli_winner")
+        self.assertEqual(source, "cli")
 
 
 if __name__ == "__main__":

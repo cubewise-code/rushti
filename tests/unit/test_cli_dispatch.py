@@ -234,42 +234,159 @@ class TestMainSubcommandDispatch:
 
 
 class TestUploadInstancePrecedence:
-    """Issue #146 regression: --tm1-instance must override default_tm1_instance
-    for the results push (and the auto_load_results call), not just the
-    taskfile read."""
+    """Issue #146 regression: CLI --tm1-instance must override
+    default_tm1_instance for the results push (and the auto_load_results
+    call), not just the taskfile read.
 
-    def test_cli_value_wins_over_default(self):
-        # The push-results block computes upload_instance as
-        # `tm1_instance or settings.tm1_integration.default_tm1_instance`.
-        # When the CLI value is set, it must win.
-        cli_value = "tm1srv01"
-        default_value = "CONS_DIM_BUILD"
-        assert (cli_value or default_value) == "tm1srv01"
+    Originally a literal-string source-code assertion; rewritten as direct
+    behavioural tests of ``resolve_tm1_instance`` after the 4-tier
+    resolution refactor."""
 
-    def test_default_used_when_cli_missing(self):
-        cli_value = None
-        default_value = "CONS_DIM_BUILD"
-        assert (cli_value or default_value) == "CONS_DIM_BUILD"
+    def test_cli_wins_over_deprecated_default(self):
+        # Issue #146 regression
+        from rushti.settings import Settings, resolve_tm1_instance
 
-    def test_empty_when_both_missing(self):
-        cli_value = None
-        default_value = ""
-        assert not (cli_value or default_value)
+        settings = Settings()
+        settings.tm1_integration.default_tm1_instance = "CONS_DIM_BUILD"
+        value, source = resolve_tm1_instance("tm1srv01", settings)
+        assert value == "tm1srv01"
+        assert source == "cli"
 
-    def test_source_uses_precedence_expression(self):
-        """Static guard: the push-results path in cli.py must compute the
-        upload target from the CLI value first. Catches accidental
-        re-introduction of the shadowing bug where the inner block
-        reassigned `tm1_instance = settings.tm1_integration.default_tm1_instance`
-        and silently dropped the CLI value."""
-        import inspect
+    def test_cli_wins_over_canonical_settings(self):
+        # Issue #146 regression
+        from rushti.settings import Settings, resolve_tm1_instance
 
-        source = inspect.getsource(cli)
-        assert "tm1_instance or settings.tm1_integration.default_tm1_instance" in source, (
-            "Expected `tm1_instance or settings.tm1_integration.default_tm1_instance` "
-            "in cli.py — the CLI --tm1-instance must take precedence over the "
-            "default in the push-results path. See issue #146."
+        settings = Settings()
+        settings.tm1_integration.tm1_instance = "CONS_DIM_BUILD"
+        value, source = resolve_tm1_instance("tm1srv01", settings)
+        assert value == "tm1srv01"
+        assert source == "cli"
+
+    def test_deprecated_default_used_when_cli_missing(self):
+        # Issue #146 regression
+        from rushti.settings import Settings, resolve_tm1_instance
+
+        settings = Settings()
+        settings.tm1_integration.default_tm1_instance = "CONS_DIM_BUILD"
+        value, source = resolve_tm1_instance(None, settings)
+        assert value == "CONS_DIM_BUILD"
+        assert source == "settings.default_tm1_instance"
+
+    def test_none_returned_when_all_tiers_empty(self):
+        # Issue #146 regression
+        from rushti.settings import Settings, resolve_tm1_instance
+
+        settings = Settings()
+        value, source = resolve_tm1_instance(None, settings)
+        assert value is None
+        assert source == "none"
+
+
+class TestTasksPushFlagAliasing:
+    """Spec §12 tests 16–18: --tm1-instance is canonical on `tasks push`;
+    --target-tm1-instance is a deprecated alias; the alias logs a
+    deprecation warning."""
+
+    def test_canonical_flag_works(self, monkeypatch, tmp_path):
+        from rushti.commands.tasks import run_tasks_command
+
+        taskfile = tmp_path / "t.json"
+        taskfile.write_text('{"version":"2.0","tasks":[{"id":"1","instance":"tm1","process":"p"}]}')
+
+        called = {}
+
+        def fake_handle_push(args, config_path):
+            called["tm1_instance"] = args.tm1_instance
+
+        monkeypatch.setattr("rushti.commands.tasks.handle_tasks_push", fake_handle_push)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "rushti",
+                "tasks",
+                "push",
+                "--tasks",
+                str(taskfile),
+                "--tm1-instance",
+                "tm1srv01",
+            ],
         )
+        run_tasks_command(sys.argv)
+        assert called["tm1_instance"] == "tm1srv01"
+
+    def test_deprecated_alias_still_works(self, monkeypatch, tmp_path):
+        from rushti.commands.tasks import run_tasks_command
+
+        taskfile = tmp_path / "t.json"
+        taskfile.write_text('{"version":"2.0","tasks":[{"id":"1","instance":"tm1","process":"p"}]}')
+
+        called = {}
+
+        def fake_handle_push(args, config_path):
+            called["tm1_instance"] = args.tm1_instance
+
+        monkeypatch.setattr("rushti.commands.tasks.handle_tasks_push", fake_handle_push)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "rushti",
+                "tasks",
+                "push",
+                "--tasks",
+                str(taskfile),
+                "--target-tm1-instance",
+                "tm1srv01",
+            ],
+        )
+        run_tasks_command(sys.argv)
+        assert called["tm1_instance"] == "tm1srv01"
+
+    def test_deprecated_alias_logs_warning(self, monkeypatch, tmp_path, caplog):
+        import logging
+
+        from rushti.commands.tasks.push import handle_tasks_push
+
+        taskfile = tmp_path / "t.json"
+        taskfile.write_text("{}")
+
+        class _Args:
+            taskfile_path = str(taskfile)
+            tm1_instance = "tm1srv01"
+
+        monkeypatch.setattr(sys, "argv", ["rushti", "tasks", "push", "--target-tm1-instance", "x"])
+        # Stub out the actual push so we only exercise the deprecation path.
+        monkeypatch.setattr(
+            "rushti.tm1_integration.connect_to_tm1_instance",
+            lambda *_a, **_kw: (_ for _ in ()).throw(SystemExit(0)),
+        )
+        with caplog.at_level(logging.WARNING, logger="rushti.commands.tasks.push"):
+            with pytest.raises(SystemExit):
+                handle_tasks_push(_Args(), config_path="/tmp/cfg.ini")
+        assert any("--target-tm1-instance is deprecated" in r.message for r in caplog.records)
+
+    def test_canonical_flag_does_not_log_warning(self, monkeypatch, tmp_path, caplog):
+        import logging
+
+        from rushti.commands.tasks.push import handle_tasks_push
+
+        taskfile = tmp_path / "t.json"
+        taskfile.write_text("{}")
+
+        class _Args:
+            taskfile_path = str(taskfile)
+            tm1_instance = "tm1srv01"
+
+        monkeypatch.setattr(sys, "argv", ["rushti", "tasks", "push", "--tm1-instance", "x"])
+        monkeypatch.setattr(
+            "rushti.tm1_integration.connect_to_tm1_instance",
+            lambda *_a, **_kw: (_ for _ in ()).throw(SystemExit(0)),
+        )
+        with caplog.at_level(logging.WARNING, logger="rushti.commands.tasks.push"):
+            with pytest.raises(SystemExit):
+                handle_tasks_push(_Args(), config_path="/tmp/cfg.ini")
+        assert not any("--target-tm1-instance is deprecated" in r.message for r in caplog.records)
 
 
 class TestMainBadInputs:

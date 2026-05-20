@@ -148,7 +148,7 @@ retention_days = 90
 
 [tm1_integration]
 push_results = true
-default_tm1_instance = tm1srv01
+tm1_instance = tm1srv01
 default_rushti_cube = rushti
 ```
 
@@ -163,7 +163,7 @@ To automatically load the CSV into the cube after each push, enable `auto_load_r
 [tm1_integration]
 push_results = true
 auto_load_results = true
-default_tm1_instance = tm1srv01
+tm1_instance = tm1srv01
 default_rushti_cube = rushti
 ```
 
@@ -198,11 +198,63 @@ All TM1 integration settings live in the `[tm1_integration]` section of `config/
 |---------|---------|-------------|
 | `push_results` | `false` | Push a results CSV to TM1 after each run |
 | `auto_load_results` | `false` | Automatically call `}rushti.load.results` to load the CSV into the cube |
-| `default_tm1_instance` | *(none)* | TM1 instance to use for reading/writing cube data |
+| `tm1_instance` | *(none)* | Default results-push target. Resolved against the [4-tier chain](#per-workflow-target-instance) — CLI `--tm1-instance` > taskfile `settings.tm1_instance` > this key > `default_tm1_instance` (deprecated). |
+| `default_tm1_instance` | *(none)* | **Deprecated** alias for `tm1_instance`. Honoured as the final fallback; warns at load only when actually used. |
 | `default_rushti_cube` | `rushti` | Name of the cube to use |
 | `dim_workflow` | `rushti_workflow` | Workflow dimension name |
 | `dim_task_id` | `rushti_task_id` | Task ID dimension name |
 | `dim_run_id` | `rushti_run_id` | Run ID dimension name |
+
+---
+
+### Per-workflow target instance
+
+The `tm1_instance` value that receives the results push is resolved against a four-tier precedence chain. The first non-empty value wins:
+
+| Tier | Source | Where it's set |
+|------|--------|----------------|
+| 1 | CLI | `rushti run --tm1-instance <name>` |
+| 2 | Taskfile JSON | `settings.tm1_instance` inside the JSON task file |
+| 3 | settings.ini (canonical) | `[tm1_integration].tm1_instance` |
+| 4 | settings.ini (deprecated) | `[tm1_integration].default_tm1_instance` |
+
+Tier 2 is the new workflow-level override — drop `tm1_instance` into any JSON task file's `settings` block to push that workflow's results to a specific instance without touching `settings.ini`:
+
+```json
+{
+  "version": "2.0",
+  "metadata": { "workflow": "daily-finance-close" },
+  "settings": {
+    "push_results": true,
+    "auto_load_results": true,
+    "tm1_instance": "tm1prod"
+  },
+  "tasks": [ /* ... */ ]
+}
+```
+
+When the upload runs, RushTI logs which tier supplied the value:
+
+```
+INFO  Result upload target: tm1prod (source: taskfile)
+```
+
+If all four tiers are empty and `push_results` is on, the run still succeeds — RushTI logs a warning and skips the upload:
+
+```
+WARNING  push_results enabled but no TM1 instance configured (CLI --tm1-instance, taskfile settings.tm1_instance, or settings.ini tm1_instance).
+```
+
+!!! info "Task-level `instance` vs workflow-level `tm1_instance`"
+    Two `instance`-flavoured fields live at different nesting levels inside a JSON task file:
+
+    - **`tasks[*].instance`** — *task-level execution target.* Where the individual TI process runs. Required on every task.
+    - **`settings.tm1_instance`** — *workflow-level results target.* Where the run's results are pushed at the end. Optional; overrides settings.ini.
+
+    They are independent. A workflow can execute its tasks across several instances (one per task) and push the consolidated results back to a single target instance.
+
+!!! warning "Cube-sourced taskfiles have no tier 2"
+    When a taskfile is loaded from the TM1 cube via `rushti run --tm1-instance X --workflow Y`, the cube schema does not carry a `settings` block — only task definitions. Resolution skips tier 2 and falls through directly to settings.ini (tiers 3 and 4). The CLI value (tier 1) still acts as both the source for the cube read and, in absence of other settings, the fallback results target.
 
 ---
 
