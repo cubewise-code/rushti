@@ -69,6 +69,7 @@ class TM1IntegrationSettings:
     push_results: bool = False
     auto_load_results: bool = False
     detailed_results: bool = False
+    tm1_instance: Optional[str] = None
     default_tm1_instance: Optional[str] = None
     default_rushti_cube: str = "rushti"
     default_workflow_dim: str = "rushti_workflow"
@@ -155,6 +156,7 @@ SETTINGS_SCHEMA = {
         "push_results": bool,
         "auto_load_results": bool,
         "detailed_results": bool,
+        "tm1_instance": str,
         "default_tm1_instance": str,
         "default_rushti_cube": str,
         "default_workflow_dim": str,
@@ -365,7 +367,65 @@ def load_settings(settings_path: Optional[str] = None) -> Settings:
     # Resolve paths relative to application directory
     settings.resume.checkpoint_dir = resolve_app_path(settings.resume.checkpoint_dir)
 
+    if not settings.tm1_integration.tm1_instance and settings.tm1_integration.default_tm1_instance:
+        logger.warning(
+            "DEPRECATION: [tm1_integration].default_tm1_instance is deprecated. "
+            "Rename to tm1_instance. The deprecated key will continue to work "
+            "but may be removed in a future major version."
+        )
+
     return settings
+
+
+def resolve_tm1_instance(
+    tm1_instance: Optional[str],
+    settings: Settings,
+    json_settings: Optional[Dict[str, Any]] = None,
+) -> tuple[Optional[str], str]:
+    """Resolve the effective TM1 instance for results-push, with source tier.
+
+    Walks the 4-tier precedence chain (highest to lowest), returning the
+    first non-empty value alongside a label identifying the tier:
+
+    1. CLI argument (``tm1_instance``) → label ``"cli"``
+    2. Taskfile JSON ``settings.tm1_instance`` → label ``"taskfile"``
+    3. ``settings.ini [tm1_integration].tm1_instance`` → label
+       ``"settings.tm1_instance"``
+    4. ``settings.ini [tm1_integration].default_tm1_instance`` (deprecated)
+       → label ``"settings.default_tm1_instance"``
+
+    Empty strings at any tier are treated as unset (fall through).
+
+    ``json_settings`` is the taskfile JSON ``settings`` dict (as returned by
+    ``TaskfileSettings.to_dict``). It is consulted separately so the
+    resolver can distinguish tier 2 from tier 3 — by the time
+    ``get_effective_settings`` has been applied, the JSON-sourced
+    ``tm1_instance`` has already overwritten the settings.ini value in the
+    merged ``Settings`` object, and the provenance is otherwise lost.
+
+    :param tm1_instance: Value from the CLI (e.g. ``run --tm1-instance``).
+    :param settings: Settings object (post-merge).
+    :param json_settings: Taskfile JSON settings dict; tier 2 lookup.
+    :return: ``(value, source_label)``; ``(None, "none")`` when all tiers
+        are empty.
+    """
+    if tm1_instance:
+        return tm1_instance, "cli"
+
+    if json_settings:
+        taskfile_value = json_settings.get("tm1_instance")
+        if taskfile_value:
+            return taskfile_value, "taskfile"
+
+    settings_value = settings.tm1_integration.tm1_instance
+    if settings_value:
+        return settings_value, "settings.tm1_instance"
+
+    deprecated_value = settings.tm1_integration.default_tm1_instance
+    if deprecated_value:
+        return deprecated_value, "settings.default_tm1_instance"
+
+    return None, "none"
 
 
 def get_effective_settings(
@@ -419,14 +479,20 @@ def _apply_json_settings(settings: Settings, json_settings: Dict[str, Any]) -> N
         "push_results": ("tm1_integration", "push_results"),
         "auto_load_results": ("tm1_integration", "auto_load_results"),
         "detailed_results": ("tm1_integration", "detailed_results"),
+        "tm1_instance": ("tm1_integration", "tm1_instance"),
     }
 
     for json_key, (section, attr) in json_to_settings.items():
-        if json_key in json_settings and json_settings[json_key] is not None:
-            section_obj = getattr(settings, section)
-            value = json_settings[json_key]
-            setattr(section_obj, attr, value)
-            logger.debug(f"JSON override: {section}.{attr} = {value}")
+        if json_key not in json_settings:
+            continue
+        value = json_settings[json_key]
+        if value is None:
+            continue
+        if isinstance(value, str) and value == "":
+            continue
+        section_obj = getattr(settings, section)
+        setattr(section_obj, attr, value)
+        logger.debug(f"JSON override: {section}.{attr} = {value}")
 
 
 def _apply_cli_args(settings: Settings, cli_args: Dict[str, Any]) -> None:

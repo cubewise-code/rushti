@@ -108,10 +108,10 @@ Examples:
     add_taskfile_source_args(push_parser, required=False, include_settings=True)
     push_parser.add_argument(
         "--target-tm1-instance",
-        dest="target_tm1_instance",
-        default=None,
+        dest="tm1_instance",
+        default=argparse.SUPPRESS,
         metavar="INSTANCE",
-        help="Target TM1 instance for push (defaults to --tm1-instance if loading from TM1)",
+        help="[DEPRECATED] Alias for --tm1-instance. Will be removed in a future major version.",
     )
     push_parser.add_argument(
         "--mode",

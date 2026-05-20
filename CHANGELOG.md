@@ -9,6 +9,26 @@ All notable changes to RushTI are documented in this file.
   `CubeGetLogChanges` / `CubeSetLogChanges` / `ExecuteCommand` functions;
   source-file cleanup uses the TM1-native `ASCIIDelete` instead of shelling
   out via `cmd /c del`. The v11 body is unchanged.
+- **Per-workflow `tm1_instance` setting** for results push and auto-load.
+  Set it inside a JSON taskfile's `settings` block to override the
+  `settings.ini` default per workflow. Resolution chain (highest wins):
+  CLI `--tm1-instance` > taskfile `settings.tm1_instance` >
+  `settings.ini [tm1_integration].tm1_instance` >
+  `settings.ini [tm1_integration].default_tm1_instance` (deprecated).
+  RushTI now logs which tier supplied the target at push time.
+- **Behavioural change:** `push_results` and `auto_load_results` set
+  inside taskfile JSON now take effect. They were silently ignored in
+  the `run` path before this release. If you have divergent values
+  between taskfile JSON and `settings.ini`, reconcile them before
+  upgrading — the taskfile value will now win.
+- **Soft deprecation:** `settings.ini [tm1_integration].default_tm1_instance`.
+  Rename to `tm1_instance`. The old key is honoured indefinitely as the
+  final fallback in the resolution chain; a one-shot `DEPRECATION:`
+  warning fires at settings load only when it's the value actually being
+  used.
+- **Soft deprecation:** `rushti tasks push --target-tm1-instance`. Use
+  `--tm1-instance` instead. The legacy flag is aliased and continues to
+  work; a `DEPRECATION:` warning fires on use.
 
 ## Unreleased — `feat/issue-146-detailed-results`
 

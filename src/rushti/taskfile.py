@@ -83,6 +83,7 @@ class TaskfileSettings:
     optimization_algorithm: Optional[str] = None
     push_results: Optional[bool] = None
     auto_load_results: Optional[bool] = None
+    tm1_instance: Optional[str] = None
     stage_order: Optional[List[str]] = None
     stage_workers: Optional[Dict[str, int]] = None
 
@@ -103,6 +104,7 @@ class TaskfileSettings:
             optimization_algorithm=data.get("optimization_algorithm"),
             push_results=data.get("push_results"),
             auto_load_results=data.get("auto_load_results"),
+            tm1_instance=data.get("tm1_instance"),
             stage_order=data.get("stage_order"),
             stage_workers=data.get("stage_workers"),
         )
