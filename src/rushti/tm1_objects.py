@@ -10,8 +10,14 @@ Object Definitions:
     - TASK_ID_ELEMENT_COUNT: Number of elements to generate for task_id dimension (1..N)
     - RUN_ID_SEED_ELEMENTS: Seed elements for run_id dimension
     - WORKFLOW_SEED_ELEMENTS: Seed elements for workflow dimension
-    - PROCESS_DEFINITION: Full TI process definition for }rushti.load.results
+    - PROCESS_PROLOG_V11 / PROCESS_PROLOG_V12: Prolog body per TM1 major version
+    - PROCESS_EPILOG_V11 / PROCESS_EPILOG_V12: Epilog body per TM1 major version
     - SAMPLE_DATA: Sample cube data for demonstration taskfiles
+
+The v12 variants drop calls to functions that were removed or are unsupported
+on TM1 v12 (``CubeGetLogChanges`` / ``CubeSetLogChanges`` and
+``ExecuteCommand``). Source-file cleanup on v12 is handled by the TM1-native
+``ASCIIDelete`` instead of shelling out to ``cmd /c del``.
 """
 
 # ---------------------------------------------------------------------------
@@ -85,7 +91,7 @@ WORKFLOW_SEED_ELEMENTS = ["Sample_Stage_Mode", "Sample_Optimal_Mode"]
 # TI Process: }rushti.load.results
 # ---------------------------------------------------------------------------
 
-PROCESS_PROLOG = r"""#################################################################################################
+PROCESS_PROLOG_V11 = r"""#################################################################################################
 ##~~Join the bedrock TM1 community on GitHub https://github.com/cubewise-code/bedrock Ver 4.0~~##
 #################################################################################################
 
@@ -222,6 +228,142 @@ EndIf;
 #################################################################################################
 """
 
+# v12 prolog: identical to v11 except the CubeGetLogChanges / CubeSetLogChanges
+# block is removed. Those functions are unsupported on TM1 v12 and would cause
+# the TI to fail at compile time.
+PROCESS_PROLOG_V12 = r"""#################################################################################################
+##~~Join the bedrock TM1 community on GitHub https://github.com/cubewise-code/bedrock Ver 4.0~~##
+#################################################################################################
+
+#****Begin: Generated Statements***
+#****End: Generated Statements****
+
+#################################################################################################
+### CHANGE HISTORY:
+### MODIFICATION DATE 	CHANGED BY 	    COMMENT
+### 2026-01-15 		    Nicolas Bisurgi 	Creation of Process
+### YYYY-MM-DD 		    Developer Name 	Reason for modification here
+#################################################################################################
+#Region @DOC
+# Description:
+# This process will load RushTI result files into a TM1 cube
+
+# Use case:
+# Storing RushTI execution stats in a TM1 Cube
+
+# Note:
+# * This process assumes a there is a rushti compliant cube and dimensions. If you don't have it
+# * please run: rushti.py build --tm1-instance tm1srv01
+#EndRegion @DOC
+#################################################################################################
+
+#################################################################################################
+#Region Process Declarations
+### Process Parameters
+# a short description of what the process does goes here in cAction variable, e.g. "copied data from cube A to cube B". This will be written to the message log if pLogOutput=1
+cAction             = 'loading rushti stats into ' | pTargetCube;
+cParamArray         = '';
+# to use the parameter array remove the line above and uncomment the line below, adding the needed parameters in the provided format
+#cParamArray         = 'pLogOutput:%pLogOutput%, pTemp:%pTemp%';
+
+### Global Variables
+StringGlobalVariable('sProcessReturnCode');
+NumericGlobalVariable('nProcessReturnCode');
+
+### Standard Constants
+cThisProcName       = GetProcessName();
+cUserName           = TM1User();
+cTimeStamp          = TimSt( Now, '\Y\m\d\h\i\s' );
+cRandomInt          = NumberToString( INT( RAND( ) * 1000 ));
+cTempObjName        = Expand('%cThisProcName%_%cTimeStamp%_%cRandomInt%');
+cViewClr            = '}bedrock_clear_' | cTempObjName;
+cViewSrc            = '}bedrock_source_' | cTempObjName;
+cMsgErrorLevel      = 'ERROR';
+cMsgErrorContent    = 'Process:%cThisProcName% ErrorMsg:%sMessage%';
+cLogInfo            = 'Process:%cThisProcName% run with parameters %cParamArray%';
+sDelimEleStart      = '¦';
+sDelimDim           = '&';
+sDelimEle           = '+';
+nProcessReturnCode  = 0;
+nErrors             = 0;
+nMetadataRecordCount= 0;
+nDataRecordCount    = 0;
+
+### Process Specific Constants
+cFileSrc            = pSourceFile;
+cCubeTgt            = pTargetCube;
+
+#EndRegion Process Declarations
+#################################################################################################
+
+### LogOutput parameters
+IF( pLogoutput = 1 );
+    LogOutput('INFO', Expand( cLogInfo ) );
+ENDIF;
+
+#################################################################################################
+#Region Validate Parameters
+
+# pLogOutput
+If( pLogOutput >= 1 );
+    pLogOutput = 1;
+Else;
+    pLogOutput = 0;
+EndIf;
+
+# Validate source file
+If( Trim( cFileSrc ) @= '' );
+    nErrors = nErrors + 1;
+    sMessage = 'No source cfileube specified.';
+    LogOutput( cMsgErrorLevel, Expand( cMsgErrorContent ) );
+ElseIf( FileExists( cFileSrc ) = 0 );
+    nErrors = nErrors + 1;
+    sMessage = Expand( 'Invalid source file specified: %cFileSrc%.');
+    LogOutput( cMsgErrorLevel, Expand( cMsgErrorContent ) );
+EndIf;
+
+# Validate target cube
+If( Trim( cCubeTgt ) @= '' );
+    nErrors = nErrors + 1;
+    sMessage = 'No target cube specified.';
+    LogOutput( cMsgErrorLevel, Expand( cMsgErrorContent ) );
+ElseIf( CubeExists( cCubeTgt ) = 0 );
+    nErrors = nErrors + 1;
+    sMessage = Expand( 'Invalid target cube specified: %cCubeTgt%.');
+    LogOutput( cMsgErrorLevel, Expand( cMsgErrorContent ) );
+EndIf;
+
+# If any parameters fail validation then set data source of process to null and go directly to epilog
+If( nErrors > 0 );
+    DataSourceType = 'NULL';
+    If( pStrictErrorHandling = 1 );
+        ProcessQuit;
+    Else;
+        ProcessBreak;
+    EndIf;
+EndIf;
+
+#################################################################################################
+#EndRegion Validate Parameters
+
+#################################################################################################
+#Region - DataSource
+
+
+### Assign data source
+If( nErrors = 0 );
+    DatasourceType          = 'CHARACTERDELIMITED';
+    DatasourceNameForServer = cFileSrc;
+    DatasourceASCIIHeaderRecords = 1;
+    DatasourceASCIIDelimiter=',';
+    DatasourceASCIIDecimalSeparator='.';
+    DatasourceASCIIThousandSeparator='';
+EndIf;
+
+#EndRegion - DataSource
+#################################################################################################
+"""
+
 PROCESS_METADATA = r"""#****Begin: Generated Statements***
 #****End: Generated Statements****
 
@@ -271,7 +413,7 @@ CellPutS(vsucceed_on_minor_errors, pTargetCube, vworkflow, vrun_id, vtask_id, 's
 CellPutS(voriginal_task_id, pTargetCube, vworkflow, vrun_id, vtask_id, 'original_task_id');
 """
 
-PROCESS_EPILOG = r"""#################################################################################################
+PROCESS_EPILOG_V11 = r"""#################################################################################################
 ##~~Join the bedrock TM1 community on GitHub https://github.com/cubewise-code/bedrock Ver 4.0~~##
 #################################################################################################
 
@@ -287,6 +429,42 @@ endif;
 
 ### If required switch transaction logging back on
 CubeSetLogChanges( cCubeTgt, nCubeLogChanges );
+
+### Return code & final error message handling
+If( nErrors > 0 );
+    sMessage = 'the process incurred at least 1 error. Please see above lines in this file for more details.';
+    nProcessReturnCode = 0;
+    LogOutput( cMsgErrorLevel, Expand( cMsgErrorContent ) );
+    sProcessReturnCode = Expand( '%sProcessReturnCode% Process:%cThisProcName% completed with errors. Check tm1server.log for details.' );
+    If( pStrictErrorHandling = 1 );
+        ProcessQuit;
+    EndIf;
+Else;
+    sProcessAction = Expand( 'Process:%cThisProcName% successfully %cAction%. %nDataRecordCount% records processed.' );
+    sProcessReturnCode = Expand( '%sProcessReturnCode% %sProcessAction%' );
+    nProcessReturnCode = 1;
+    If( pLogoutput = 1 );
+        LogOutput('INFO', Expand( sProcessAction ) );
+    EndIf;
+EndIf;
+
+### End Epilog ###"""
+
+# v12 epilog: source-file cleanup uses TM1-native ASCIIDelete (no shell-out),
+# and the CubeSetLogChanges restore is omitted because the v12 prolog does not
+# toggle transaction logging.
+PROCESS_EPILOG_V12 = r"""#################################################################################################
+##~~Join the bedrock TM1 community on GitHub https://github.com/cubewise-code/bedrock Ver 4.0~~##
+#################################################################################################
+
+#****Begin: Generated Statements***
+#****End: Generated Statements****
+
+### If required delete the source file
+if(pDeleteSourceFile=1);
+  Sleep(1000);
+  ASCIIDelete(pSourceFile);
+endif;
 
 ### Return code & final error message handling
 If( nErrors > 0 );

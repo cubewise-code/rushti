@@ -2,8 +2,13 @@
 
 All notable changes to RushTI are documented in this file.
 
-## Unreleased
+## Unreleased — `feat/issue-154-v12-load-results`
 
+- Fix: `rushti build` now installs a TM1-version-aware `}rushti.load.results`
+  TI (closes #154). On v12 targets the body no longer references the removed
+  `CubeGetLogChanges` / `CubeSetLogChanges` / `ExecuteCommand` functions;
+  source-file cleanup uses the TM1-native `ASCIIDelete` instead of shelling
+  out via `cmd /c del`. The v11 body is unchanged.
 - **Per-workflow `tm1_instance` setting** for results push and auto-load.
   Set it inside a JSON taskfile's `settings` block to override the
   `settings.ini` default per workflow. Resolution chain (highest wins):

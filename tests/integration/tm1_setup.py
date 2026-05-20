@@ -87,22 +87,29 @@ def ensure_load_results_process(
         return False
 
     from TM1py.Objects import Process
+    from TM1py.Utils import integerize_version
     from rushti.tm1_objects import (
         PROCESS_DATA,
         PROCESS_DATASOURCE,
-        PROCESS_EPILOG,
+        PROCESS_EPILOG_V11,
+        PROCESS_EPILOG_V12,
         PROCESS_METADATA,
         PROCESS_PARAMETERS,
-        PROCESS_PROLOG,
+        PROCESS_PROLOG_V11,
+        PROCESS_PROLOG_V12,
         PROCESS_VARIABLES,
     )
 
+    is_v12 = integerize_version(tm1.version, 2) >= 12
+    prolog = PROCESS_PROLOG_V12 if is_v12 else PROCESS_PROLOG_V11
+    epilog = PROCESS_EPILOG_V12 if is_v12 else PROCESS_EPILOG_V11
+
     process = Process(
         name=process_name,
-        prolog_procedure=PROCESS_PROLOG,
+        prolog_procedure=prolog,
         metadata_procedure=PROCESS_METADATA,
         data_procedure=PROCESS_DATA,
-        epilog_procedure=PROCESS_EPILOG,
+        epilog_procedure=epilog,
         datasource_type=PROCESS_DATASOURCE["Type"],
         datasource_ascii_decimal_separator=PROCESS_DATASOURCE["asciiDecimalSeparator"],
         datasource_ascii_delimiter_char=PROCESS_DATASOURCE["asciiDelimiterChar"],
