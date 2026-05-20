@@ -239,6 +239,7 @@ class TestProcessAlwaysOverwrites(unittest.TestCase):
 
     def test_existing_process_is_replaced(self):
         mock_tm1 = Mock()
+        mock_tm1.version = "11.8.02200.2"
         mock_tm1.processes.exists.return_value = True
 
         result = _create_process(mock_tm1, "}rushti.load.results", force=False)
@@ -251,6 +252,7 @@ class TestProcessAlwaysOverwrites(unittest.TestCase):
 
     def test_missing_process_is_created(self):
         mock_tm1 = Mock()
+        mock_tm1.version = "11.8.02200.2"
         mock_tm1.processes.exists.return_value = False
 
         result = _create_process(mock_tm1, "}rushti.load.results", force=False)
@@ -258,6 +260,54 @@ class TestProcessAlwaysOverwrites(unittest.TestCase):
         self.assertTrue(result)
         mock_tm1.processes.delete.assert_not_called()
         mock_tm1.processes.create.assert_called_once()
+
+
+class TestProcessBodyVersionSelection(unittest.TestCase):
+    """_create_process picks v11 vs v12 body based on TM1Service.version."""
+
+    # Symbols that must not appear in a v12 body — they're removed/unsupported.
+    V12_FORBIDDEN = ("CubeGetLogChanges", "CubeSetLogChanges", "ExecuteCommand")
+
+    def _build_against(self, version: str):
+        mock_tm1 = Mock()
+        mock_tm1.version = version
+        mock_tm1.processes.exists.return_value = False
+
+        _create_process(mock_tm1, "}rushti.load.results", force=False)
+
+        process = mock_tm1.processes.create.call_args.args[0]
+        return process
+
+    def test_v11_body_keeps_legacy_calls(self):
+        process = self._build_against("11.8.02200.2")
+        prolog = process.prolog_procedure
+        epilog = process.epilog_procedure
+
+        self.assertIn("CubeGetLogChanges", prolog)
+        self.assertIn("CubeSetLogChanges", prolog)
+        self.assertIn("ExecuteCommand", epilog)
+        self.assertIn("CubeSetLogChanges", epilog)
+        self.assertNotIn("ASCIIDelete", epilog)
+
+    def test_v12_body_drops_forbidden_calls_and_uses_asciidelete(self):
+        process = self._build_against("12.2.5")
+        body = process.prolog_procedure + process.epilog_procedure
+
+        for symbol in self.V12_FORBIDDEN:
+            self.assertNotIn(
+                symbol,
+                body,
+                f"{symbol} must not appear in the v12 TI body",
+            )
+        self.assertIn("ASCIIDelete(pSourceFile)", process.epilog_procedure)
+
+    def test_v12_epilog_still_honours_delete_flag(self):
+        process = self._build_against("12.2.5")
+        epilog = process.epilog_procedure
+
+        # Cleanup remains guarded by pDeleteSourceFile so callers passing 0 keep the file.
+        self.assertIn("pDeleteSourceFile=1", epilog)
+        self.assertIn("ASCIIDelete(pSourceFile)", epilog)
 
 
 class TestBuildLoggingObjectsUpgradePath(unittest.TestCase):

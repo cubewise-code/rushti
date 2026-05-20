@@ -2,6 +2,14 @@
 
 All notable changes to RushTI are documented in this file.
 
+## Unreleased — `feat/issue-154-v12-load-results`
+
+- Fix: `rushti build` now installs a TM1-version-aware `}rushti.load.results`
+  TI (closes #154). On v12 targets the body no longer references the removed
+  `CubeGetLogChanges` / `CubeSetLogChanges` / `ExecuteCommand` functions;
+  source-file cleanup uses the TM1-native `ASCIIDelete` instead of shelling
+  out via `cmd /c del`. The v11 body is unchanged.
+
 ## Unreleased — `feat/issue-146-detailed-results`
 
 - Add `--detailed-results` for per-execution cube rows (closes #146).

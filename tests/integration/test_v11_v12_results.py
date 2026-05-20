@@ -133,6 +133,62 @@ class TestResultPushV11(unittest.TestCase):
         )
         self.assertTrue(success)
 
+    def test_auto_load_results(self):
+        """Push CSV then call }rushti.load.results on v11 (legacy body path)."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        stats_db = None
+        try:
+            stats_db = StatsDatabase(db_path=db_path, enabled=True)
+            run_id = "test_autoload_v11_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+            workflow = "test-autoload-v11"
+
+            stats_db.start_run(run_id=run_id, workflow=workflow)
+            stats_db.record_task(
+                run_id=run_id,
+                task_id="task1",
+                instance=self.INSTANCE,
+                process="}bedrock.server.wait",
+                parameters={"pWaitSec": "1"},
+                success=True,
+                start_time=datetime.now(),
+                end_time=datetime.now() + timedelta(seconds=1),
+                retry_count=0,
+                error_message=None,
+                workflow=workflow,
+            )
+            stats_db.complete_run(run_id=run_id, success_count=1, failure_count=0)
+
+            results_df = build_results_dataframe(stats_db, workflow, run_id)
+            file_name = upload_results_to_tm1(self.tm1, workflow, run_id, results_df)
+
+            if not self.tm1.processes.exists("}rushti.load.results"):
+                self.skipTest("}rushti.load.results process not found on TM1 instance")
+
+            # v11 file paths need .blb to be locatable by the TI's CHARACTERDELIMITED source.
+            version = integerize_version(self.tm1.version, 2)
+            load_file_name = file_name + ".blb" if version < 12 else file_name
+
+            success, status, error_log = self.tm1.processes.execute_with_return(
+                "}rushti.load.results",
+                pSourceFile=load_file_name,
+                pTargetCube="rushti",
+            )
+            self.assertTrue(
+                success,
+                f"}}rushti.load.results failed on v11 (status={status}, error_log={error_log})",
+            )
+
+            try:
+                self.tm1.files.delete(file_name)
+            except Exception:
+                pass
+        finally:
+            if stats_db is not None:
+                stats_db.close()
+            os.unlink(db_path)
+
 
 @pytest.mark.requires_tm1
 @pytest.mark.integration
