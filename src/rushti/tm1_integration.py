@@ -38,6 +38,7 @@ APPLICATIONS_FOLDER = "rushti"
 INPUT_MEASURES = [
     "instance",
     "process",
+    "chore",
     "parameters",
     "predecessors",
     "stage",
@@ -53,6 +54,7 @@ INPUT_MEASURES = [
 ALL_MEASURES = [
     "instance",
     "process",
+    "chore",
     "parameters",
     "status",
     "start_time",
@@ -263,16 +265,29 @@ def _dataframe_to_task_definitions(
         if not task_id:
             task_id = str(len(tasks) + 1)
 
-        # Skip if no instance or process defined (empty row)
+        # Skip empty rows: a row is skipped iff it has no instance OR
+        # neither a process nor a chore. A row with both is a user error
+        # — raise immediately with the offending task ID so the cube
+        # editor can find and fix it.
         instance = str(row.get("instance", "")).strip()
         process = str(row.get("process", "")).strip()
+        chore = str(row.get("chore", "")).strip()
 
-        if not instance or not process:
+        if not instance or (not process and not chore):
             continue
 
-        # Parse parameters (supports JSON or space-separated key=value)
+        if process and chore:
+            raise ValueError(
+                f"Task '{task_id}': both 'process' and 'chore' are set in the "
+                f"cube — exactly one must be populated (the field name is the "
+                f"kind discriminator)"
+            )
+
+        # Parse parameters (supports JSON or space-separated key=value).
+        # Chore tasks have no invocation parameters; the cube field is
+        # ignored even if a user accidentally populated it.
         parameters_str = str(row.get("parameters", "")).strip()
-        parameters = _parse_parameters_string(parameters_str)
+        parameters = _parse_parameters_string(parameters_str) if process else {}
 
         # Parse predecessors based on mode
         predecessors: List[str] = []
@@ -306,7 +321,8 @@ def _dataframe_to_task_definitions(
         task = TaskDefinition(
             id=task_id,
             instance=instance,
-            process=process,
+            process=process or None,
+            chore=chore or None,
             parameters=parameters,
             predecessors=predecessors,
             stage=stage,
@@ -470,7 +486,9 @@ def build_results_dataframe(
         logger.warning(f"No results found for run_id '{run_id}'")
         return pd.DataFrame()
 
-    # Build rows for DataFrame
+    # Build rows for DataFrame. Column order here is load-bearing: the
+    # ``}rushti.load.results`` TI declares its CSV variables positionally
+    # in ``tm1_objects.PROCESS_VARIABLES``, so the two must stay aligned.
     rows = []
     for result in results:
         task_id = result.get("task_id", "")
@@ -478,7 +496,8 @@ def build_results_dataframe(
             "task_id": task_id,
             "original_task_id": task_id,
             "instance": result.get("instance", ""),
-            "process": result.get("process", ""),
+            "process": result.get("process", "") or "",
+            "chore": result.get("chore", "") or "",
             "parameters": result.get("parameters", "{}"),
             "status": result.get("status", ""),
             "start_time": result.get("start_time", ""),

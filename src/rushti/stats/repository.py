@@ -84,6 +84,7 @@ class StatsRepository(Protocol):
         require_predecessor_success: Optional[bool] = ...,
         succeed_on_minor_errors: Optional[bool] = ...,
         workflow: Optional[str] = ...,
+        chore: Optional[str] = ...,
     ) -> None: ...
 
     def batch_record_tasks(self, tasks: List[Dict[str, Any]]) -> None: ...

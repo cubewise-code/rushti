@@ -57,11 +57,17 @@ class TestJSONTaskfileValidation(unittest.TestCase):
         self.assertIn("'tasks' array cannot be empty", errors)
 
     def test_validate_missing_required_properties(self):
-        """Test validation catches missing required task properties"""
-        data = {"version": "2.0", "tasks": [{"id": "1"}]}  # Missing instance and process
+        """Test validation catches missing required task properties.
+
+        ``process`` is no longer a flat required property — it's part of
+        the process-xor-chore kind discriminator. The validator surfaces
+        a single "exactly one of 'process' or 'chore' must be set"
+        message instead.
+        """
+        data = {"version": "2.0", "tasks": [{"id": "1"}]}  # Missing instance and kind
         errors = validate_taskfile(data)
         self.assertTrue(any("Missing required property 'instance'" in e for e in errors))
-        self.assertTrue(any("Missing required property 'process'" in e for e in errors))
+        self.assertTrue(any("exactly one of 'process' or 'chore' must be set" in e for e in errors))
 
     def test_validate_duplicate_task_ids(self):
         """Test validation catches duplicate task IDs"""

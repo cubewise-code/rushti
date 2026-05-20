@@ -234,16 +234,26 @@ def _prepare_dashboard_data(
             }
         )
 
-    # Build per-task aggregate data (across all runs)
+    # Build per-task aggregate data (across all runs). Each row carries
+    # both ``process`` (may be empty for chore rows) and ``chore`` so the
+    # dashboard can render a unified "Task target" column with a kind
+    # indicator. ``task_target``/``task_kind`` are the canonical fields
+    # for display; the raw kind fields stay populated for backward
+    # compatibility with downstream consumers.
     task_data: Dict[str, Dict[str, Any]] = {}
     for tr in task_results:
         sig = tr["task_signature"]
+        process_val = tr.get("process") or ""
+        chore_val = tr.get("chore") or ""
         if sig not in task_data:
             task_data[sig] = {
                 "task_signature": sig,
                 "task_id": tr["task_id"],
                 "instance": tr["instance"],
-                "process": tr["process"],
+                "process": process_val,
+                "chore": chore_val,
+                "task_target": chore_val or process_val,
+                "task_kind": "chore" if chore_val else "process",
                 "durations": [],
                 "successes": 0,
                 "total": 0,
@@ -263,6 +273,9 @@ def _prepare_dashboard_data(
                 "task_id": data["task_id"],
                 "instance": data["instance"],
                 "process": data["process"],
+                "chore": data["chore"],
+                "task_target": data["task_target"],
+                "task_kind": data["task_kind"],
                 "executions": data["total"],
                 "success_rate": (
                     round(data["successes"] / data["total"] * 100, 1) if data["total"] > 0 else 0
@@ -290,10 +303,15 @@ def _prepare_dashboard_data(
     outliers = []
     for tr in task_results:
         if tr["duration_seconds"] is not None:
+            process_val = tr.get("process") or ""
+            chore_val = tr.get("chore") or ""
             outliers.append(
                 {
                     "task_id": tr["task_id"],
-                    "process": tr["process"],
+                    "process": process_val,
+                    "chore": chore_val,
+                    "task_target": chore_val or process_val,
+                    "task_kind": "chore" if chore_val else "process",
                     "instance": tr["instance"],
                     "run_id": tr["run_id"],
                     "duration": round(tr["duration_seconds"], 2),
@@ -308,10 +326,15 @@ def _prepare_dashboard_data(
     failures = []
     for tr in task_results:
         if tr["status"] != "Success":
+            process_val = tr.get("process") or ""
+            chore_val = tr.get("chore") or ""
             failures.append(
                 {
                     "task_id": tr["task_id"],
-                    "process": tr["process"],
+                    "process": process_val,
+                    "chore": chore_val,
+                    "task_target": chore_val or process_val,
+                    "task_kind": "chore" if chore_val else "process",
                     "instance": tr["instance"],
                     "run_id": tr["run_id"],
                     "duration": round(tr["duration_seconds"], 2) if tr["duration_seconds"] else 0,
@@ -322,13 +345,18 @@ def _prepare_dashboard_data(
     # Slim task_results for JS (only fields needed for interactive filtering)
     slim_task_results = []
     for tr in task_results:
+        process_val = tr.get("process") or ""
+        chore_val = tr.get("chore") or ""
         slim_task_results.append(
             {
                 "run_id": tr["run_id"],
                 "task_id": tr["task_id"],
                 "task_signature": tr["task_signature"],
                 "instance": tr["instance"],
-                "process": tr["process"],
+                "process": process_val,
+                "chore": chore_val,
+                "task_target": chore_val or process_val,
+                "task_kind": "chore" if chore_val else "process",
                 "status": tr["status"],
                 "duration_seconds": tr["duration_seconds"],
                 "error_message": tr.get("error_message"),
@@ -578,6 +606,11 @@ def generate_dashboard(
         .status-partial {{ color: #D97706; font-weight: 600; }}
         .high-cv {{ background: #FFF7ED; }}
         .duration-slow {{ color: #DC2626; font-weight: 600; }}
+        .kind-tag {{
+            display: inline-block; padding: 1px 5px; border-radius: 4px;
+            font-size: 0.7rem; font-weight: 700; color: #475569;
+            background: #E2E8F0; margin-right: 4px;
+        }}
 
         /* Accordion */
         .accordion {{ margin-bottom: 20px; }}
@@ -752,7 +785,7 @@ def generate_dashboard(
                 <thead><tr>
                     <th onclick="sortTaskTable(0)">Task ID <span class="sort-arrow"></span></th>
                     <th onclick="sortTaskTable(1)">Instance <span class="sort-arrow"></span></th>
-                    <th onclick="sortTaskTable(2)">Process <span class="sort-arrow"></span></th>
+                    <th onclick="sortTaskTable(2)">Task target <span class="sort-arrow"></span></th>
                     <th onclick="sortTaskTable(3)">Avg (s) <span class="sort-arrow"></span></th>
                     <th onclick="sortTaskTable(4)">Min (s) <span class="sort-arrow"></span></th>
                     <th onclick="sortTaskTable(5)">Max (s) <span class="sort-arrow"></span></th>
@@ -768,7 +801,7 @@ def generate_dashboard(
             <h3>Top 10 Slowest Executions <span class="help-icon">?<span class="help-tip">How to read: These are the 10 longest-running individual task executions across the selected runs. The "vs Median" column tells you how many times slower each one was compared to the typical task — a high multiplier (e.g., 5×) means that execution was significantly slower than usual and may be worth investigating. Check whether the same task appears multiple times — if so, it is a consistent bottleneck.</span></span></h3>
             <table id="outlierTable">
                 <thead><tr>
-                    <th>Task ID</th><th>Process</th><th>Instance</th>
+                    <th>Task ID</th><th>Task target</th><th>Instance</th>
                     <th>Run</th><th>Duration (s)</th><th>vs Median</th><th>Status</th>
                 </tr></thead>
                 <tbody id="outlierTableBody"></tbody>
@@ -779,7 +812,7 @@ def generate_dashboard(
             <h3>Failed Processes <span class="help-icon">?<span class="help-tip">How to read: Every task execution that did not succeed is listed here. Look for patterns — does the same task fail repeatedly across runs? That points to a systemic issue. If failures are scattered across different tasks, the problem may be environmental (server load, connectivity). Hover over the Error column to see the full error message for each failure.</span></span></h3>
             <table id="failureTable">
                 <thead><tr>
-                    <th>Task ID</th><th>Process</th><th>Instance</th>
+                    <th>Task ID</th><th>Task target</th><th>Instance</th>
                     <th>Run</th><th>Duration (s)</th><th>Error</th>
                 </tr></thead>
                 <tbody id="failureTableBody"></tbody>
@@ -1260,14 +1293,14 @@ def generate_dashboard(
         // Also store a lookup for tooltip labels
         const sigLabel = {{}};
         relevant.forEach(tr => {{
-            if (!sigLabel[tr.task_signature]) sigLabel[tr.task_signature] = tr.process;
+            if (!sigLabel[tr.task_signature]) sigLabel[tr.task_signature] = tr.task_target || tr.process || tr.chore;
         }});
 
         const datasets = runs.map((run, idx) => {{
             const runTasks = relevant.filter(tr => tr.run_id === run.run_id);
             return {{
                 label: formatDate(run.start_time),
-                data: runTasks.map(t => ({{ x: sigIndex[t.task_signature], y: t.duration_seconds || 0, _sig: t.task_signature, _task: t.task_id, _proc: t.process }})),
+                data: runTasks.map(t => ({{ x: sigIndex[t.task_signature], y: t.duration_seconds || 0, _sig: t.task_signature, _task: t.task_id, _proc: t.task_target || t.process || t.chore }})),
                 backgroundColor: RUN_COLORS[idx % RUN_COLORS.length] + '80',
                 borderColor: RUN_COLORS[idx % RUN_COLORS.length],
                 pointRadius: 3,
@@ -1470,7 +1503,10 @@ def generate_dashboard(
             const sig = tr.task_signature;
             if (!taskData[sig]) {{
                 taskData[sig] = {{
-                    task_id: tr.task_id, instance: tr.instance, process: tr.process,
+                    task_id: tr.task_id, instance: tr.instance,
+                    process: tr.process, chore: tr.chore,
+                    task_target: tr.task_target || tr.process || tr.chore,
+                    task_kind: tr.task_kind || (tr.chore ? 'chore' : 'process'),
                     durations: [], successes: 0, total: 0
                 }};
             }}
@@ -1492,7 +1528,7 @@ def generate_dashboard(
     }}
 
     function applyTaskSort(rows) {{
-        const fields = ['task_id', 'instance', 'process', 'avg', 'mn', 'mx', 'stdDev', 'successRate', 'total'];
+        const fields = ['task_id', 'instance', 'task_target', 'avg', 'mn', 'mx', 'stdDev', 'successRate', 'total'];
         const field = fields[taskTableSortCol];
         rows.sort((a, b) => {{
             const av = a[field], bv = b[field];
@@ -1556,10 +1592,12 @@ def generate_dashboard(
         tbody.innerHTML = pageRows.map(r => {{
             const cvClass = r.cv > 0.5 ? 'high-cv' : '';
             const statusCls = r.successRate < 100 ? 'status-fail' : 'status-success';
+            const kindTag = r.task_kind === 'chore' ? '[C]' : '[P]';
+            const target = r.task_target || r.process || r.chore || '';
             return `<tr class="${{cvClass}}">
                 <td class="mono">${{r.task_id}}</td>
                 <td>${{r.instance}}</td>
-                <td>${{r.process}}</td>
+                <td><span class="kind-tag">${{kindTag}}</span> ${{target}}</td>
                 <td class="mono">${{r.avg.toFixed(2)}}</td>
                 <td class="mono">${{r.mn.toFixed(2)}}</td>
                 <td class="mono">${{r.mx.toFixed(2)}}</td>
@@ -1585,9 +1623,11 @@ def generate_dashboard(
         tbody.innerHTML = sorted.map(o => {{
             const statusCls = o.status === 'Success' ? 'status-success' : 'status-fail';
             const vsMedian = o.duration_seconds - median;
+            const kindTag = o.task_kind === 'chore' || o.chore ? '[C]' : '[P]';
+            const target = o.task_target || o.process || o.chore || '';
             return `<tr>
                 <td class="mono">${{o.task_id}}</td>
-                <td>${{o.process}}</td>
+                <td><span class="kind-tag">${{kindTag}}</span> ${{target}}</td>
                 <td>${{o.instance}}</td>
                 <td class="mono">${{o.run_id}}</td>
                 <td class="mono duration-slow">${{o.duration_seconds.toFixed(2)}}</td>
@@ -1613,15 +1653,19 @@ def generate_dashboard(
         }}
 
         panel.style.display = 'block';
-        tbody.innerHTML = filtered.map(f => `<tr>
+        tbody.innerHTML = filtered.map(f => {{
+            const kindTag = f.task_kind === 'chore' || f.chore ? '[C]' : '[P]';
+            const target = f.task_target || f.process || f.chore || '';
+            return `<tr>
             <td class="mono">${{f.task_id}}</td>
-            <td>${{f.process}}</td>
+            <td><span class="kind-tag">${{kindTag}}</span> ${{target}}</td>
             <td>${{f.instance}}</td>
             <td class="mono">${{f.run_id}}</td>
             <td class="mono">${{f.duration_seconds != null ? f.duration_seconds.toFixed(2) : '-'}}</td>
             <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
                 title="${{(f.error_message || '').replace(/"/g, '&quot;')}}">${{f.error_message || '-'}}</td>
-        </tr>`).join('');
+        </tr>`;
+        }}).join('');
     }}
 
     function updateConfigDetails(runs) {{

@@ -109,6 +109,7 @@ class DynamoDBStatsDatabase:
             "task_signature": item.get("task_signature"),
             "instance": item.get("instance"),
             "process": item.get("process"),
+            "chore": item.get("chore"),
             "parameters": item.get("parameters", "{}"),
             "status": item.get("status"),
             "start_time": item.get("start_time"),
@@ -198,12 +199,13 @@ class DynamoDBStatsDatabase:
         require_predecessor_success: Optional[bool] = None,
         succeed_on_minor_errors: Optional[bool] = None,
         workflow: Optional[str] = None,
+        chore: Optional[str] = None,
     ) -> None:
         if not self.enabled:
             return
 
         duration = (end_time - start_time).total_seconds()
-        task_signature = calculate_task_signature(instance, process, parameters)
+        task_signature = calculate_task_signature(instance, process, parameters, chore=chore)
 
         item = {
             "run_id": run_id,
@@ -213,6 +215,7 @@ class DynamoDBStatsDatabase:
             "task_signature": task_signature,
             "instance": instance,
             "process": process,
+            "chore": chore,
             "parameters": json.dumps(parameters) if parameters else "{}",
             "status": "Success" if success else "Fail",
             "start_time": start_time.isoformat(),
@@ -241,8 +244,11 @@ class DynamoDBStatsDatabase:
                 duration = (end_time - start_time).total_seconds()
                 instance = task["instance"]
                 process = task["process"]
+                chore = task.get("chore")
                 parameters = task.get("parameters")
-                task_signature = calculate_task_signature(instance, process, parameters)
+                task_signature = calculate_task_signature(
+                    instance, process, parameters, chore=chore
+                )
 
                 writer.put_item(
                     Item={
@@ -253,6 +259,7 @@ class DynamoDBStatsDatabase:
                         "task_signature": task_signature,
                         "instance": instance,
                         "process": process,
+                        "chore": chore,
                         "parameters": json.dumps(parameters) if parameters else "{}",
                         "status": "Success" if task["success"] else "Fail",
                         "start_time": start_time.isoformat(),

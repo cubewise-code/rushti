@@ -20,8 +20,20 @@ logger = logging.getLogger(__name__)
 # JSON Schema version
 SCHEMA_VERSION = "2.0"
 
-# Required task properties
-REQUIRED_TASK_PROPERTIES = {"id", "instance", "process"}
+# Always-required task properties. The kind-specific field (`process` or
+# `chore`) is enforced separately as a mutual-exclusion check in
+# `validate_task`.
+REQUIRED_TASK_PROPERTIES = {"id", "instance"}
+
+# Fields that are not allowed on chore tasks. The chore execution surface
+# at the TM1 API boundary is intentionally narrower than processes:
+# no parameters, no minor-error tier, no native timeout.
+CHORE_FORBIDDEN_FIELDS = (
+    "parameters",
+    "succeed_on_minor_errors",
+    "timeout",
+    "cancel_at_timeout",
+)
 
 # Default values for optional task properties
 TASK_DEFAULTS = {
@@ -112,11 +124,19 @@ class TaskfileSettings:
 
 @dataclass
 class TaskDefinition:
-    """Unified task definition from JSON."""
+    """Unified task definition from JSON.
+
+    A task carries exactly one kind-discriminating field: either
+    ``process`` (TI process) or ``chore`` (TM1 chore). The field name is
+    the kind discriminator; there is no separate ``kind`` field. Mutual
+    exclusion is enforced at parse-time validation and as a class
+    invariant on ``Task.__init__``. See ADR 0002.
+    """
 
     id: str
     instance: str
-    process: str
+    process: Optional[str] = None
+    chore: Optional[str] = None
     parameters: Dict[str, Any] = field(default_factory=dict)
     predecessors: List[str] = field(default_factory=list)
     stage: Optional[str] = None
@@ -127,11 +147,14 @@ class TaskDefinition:
     succeed_on_minor_errors: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        result = {
+        result: Dict[str, Any] = {
             "id": self.id,
             "instance": self.instance,
-            "process": self.process,
         }
+        if self.process:
+            result["process"] = self.process
+        if self.chore:
+            result["chore"] = self.chore
         if self.parameters:
             result["parameters"] = self.parameters
         if self.predecessors:
@@ -155,7 +178,8 @@ class TaskDefinition:
         return cls(
             id=str(data["id"]),
             instance=data["instance"],
-            process=data["process"],
+            process=data.get("process") or None,
+            chore=data.get("chore") or None,
             parameters=data.get("parameters", {}),
             predecessors=[str(p) for p in data.get("predecessors", [])],
             stage=data.get("stage"),
@@ -374,10 +398,49 @@ def validate_task(task_data: Dict[str, Any], index: int) -> List[str]:
     """
     errors = []
 
-    # Check required properties
+    # Check always-required properties (id, instance).
     for prop in REQUIRED_TASK_PROPERTIES:
         if prop not in task_data or not task_data[prop]:
             errors.append(f"Task {index}: Missing required property '{prop}'")
+
+    # Mutual exclusion: exactly one of `process` or `chore` must be set.
+    has_process = bool(task_data.get("process"))
+    has_chore = bool(task_data.get("chore"))
+    if has_process and has_chore:
+        errors.append(
+            f"Task {index}: 'process' and 'chore' are mutually exclusive — "
+            f"exactly one must be set"
+        )
+    elif not has_process and not has_chore:
+        errors.append(f"Task {index}: exactly one of 'process' or 'chore' must be set")
+
+    # Forbidden-field rejection for chore tasks. Each carries its own
+    # explanation so users learn why the field doesn't apply.
+    if has_chore and not has_process:
+        chore_forbidden_reasons = {
+            "parameters": "chores have no invocation parameters",
+            "succeed_on_minor_errors": "chores have no minor-error tier",
+            "timeout": "TM1 chore execution has no timeout",
+            "cancel_at_timeout": "no timeout to cancel",
+        }
+        for field_name in CHORE_FORBIDDEN_FIELDS:
+            if field_name not in task_data:
+                continue
+            value = task_data[field_name]
+            # An empty parameters dict / falsy default in the JSON is
+            # silently accepted; only explicit non-default values are
+            # rejected, so round-tripping a dict-only-default payload stays
+            # idempotent.
+            if field_name == "parameters" and not value:
+                continue
+            if field_name in ("succeed_on_minor_errors", "cancel_at_timeout") and not value:
+                continue
+            if field_name == "timeout" and value is None:
+                continue
+            errors.append(
+                f"Task {index}: '{field_name}' is not allowed on chore tasks "
+                f"({chore_forbidden_reasons[field_name]})"
+            )
 
     if "id" in task_data and not _is_positive_integer_id(task_data["id"]):
         errors.append(
@@ -576,7 +639,7 @@ def parse_line_arguments(line: str) -> Dict[str, Any]:
 
         # Handle specific keys with logic
         key_lower = argument.lower()
-        if key_lower in ["process", "instance", "id"]:
+        if key_lower in ["process", "chore", "instance", "id"]:
             line_arguments[key_lower] = value
         elif key_lower == "require_predecessor_success":
             line_arguments[key_lower] = value.lower() in TRUE_VALUES
@@ -660,7 +723,8 @@ def convert_txt_to_json(
         task_def = TaskDefinition(
             id=tid,
             instance=parsed.get("instance", ""),
-            process=parsed.get("process", ""),
+            process=parsed.get("process") or None,
+            chore=parsed.get("chore") or None,
             parameters={},
             predecessors=parsed.get("predecessors", []),
             stage=parsed.get("stage"),
@@ -676,6 +740,7 @@ def convert_txt_to_json(
             "id",
             "instance",
             "process",
+            "chore",
             "predecessors",
             "stage",
             "safe_retry",
@@ -712,6 +777,18 @@ def convert_txt_to_json(
     # Set default metadata if not provided
     if not taskfile.metadata.workflow:
         taskfile.metadata.workflow = txt_path.stem
+
+    # Validate the converted taskfile — closes a pre-existing gap where
+    # malformed TXT files (missing fields, mutually-exclusive kinds, chore
+    # tasks carrying process-only fields) were silently accepted because
+    # `convert_txt_to_json` bypassed the structural validator. Aligns TXT
+    # input with JSON / cube sources so chore validation fires uniformly.
+    validation_errors = validate_taskfile(taskfile.to_dict())
+    if validation_errors:
+        error_msg = "TXT task file validation failed:\n" + "\n".join(
+            f"  - {e}" for e in validation_errors
+        )
+        raise TaskfileValidationError(error_msg)
 
     # Save if output path provided
     if output_path:

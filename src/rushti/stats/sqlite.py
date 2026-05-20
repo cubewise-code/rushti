@@ -96,7 +96,10 @@ class StatsDatabase:
             )
         """)
 
-        # Task results table - includes task configuration for analysis
+        # Task results table - includes task configuration for analysis.
+        # ``process`` stays NOT NULL for backward compatibility — chore
+        # tasks write the empty string. Rows with a non-empty ``chore``
+        # are chore-kind tasks; mutual exclusion is enforced upstream.
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS task_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,6 +109,7 @@ class StatsDatabase:
                 task_signature TEXT NOT NULL,
                 instance TEXT NOT NULL,
                 process TEXT NOT NULL,
+                chore TEXT,
                 parameters TEXT,
                 status TEXT NOT NULL,
                 start_time TEXT NOT NULL,
@@ -155,6 +159,12 @@ class StatsDatabase:
         if "optimization_algorithm" not in columns:
             cursor.execute("ALTER TABLE runs ADD COLUMN optimization_algorithm TEXT")
             logger.info("Added optimization_algorithm column to runs table")
+
+        cursor.execute("PRAGMA table_info(task_results)")
+        task_result_columns = [row[1] for row in cursor.fetchall()]
+        if "chore" not in task_result_columns:
+            cursor.execute("ALTER TABLE task_results ADD COLUMN chore TEXT")
+            logger.info("Added chore column to task_results table")
 
         self._conn.commit()
 
@@ -248,6 +258,8 @@ class StatsDatabase:
         succeed_on_minor_errors: Optional[bool] = None,
         # Workflow context for TM1 cube alignment
         workflow: Optional[str] = None,
+        # Kind-discriminating field for chore-kind tasks
+        chore: Optional[str] = None,
     ) -> None:
         """Record a task execution result.
 
@@ -274,7 +286,7 @@ class StatsDatabase:
             return
 
         duration = (end_time - start_time).total_seconds()
-        task_signature = calculate_task_signature(instance, process, parameters)
+        task_signature = calculate_task_signature(instance, process, parameters, chore=chore)
         params_json = json.dumps(parameters) if parameters else "{}"
         predecessors_json = json.dumps(predecessors) if predecessors else None
         status = "Success" if success else "Fail"
@@ -283,11 +295,11 @@ class StatsDatabase:
         cursor.execute(
             """
             INSERT INTO task_results (
-                run_id, workflow, task_id, task_signature, instance, process, parameters,
+                run_id, workflow, task_id, task_signature, instance, process, chore, parameters,
                 status, start_time, end_time, duration_seconds, retry_count, error_message,
                 predecessors, stage, safe_retry, timeout, cancel_at_timeout,
                 require_predecessor_success, succeed_on_minor_errors
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -296,6 +308,7 @@ class StatsDatabase:
                 task_signature,
                 instance,
                 process,
+                chore,
                 params_json,
                 status,
                 start_time.isoformat(),
@@ -339,6 +352,7 @@ class StatsDatabase:
                 task_id = task["task_id"]
                 instance = task["instance"]
                 process = task["process"]
+                chore = task.get("chore")
                 parameters = task.get("parameters")
                 success = task["success"]
                 start_time = task["start_time"]
@@ -354,7 +368,9 @@ class StatsDatabase:
                 succeed_on_minor_errors = task.get("succeed_on_minor_errors")
 
                 duration = (end_time - start_time).total_seconds()
-                task_signature = calculate_task_signature(instance, process, parameters)
+                task_signature = calculate_task_signature(
+                    instance, process, parameters, chore=chore
+                )
                 params_json = json.dumps(parameters) if parameters else "{}"
                 predecessors_json = json.dumps(predecessors) if predecessors else None
                 status = "Success" if success else "Fail"
@@ -362,11 +378,12 @@ class StatsDatabase:
                 cursor.execute(
                     """
                     INSERT INTO task_results (
-                        run_id, workflow, task_id, task_signature, instance, process, parameters,
-                        status, start_time, end_time, duration_seconds, retry_count, error_message,
-                        predecessors, stage, safe_retry, timeout, cancel_at_timeout,
-                        require_predecessor_success, succeed_on_minor_errors
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        run_id, workflow, task_id, task_signature, instance, process, chore,
+                        parameters, status, start_time, end_time, duration_seconds,
+                        retry_count, error_message, predecessors, stage, safe_retry,
+                        timeout, cancel_at_timeout, require_predecessor_success,
+                        succeed_on_minor_errors
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
@@ -375,6 +392,7 @@ class StatsDatabase:
                         task_signature,
                         instance,
                         process,
+                        chore,
                         params_json,
                         status,
                         start_time.isoformat(),
@@ -602,7 +620,7 @@ class StatsDatabase:
         cursor.execute(
             """
             SELECT
-                workflow, task_id, task_signature, instance, process, parameters,
+                workflow, task_id, task_signature, instance, process, chore, parameters,
                 status, start_time, end_time, duration_seconds, retry_count, error_message,
                 predecessors, stage, safe_retry, timeout, cancel_at_timeout,
                 require_predecessor_success, succeed_on_minor_errors

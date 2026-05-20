@@ -126,8 +126,9 @@ class TaskOptimizer:
         for task in tasks:
             signature = calculate_task_signature(
                 instance=getattr(task, "instance_name", ""),
-                process=getattr(task, "process_name", ""),
+                process=getattr(task, "process_name", None),
                 parameters=getattr(task, "parameters", {}),
+                chore=getattr(task, "chore_name", None),
             )
             if signature not in signatures:
                 signatures[signature] = task
@@ -172,8 +173,9 @@ class TaskOptimizer:
         """
         signature = calculate_task_signature(
             instance=getattr(task, "instance_name", ""),
-            process=getattr(task, "process_name", ""),
+            process=getattr(task, "process_name", None),
             parameters=getattr(task, "parameters", {}),
+            chore=getattr(task, "chore_name", None),
         )
 
         if signature in self._cache:

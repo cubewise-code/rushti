@@ -22,7 +22,8 @@ class TaskExecutionLog:
     """Structured log entry for a single task execution.
 
     Contains all standardized fields for task execution logging as per
-    the logging specification.
+    the logging specification. Exactly one of ``process`` or ``chore``
+    carries the kind-specific identity; the unused field is empty.
     """
 
     workflow: str
@@ -36,6 +37,7 @@ class TaskExecutionLog:
     duration_seconds: float
     retry_count: int = 0
     error_message: Optional[str] = None
+    chore: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary with serializable values.
@@ -67,19 +69,22 @@ class TaskExecutionLog:
         end_time: datetime,
         retry_count: int = 0,
         error_message: Optional[str] = None,
+        chore: Optional[str] = None,
     ) -> "TaskExecutionLog":
         """Create a log entry from execution result data.
 
         :param workflow: Workflow name
         :param task_id: Task identifier within the file
         :param instance: TM1 instance name
-        :param process: TI process name
+        :param process: TI process name (empty for chore tasks)
         :param parameters: Process parameters as dictionary
         :param success: Whether execution succeeded
         :param start_time: Execution start time
         :param end_time: Execution end time
         :param retry_count: Number of retries attempted
         :param error_message: Error message if failed
+        :param chore: TM1 chore name (set for chore tasks; mutually
+            exclusive with a meaningful ``process``)
         :return: TaskExecutionLog instance
         """
         duration = (end_time - start_time).total_seconds()
@@ -95,6 +100,7 @@ class TaskExecutionLog:
             duration_seconds=round(duration, 3),
             retry_count=retry_count,
             error_message=error_message if not success else None,
+            chore=chore,
         )
 
 
@@ -203,16 +209,16 @@ class FileLogDestination(LogDestination):
                 # Use DEBUG level for individual task logs since execution status
                 # is already logged as tasks complete. Only failures at ERROR.
                 log_level = logging.DEBUG if log.status == "Success" else logging.ERROR
+                target = log.chore or log.process
                 # Plain text format: concise, human-readable
                 if log.status == "Success":
                     msg = (
-                        f"Task completed: {log.instance}:{log.process} "
-                        f"[{log.duration_seconds:.3f}s]"
+                        f"Task completed: {log.instance}:{target} " f"[{log.duration_seconds:.3f}s]"
                     )
                 else:
                     error_info = f" - {log.error_message}" if log.error_message else ""
                     msg = (
-                        f"Task failed: {log.instance}:{log.process} "
+                        f"Task failed: {log.instance}:{target} "
                         f"[{log.duration_seconds:.3f}s]{error_info}"
                     )
                 self.exec_logger.log(log_level, msg)
@@ -279,18 +285,22 @@ class ExecutionLogger:
         end_time: datetime,
         retry_count: int = 0,
         error_message: Optional[str] = None,
+        chore: Optional[str] = None,
     ) -> TaskExecutionLog:
         """Log a single task execution result.
 
         :param task_id: Task identifier
         :param instance: TM1 instance name
-        :param process: TI process name
+        :param process: TI process name (empty when ``chore`` is set)
         :param parameters: Process parameters
         :param success: Whether execution succeeded
         :param start_time: Execution start time
         :param end_time: Execution end time
         :param retry_count: Number of retries attempted
         :param error_message: Error message if failed
+        :param chore: TM1 chore name. Pass this for chore-kind tasks so
+            the structured log stays queryable by kind; do not overload
+            the ``process`` parameter.
         :return: The created TaskExecutionLog entry
         """
         log = TaskExecutionLog.from_execution_result(
@@ -304,6 +314,7 @@ class ExecutionLogger:
             end_time=end_time,
             retry_count=retry_count,
             error_message=error_message,
+            chore=chore,
         )
         self.current_run.add_log(log)
         return log

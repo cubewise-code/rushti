@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from TM1py import TM1Service
 from TM1py.Exceptions import TM1pyTimeout
+from TM1py.Objects import Chore
 
 from rushti.task import Task, OptimizedTask
 from rushti.dag import DAG
@@ -40,6 +41,11 @@ from rushti.messages import (
     MSG_PROCESS_NOT_EXISTS,
     MSG_PROCESS_PARAMS_INCORRECT,
     MSG_PROCESS_TIMEOUT,
+    MSG_CHORE_EXECUTE,
+    MSG_CHORE_SUCCESS,
+    MSG_CHORE_FAIL,
+    MSG_CHORE_NOT_EXISTS,
+    MSG_CHORE_REQUIRES_SINGLE_COMMIT,
 )
 from rushti.parsing import get_instances_from_tasks_file
 from rushti.exclusive import build_session_context
@@ -99,12 +105,17 @@ def _collect_task_stats(
         return
 
     with ctx.stats_data_lock:
+        # ``process`` is NOT NULL in SQLite; chore tasks write the empty
+        # string so the column constraint stays satisfied without making
+        # it nullable. The kind is unambiguous: rows with a non-empty
+        # ``chore`` are chore tasks, rows without are processes.
         stats_entry = {
             "run_id": ctx.execution_logger.run_id if ctx.execution_logger else "",
             "workflow": ctx.execution_logger.workflow if ctx.execution_logger else None,
             "task_id": task.id,
             "instance": task.instance_name,
-            "process": task.process_name,
+            "process": task.process_name or "",
+            "chore": getattr(task, "chore_name", None),
             "parameters": task.parameters if isinstance(task.parameters, dict) else {},
             "success": success,
             "start_time": start_time,
@@ -217,6 +228,39 @@ def setup_tm1_services(
     return tm1_services, tm1_preserve_connections
 
 
+def execute_chore_with_retries(tm1: TM1Service, task: Task, retries: int):
+    """Execute a TM1 chore with retry support.
+
+    Mirrors :func:`execute_process_with_retries` for the chore path.
+    Chore execution at the TM1 API boundary is binary: HTTP 204 = success
+    (no body to parse), any exception (typically HTTP 500 with a
+    "Chore execution failed" body) = failure.
+
+    Returns a 4-tuple shaped like the process variant for symmetry — the
+    ``status`` slot carries a short human-readable summary, ``error_log_file``
+    is always empty (chores write no per-execution error file), and
+    ``attempts`` is the 0-based attempt index of the result.
+
+    :raises Exception: re-raised on the final attempt when retries
+        exhausted, matching the process path's error propagation.
+    """
+    # Only retry when ``safe_retry`` is True. ``validate_tasks`` has
+    # already asserted the chore is SINGLE_COMMIT in that case so
+    # whole-chore retry cannot leak partial state.
+    effective_retries = retries if task.safe_retry else 0
+
+    for attempt in range(effective_retries + 1):
+        try:
+            tm1.chores.execute_chore(task.chore_name)
+            return True, "Completed", "", attempt
+        except Exception:
+            if attempt == effective_retries:
+                raise
+
+    # Defensive — loop body always returns or raises.
+    return False, "", "", effective_retries
+
+
 def execute_process_with_retries(tm1: TM1Service, task: Task, retries: int):
     for attempt in range(retries + 1):
         try:
@@ -292,11 +336,20 @@ def execute_task(
             return False
 
     if task.instance_name not in tm1_services:
+        # Reuse the process-flavoured "instance not in config" message —
+        # the chore name slots in as the task identity for context.
         msg = MSG_PROCESS_FAIL_INSTANCE_NOT_IN_CONFIG_FILE.format(
-            process_name=task.process_name, instance_name=task.instance_name
+            process_name=task.process_name or task.chore_name,
+            instance_name=task.instance_name,
         )
         logger.error(msg)
         return False
+
+    # Dispatch to chore branch for chore-kind tasks. Mutual exclusion
+    # guarantees that ``chore_name`` is set iff ``process_name`` is not,
+    # so the dispatch is unambiguous.
+    if getattr(task, "chore_name", None):
+        return _execute_chore_task(ctx, task, retries, tm1_services)
 
     tm1 = tm1_services[task.instance_name]
     # Execute it - include stage in log if present
@@ -465,13 +518,128 @@ def execute_task(
         return False
 
 
+def _execute_chore_task(
+    ctx: ExecutionContext,
+    task: Task,
+    retries: int,
+    tm1_services: Dict[str, TM1Service],
+) -> bool:
+    """Execute a chore-kind task.
+
+    Parallel to the chore branch of :func:`execute_task` for processes.
+    Logs success/failure, records stats, and threads the chore identity
+    into the structured execution logger via the new ``chore=`` parameter.
+    """
+    tm1 = tm1_services[task.instance_name]
+    stage_info = f" [stage: {task.stage}]" if task.stage else ""
+    logger.info(
+        MSG_CHORE_EXECUTE.format(
+            chore_name=task.chore_name,
+            instance_name=task.instance_name,
+        )
+        + stage_info
+    )
+    start_time = datetime.now()
+
+    try:
+        success, status, _, attempts = execute_chore_with_retries(
+            tm1=tm1, task=task, retries=retries
+        )
+        end_time = datetime.now()
+        elapsed_time = end_time - start_time
+
+        if success:
+            logger.info(
+                MSG_CHORE_SUCCESS.format(
+                    chore=task.chore_name,
+                    instance=task.instance_name,
+                    retries=attempts,
+                    time=elapsed_time,
+                )
+            )
+
+            if ctx.execution_logger:
+                ctx.execution_logger.log_task_execution(
+                    task_id=task.id,
+                    instance=task.instance_name,
+                    process="",
+                    chore=task.chore_name,
+                    parameters={},
+                    success=True,
+                    start_time=start_time,
+                    end_time=end_time,
+                    retry_count=attempts,
+                )
+
+            _collect_task_stats(
+                ctx,
+                task,
+                success=True,
+                start_time=start_time,
+                end_time=end_time,
+                retry_count=attempts,
+            )
+            return True
+
+        # Unreachable in practice: chore execution returns True or raises.
+        # Guarded for symmetry with the process path.
+        return False
+
+    except Exception as e:
+        end_time = datetime.now()
+        elapsed_time = end_time - start_time
+        # ``attempts`` is the global ``retries`` ceiling when safe_retry
+        # is enabled and we exhausted the loop, else 0.
+        attempts = retries if task.safe_retry else 0
+        error = str(e)
+        logger.error(
+            MSG_CHORE_FAIL.format(
+                chore=task.chore_name,
+                instance=task.instance_name,
+                retries=attempts,
+                time=elapsed_time,
+                error=error,
+            )
+        )
+
+        if ctx.execution_logger:
+            ctx.execution_logger.log_task_execution(
+                task_id=task.id,
+                instance=task.instance_name,
+                process="",
+                chore=task.chore_name,
+                parameters={},
+                success=False,
+                start_time=start_time,
+                end_time=end_time,
+                retry_count=attempts,
+                error_message=error,
+            )
+
+        _collect_task_stats(
+            ctx,
+            task,
+            success=False,
+            start_time=start_time,
+            end_time=end_time,
+            retry_count=attempts,
+            error_message=error,
+        )
+        return False
+
+
 def verify_predecessors_ok(ctx: ExecutionContext, task: OptimizedTask) -> bool:
+    # Use the kind-appropriate identity for log messages — chore tasks
+    # have no process name and no parameters to render.
+    target = task.process_name or task.chore_name
+    parameters = task.parameters if task.process_name else {}
+
     for predecessor_id in task.predecessors:
         if predecessor_id not in ctx.task_execution_results:
             msg = MSG_PROCESS_ABORTED_UNCOMPLETE_PREDECESSOR.format(
                 instance=task.instance_name,
-                process=task.process_name,
-                parameters=task.parameters,
+                process=target,
+                parameters=parameters,
                 predecessor=predecessor_id,
             )
             logger.error(msg)
@@ -480,8 +648,8 @@ def verify_predecessors_ok(ctx: ExecutionContext, task: OptimizedTask) -> bool:
         if not ctx.task_execution_results[predecessor_id]:
             msg = MSG_PROCESS_ABORTED_FAILED_PREDECESSOR.format(
                 instance=task.instance_name,
-                process=task.process_name,
-                parameters=task.parameters,
+                process=target,
+                parameters=parameters,
                 predecessor=predecessor_id,
             )
             logger.error(msg)
@@ -491,21 +659,61 @@ def verify_predecessors_ok(ctx: ExecutionContext, task: OptimizedTask) -> bool:
 
 
 def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bool:
-    validated_tasks = []
+    validated_processes: List[str] = []
+    # Chore validation is keyed by (instance, chore_name) — chore names
+    # are scoped to a server and existence must be checked per-instance.
+    # safe_retry tasks additionally trigger a SINGLE_COMMIT check.
+    validated_chores: set = set()
+    safe_retry_chore_checked: set = set()
     validation_ok = True
 
     tasks = [task for task in tasks if isinstance(task, Task)]  # --> ignore Wait(s)
     for task in tasks:
+        tm1 = tm1_services[task.instance_name]
+
+        if getattr(task, "chore_name", None):
+            chore_key = (task.instance_name, task.chore_name)
+
+            # Existence check — dedup'd by (instance, chore_name).
+            if chore_key not in validated_chores:
+                validated_chores.add(chore_key)
+                if not tm1.chores.exists(task.chore_name):
+                    logger.error(
+                        MSG_CHORE_NOT_EXISTS.format(
+                            chore=task.chore_name, instance=task.instance_name
+                        )
+                    )
+                    validation_ok = False
+                    # Skip the safe_retry check — chore doesn't exist.
+                    continue
+
+            # SINGLE_COMMIT check — only fetched when safe_retry is True
+            # so we avoid the extra round-trip otherwise. Dedup'd
+            # independently so a mixed taskfile (some safe, some not)
+            # still triggers the fetch exactly once per chore.
+            if task.safe_retry and chore_key not in safe_retry_chore_checked:
+                safe_retry_chore_checked.add(chore_key)
+                chore = tm1.chores.get(task.chore_name)
+                if chore.execution_mode != Chore.SINGLE_COMMIT:
+                    logger.error(
+                        MSG_CHORE_REQUIRES_SINGLE_COMMIT.format(
+                            chore=task.chore_name,
+                            instance=task.instance_name,
+                            execution_mode=chore.execution_mode,
+                        )
+                    )
+                    validation_ok = False
+            continue
+
+        # Process branch (unchanged behaviour, slightly tidied).
         current_task = {
             "instance": task.instance_name,
             "process": task.process_name,
             "parameters": task.parameters.keys(),
         }
 
-        tm1 = tm1_services[task.instance_name]
-
         # avoid repeated validations
-        if current_task["process"] in validated_tasks:
+        if current_task["process"] in validated_processes:
             continue
 
         # check for process existence
@@ -514,7 +722,7 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
                 process=task.process_name, instance=task.instance_name
             )
             logger.error(msg)
-            validated_tasks.append(current_task["process"])
+            validated_processes.append(current_task["process"])
             validation_ok = False
             continue
 
@@ -536,7 +744,7 @@ def validate_tasks(tasks: List[Task], tm1_services: Dict[str, TM1Service]) -> bo
                 logger.error(msg)
                 validation_ok = False
 
-        validated_tasks.append(current_task["process"])
+        validated_processes.append(current_task["process"])
 
     return validation_ok
 

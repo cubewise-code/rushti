@@ -267,6 +267,17 @@ VISUALIZATION_TEMPLATE = r"""<!DOCTYPE html>
             color: white;
         }
 
+        .kind-tag {
+            display: inline-block;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: 700;
+            color: #475569;
+            background: #E2E8F0;
+            margin-right: 4px;
+        }
+
         #taskTable .params-cell {
             max-width: 300px;
             font-family: 'SF Mono', 'Fira Code', monospace;
@@ -546,7 +557,7 @@ VISUALIZATION_TEMPLATE = r"""<!DOCTYPE html>
                     <thead>
                         <tr>
                             <th data-sort="id">ID <span class="sort-icon">&#8597;</span></th>
-                            <th data-sort="process">Process <span class="sort-icon">&#8597;</span></th>
+                            <th data-sort="task_target">Task target <span class="sort-icon">&#8597;</span></th>
                             <th data-sort="instance">Instance <span class="sort-icon">&#8597;</span></th>
                             <th data-sort="stage">Stage <span class="sort-icon">&#8597;</span></th>
                             <th data-sort="predecessors">Predecessors <span class="sort-icon">&#8597;</span></th>
@@ -584,7 +595,7 @@ VISUALIZATION_TEMPLATE = r"""<!DOCTYPE html>
                         <div class="detail-value" id="detail-id"></div>
                     </div>
                     <div class="detail-section">
-                        <h4>Process</h4>
+                        <h4>Task target</h4>
                         <div class="detail-value" id="detail-process"></div>
                     </div>
                     <div class="detail-section">
@@ -783,7 +794,7 @@ VISUALIZATION_TEMPLATE = r"""<!DOCTYPE html>
             }
             // Check search (includes parameters)
             if (searchTerm) {
-                var searchIn = (node.id + ' ' + node.process + ' ' + node.instance + ' ' + node.stage).toLowerCase();
+                var searchIn = (node.id + ' ' + (node.task_target || node.process || node.chore || '') + ' ' + node.instance + ' ' + node.stage).toLowerCase();
                 // Also search in parameter names and values
                 if (node.parameters) {
                     Object.entries(node.parameters).forEach(function(p) {
@@ -898,10 +909,12 @@ VISUALIZATION_TEMPLATE = r"""<!DOCTYPE html>
                 }
                 var optionsHtml = optionsList.length > 0 ? optionsList.join('\\n') : '-';
 
+                var kindTag = node.task_kind === 'chore' ? '[C]' : '[P]';
+                var targetText = node.task_target || node.process || node.chore || '';
                 rows.push(
                     '<tr data-id="' + node.id + '" class="' + (node.id === selectedTaskId ? 'selected' : '') + '">' +
                     '<td>' + node.id + '</td>' +
-                    '<td>' + node.process + '</td>' +
+                    '<td><span class="kind-tag">' + kindTag + '</span> ' + targetText + '</td>' +
                     '<td>' + (node.instance || '-') + '</td>' +
                     '<td><span class="stage-badge" style="background-color:' + stageColor + '">' + node.stage + '</span></td>' +
                     '<td>' + predsHtml + '</td>' +
@@ -966,7 +979,9 @@ VISUALIZATION_TEMPLATE = r"""<!DOCTYPE html>
             document.getElementById('task-details').classList.remove('hidden');
 
             document.getElementById('detail-id').textContent = node.id;
-            document.getElementById('detail-process').textContent = node.process;
+            var detailKindTag = node.task_kind === 'chore' ? '[C]' : '[P]';
+            document.getElementById('detail-process').textContent =
+                detailKindTag + ' ' + (node.task_target || node.process || node.chore || '');
             document.getElementById('detail-instance').textContent = node.instance || '-';
 
             var stageEl = document.getElementById('detail-stage');
