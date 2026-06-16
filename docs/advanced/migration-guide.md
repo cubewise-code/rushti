@@ -62,16 +62,19 @@ Logging is configured separately via `config/logging_config.ini` (Python's stand
 
 All settings have sensible defaults. You do not need to create a `settings.ini` to use v2.0 -- it works with built-in defaults.
 
-### --mode Flag: Deprecated
+### --mode Flag: Auto-Detected for Files, Still Required for Cube Reads
 
 In v1.x, the `--mode` flag (`norm` or `opt`) controlled whether RushTI used level-based (wait) or dependency-based execution.
 
-In v2.0, mode is **auto-detected** from file content:
+In v2.0, mode is **auto-detected from file content** for file sources (`--tasks`):
 
 - JSON files always use DAG execution (optimized mode).
 - TXT files use `norm` mode if they contain `wait` keywords, or `opt` mode if tasks have `id` and `predecessors` fields.
 
-The `--mode` flag is accepted for backward compatibility but ignored.
+For file sources the `--mode` flag is therefore accepted for backward compatibility but ignored.
+
+!!! warning "Cube reads still need `--mode`"
+    Auto-detection does **not** apply when reading from a TM1 cube (`--tm1-instance`). The cube stores every workflow with the same measures, so RushTI cannot tell a wait-based workflow from a predecessor-based one. Cube reads default to `norm` (wait-based) and **ignore the `predecessors` measure** unless you pass `--mode opt`. See [TM1 integration → Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads).
 
 ### Task File: id and predecessors in TXT Files
 
@@ -413,9 +416,9 @@ rushti run --tasks tasks.json --log-level DEBUG
 
 Check that `max_workers` is set in the correct place with the correct spelling.
 
-### Issue: Mode Deprecation Warning
+### Issue: Predecessors Missing When Running from a Cube
 
-If you see a deprecation warning about `--mode`, it is safe to ignore. Remove `--mode` from your scripts when convenient -- mode detection is automatic.
+If you run an optimized workflow from the cube (`--tm1-instance`) and the resulting plan ignores your `predecessors`, you are running in the default `norm` mode. Add `--mode opt` to the command (or set `mode = opt` in `settings.ini`). Mode auto-detection applies to file sources only — see [TM1 integration → Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). For `--tasks` file sources you can safely omit `--mode` entirely.
 
 ### Issue: TXT File Not Auto-Detecting Mode
 

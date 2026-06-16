@@ -69,6 +69,17 @@ rushti run --tm1-instance tm1srv01 --workflow Sample_Stage_Mode --max-workers 4
 
 RushTI reads the task definitions from the cube, builds the execution plan, and runs them — exactly like running from a file.
 
+!!! warning "Optimized workflows need `--mode opt`"
+    When you run from the cube, RushTI **cannot auto-detect** whether the workflow is wait-based (`norm`) or predecessor-based (`opt`) — the cube row layout is identical either way. It therefore defaults to `norm`, which uses the `wait` measure for sequencing and **ignores the `predecessors` measure entirely**.
+
+    To run an optimized workflow (one that defines explicit `predecessors`), you must pass `--mode opt`:
+
+    ```bash
+    rushti run --tm1-instance tm1srv01 --workflow Sample_Optimal_Mode --mode opt --max-workers 4
+    ```
+
+    Without `--mode opt`, the predecessors silently disappear from the execution plan (RushTI logs a `predecessors ignored in norm mode` warning, but the run still proceeds). See [Choosing the mode for cube reads](#choosing-the-mode-for-cube-reads) below.
+
 ### View Results in the Cube
 
 Once the run completes, RushTI writes the results back to the same cube under a timestamped `rushti_run_id` element. Open the `rushti_results` subset to see execution data:
@@ -180,11 +191,38 @@ rushti run --tm1-instance tm1srv01 --workflow Sample_Normal_Mode --max-workers 4
 # Run the stage-based sample
 rushti run --tm1-instance tm1srv01 --workflow Sample_Stage_Mode --max-workers 4
 
-# Run the optimized sample (with explicit dependencies)
-rushti run --tm1-instance tm1srv01 --workflow Sample_Optimal_Mode --max-workers 4
+# Run the optimized sample (with explicit dependencies) — note --mode opt
+rushti run --tm1-instance tm1srv01 --workflow Sample_Optimal_Mode --mode opt --max-workers 4
 ```
 
+`Sample_Optimal_Mode` defines its task ordering through the `predecessors` measure, so it **requires `--mode opt`**. Run it without that flag and RushTI reads the cube in `norm` mode, drops the predecessors, and falls back to wait-based sequencing — the run "works" but does not respect the dependency graph you defined.
+
 Check the `rushti` cube afterward to confirm that results were written.
+
+---
+
+## Choosing the Mode for Cube Reads
+
+Unlike file sources — where the mode is auto-detected from the file's structure — a cube read **cannot infer the mode**. Every workflow occupies the same set of measures in the `rushti` cube (`wait`, `predecessors`, `instance`, `process`, …), so there is no structural signal that distinguishes a wait-based workflow from a predecessor-based one. You tell RushTI which one to use with `--mode`:
+
+| `--mode` | Sequencing driver | `wait` measure | `predecessors` measure |
+|----------|-------------------|----------------|------------------------|
+| `norm` (default) | `wait` markers create sequential groups | **Used** | **Ignored** (logs a warning if populated) |
+| `opt` | Explicit `predecessors` form a DAG | Ignored | **Used** |
+
+```bash
+# Wait-based (norm) workflow — the default, no flag needed
+rushti run --tm1-instance tm1srv01 --workflow Sample_Normal_Mode --max-workers 4
+
+# Predecessor-based (opt) workflow — --mode opt is required
+rushti run --tm1-instance tm1srv01 --workflow Sample_Optimal_Mode --mode opt --max-workers 4
+```
+
+!!! tip "Make `opt` the default if most of your cube workflows use predecessors"
+    If the majority of your cube-stored workflows are predecessor-based, set `mode = opt` in the `[defaults]` section of `settings.ini` so you don't have to pass `--mode opt` on every run. The CLI `--mode` flag still overrides it per run.
+
+!!! note "`--mode` and file sources"
+    For `--tasks` (JSON/TXT files) the mode is auto-detected from content and `--mode` is ignored. The flag only changes behaviour for cube reads (`--tm1-instance`).
 
 ---
 
