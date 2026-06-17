@@ -64,7 +64,8 @@ def extract_task_from_line(
         return OptimizedTask(
             task_id=task_id,
             instance_name=line_arguments.pop("instance"),
-            process_name=line_arguments.pop("process"),
+            process_name=line_arguments.pop("process", None),
+            chore_name=line_arguments.pop("chore", None),
             predecessors=predecessors,
             require_predecessor_success=require_predecessor_success,
             succeed_on_minor_errors=succeed_on_minor_errors,
@@ -78,7 +79,8 @@ def extract_task_from_line(
         return Task(
             instance_name=line_arguments.pop("instance"),
             succeed_on_minor_errors=line_arguments.pop("succeed_on_minor_errors", False),
-            process_name=line_arguments.pop("process"),
+            process_name=line_arguments.pop("process", None),
+            chore_name=line_arguments.pop("chore", None),
             safe_retry=safe_retry,
             stage=stage,
             timeout=timeout,
@@ -104,6 +106,10 @@ def expand_task(
     :param task: Task to expand
     :return: List of expanded tasks (or single-element list with original task)
     """
+    # Chore tasks have no parameters and nothing to expand.
+    if getattr(task, "chore_name", None):
+        return [task]
+
     # Handle None or empty parameters - no expansion needed
     if not task.parameters:
         return [task]
@@ -136,9 +142,10 @@ def expand_task(
         if isinstance(task, OptimizedTask):
             result.append(
                 OptimizedTask(
-                    task.id,
-                    task.instance_name,
-                    task.process_name,
+                    task_id=task.id,
+                    instance_name=task.instance_name,
+                    process_name=task.process_name,
+                    chore_name=task.chore_name,
                     parameters=expanded_params,
                     predecessors=task.predecessors,
                     require_predecessor_success=task.require_predecessor_success,
@@ -152,8 +159,9 @@ def expand_task(
         elif isinstance(task, Task):
             result.append(
                 Task(
-                    task.instance_name,
-                    task.process_name,
+                    instance_name=task.instance_name,
+                    process_name=task.process_name,
+                    chore_name=task.chore_name,
                     parameters=expanded_params,
                     succeed_on_minor_errors=task.succeed_on_minor_errors,
                     safe_retry=task.safe_retry,
@@ -314,11 +322,14 @@ def convert_json_to_dag(
     dag = DAG()
 
     for task_def in taskfile.tasks:
-        # Create OptimizedTask from TaskDefinition
+        # Create OptimizedTask from TaskDefinition. Mutual exclusion of
+        # process/chore was enforced at parse time and re-asserted by
+        # Task.__init__.
         task = OptimizedTask(
             task_id=task_def.id,
             instance_name=task_def.instance,
             process_name=task_def.process,
+            chore_name=task_def.chore,
             parameters=task_def.parameters.copy(),
             predecessors=task_def.predecessors.copy(),
             require_predecessor_success=task_def.require_predecessor_success,

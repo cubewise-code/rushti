@@ -6,6 +6,13 @@ execution pipeline:
 - Task: Base task for norm-mode execution
 - OptimizedTask: Extended task with explicit predecessors for opt-mode
 - ExecutionMode: Enum for execution mode selection (norm vs opt)
+
+A task is polymorphic on its **kind**: it either executes a TI
+``process`` (with parameters) or a TM1 ``chore`` (no parameters). The
+field name is the discriminator; there is no separate ``kind`` field.
+Mutual exclusion of ``process_name`` and ``chore_name`` is enforced as
+a class invariant on ``Task.__init__`` so downstream code can rely on
+exactly one being set without re-checking. See ADR 0002.
 """
 
 from enum import Enum
@@ -39,17 +46,31 @@ class Task:
     def __init__(
         self,
         instance_name: str,
-        process_name: str,
+        process_name: Optional[str] = None,
         parameters: Dict[str, Any] = None,
         succeed_on_minor_errors: bool = False,
         safe_retry: bool = False,
         stage: Optional[str] = None,
         timeout: Optional[int] = None,
         cancel_at_timeout: bool = False,
+        chore_name: Optional[str] = None,
     ):
+        # Class invariant: exactly one of process_name / chore_name is set.
+        # The five Task(...) construction sites in parsing.py plus internal
+        # paths in execution.py make a class-level check cheaper than
+        # auditing each site individually — see ADR 0002 §2.
+        if process_name and chore_name:
+            raise ValueError(
+                "Task: 'process_name' and 'chore_name' are mutually exclusive — "
+                "exactly one must be set"
+            )
+        if not process_name and not chore_name:
+            raise ValueError("Task: exactly one of 'process_name' or 'chore_name' must be set")
+
         self.id = Task.id
         self.instance_name = instance_name
         self.process_name = process_name
+        self.chore_name = chore_name
         self.parameters = parameters
         self.succeed_on_minor_errors = succeed_on_minor_errors
         self.safe_retry = safe_retry
@@ -60,6 +81,21 @@ class Task:
         Task.id = Task.id + 1
 
     def translate_to_line(self):
+        if self.chore_name:
+            # Chores are intentionally narrower than processes — no
+            # parameters, no minor-error tier, no timeout, no
+            # cancel_at_timeout. Only safe_retry and stage are meaningful
+            # alongside the kind-specific identity.
+            parts = [
+                f'instance="{self.instance_name}"',
+                f'chore="{self.chore_name}"',
+            ]
+            if self.safe_retry:
+                parts.append(f'safe_retry="{self.safe_retry}"')
+            if self.stage:
+                parts.append(f'stage="{self.stage}"')
+            return " ".join(parts) + "\n"
+
         parts = [
             f'instance="{self.instance_name}"',
             f'process="{self.process_name}"',
@@ -83,28 +119,30 @@ class OptimizedTask(Task):
         self,
         task_id: str,
         instance_name: str,
-        process_name: str,
-        parameters: Dict[str, Any],
-        predecessors: List,
-        require_predecessor_success: bool,
+        process_name: Optional[str] = None,
+        parameters: Dict[str, Any] = None,
+        predecessors: List = None,
+        require_predecessor_success: bool = False,
         succeed_on_minor_errors: bool = False,
         safe_retry: bool = False,
         stage: Optional[str] = None,
         timeout: Optional[int] = None,
         cancel_at_timeout: bool = False,
+        chore_name: Optional[str] = None,
     ):
         super().__init__(
-            instance_name,
-            process_name,
-            parameters,
-            succeed_on_minor_errors,
-            safe_retry,
-            stage,
-            timeout,
-            cancel_at_timeout,
+            instance_name=instance_name,
+            process_name=process_name,
+            parameters=parameters,
+            succeed_on_minor_errors=succeed_on_minor_errors,
+            safe_retry=safe_retry,
+            stage=stage,
+            timeout=timeout,
+            cancel_at_timeout=cancel_at_timeout,
+            chore_name=chore_name,
         )
         self.id = task_id
-        self.predecessors = predecessors
+        self.predecessors = predecessors if predecessors is not None else []
         self.require_predecessor_success = require_predecessor_success
         self.successors = list()
 
@@ -117,6 +155,20 @@ class OptimizedTask(Task):
         return len(self.successors) > 0
 
     def translate_to_line(self):
+        if self.chore_name:
+            parts = [
+                f'id="{self.id}"',
+                f'predecessors="{",".join(map(str, self.predecessors))}"',
+                f'require_predecessor_success="{self.require_predecessor_success}"',
+            ]
+            if self.safe_retry:
+                parts.append(f'safe_retry="{self.safe_retry}"')
+            if self.stage:
+                parts.append(f'stage="{self.stage}"')
+            parts.append(f'instance="{self.instance_name}"')
+            parts.append(f'chore="{self.chore_name}"')
+            return " ".join(parts) + "\n"
+
         parts = [
             f'id="{self.id}"',
             f'predecessors="{",".join(map(str, self.predecessors))}"',

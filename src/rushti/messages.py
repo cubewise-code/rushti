@@ -66,6 +66,31 @@ MSG_PROCESS_TIMEOUT = (
 )
 
 # ---------------------------------------------------------------------------
+# Chore message templates
+# ---------------------------------------------------------------------------
+# Mirrors the MSG_PROCESS_* set above. Chore execution has no
+# parameters, no minor-error tier, no native timeout, and no error log
+# file — the message templates are intentionally narrower.
+
+MSG_CHORE_EXECUTE = "Executing chore: '{chore_name}' on instance: '{instance_name}'"
+MSG_CHORE_SUCCESS = (
+    "Execution successful: Chore '{chore}' with {retries} retries on instance: "
+    "'{instance}'. Elapsed time: {time}"
+)
+MSG_CHORE_FAIL = (
+    "Execution failed. Chore: '{chore}' with {retries} retries on instance: '{instance}'. "
+    "Elapsed time: {time}. Error: {error}"
+)
+MSG_CHORE_NOT_EXISTS = (
+    "Task validation failed. Chore: '{chore}' does not exist on instance: '{instance}'"
+)
+MSG_CHORE_REQUIRES_SINGLE_COMMIT = (
+    "Task validation failed. Chore: '{chore}' on instance: '{instance}' has "
+    "execution_mode={execution_mode}; 'safe_retry: true' requires SINGLE_COMMIT "
+    "(MULTIPLE_COMMIT chores leak partial state on failure)"
+)
+
+# ---------------------------------------------------------------------------
 # CLI configuration values
 # ---------------------------------------------------------------------------
 

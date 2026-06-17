@@ -27,6 +27,7 @@ on TM1 v12 (``CubeGetLogChanges`` / ``CubeSetLogChanges`` and
 MEASURE_ELEMENTS = [
     "instance",
     "process",
+    "chore",
     "parameters",
     "status",
     "start_time",
@@ -50,6 +51,7 @@ MEASURE_ELEMENTS = [
 MEASURE_ATTRIBUTES = {
     "instance": {"inputs": "Y", "results": "Y"},
     "process": {"inputs": "Y", "results": "Y"},
+    "chore": {"inputs": "Y", "results": "Y"},
     "parameters": {"inputs": "Y", "results": "Y"},
     "status": {"inputs": "", "results": "Y"},
     "start_time": {"inputs": "", "results": "Y"},
@@ -395,6 +397,7 @@ EndIf;
 
 CellPutS(vinstance, pTargetCube, vworkflow, vrun_id, vtask_id, 'instance');
 CellPutS(vprocess, pTargetCube, vworkflow, vrun_id, vtask_id, 'process');
+CellPutS(vchore, pTargetCube, vworkflow, vrun_id, vtask_id, 'chore');
 CellPutS(vparameters, pTargetCube, vworkflow, vrun_id, vtask_id, 'parameters');
 CellPutS(vstatus, pTargetCube, vworkflow, vrun_id, vtask_id, 'status');
 CellPutS(vstart_time, pTargetCube, vworkflow, vrun_id, vtask_id, 'start_time');
@@ -537,6 +540,12 @@ PROCESS_PARAMETERS = [
     },
 ]
 
+# Order is load-bearing: TI reads CSV columns positionally against this
+# declaration list. Must match the column order produced by
+# ``rushti.tm1_integration.upload_results_to_tm1`` (which inserts
+# ``workflow`` and ``run_id`` ahead of the columns built by
+# ``build_results_dataframe``). Mismatched ordering silently scrambles
+# the loaded payload.
 PROCESS_VARIABLES = [
     "vworkflow",
     "vrun_id",
@@ -544,6 +553,7 @@ PROCESS_VARIABLES = [
     "voriginal_task_id",
     "vinstance",
     "vprocess",
+    "vchore",
     "vparameters",
     "vstatus",
     "vstart_time",

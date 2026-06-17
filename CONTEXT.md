@@ -35,12 +35,39 @@ Use **"workflow"** as an adjective for scope ("workflow-level setting",
 "per-workflow override") rather than as a synonym for "taskfile".
 
 ### Task
-A single TI process execution inside a taskfile. Each task has:
+A single execution unit inside a taskfile. Each task has:
 - `id` — a positive integer string, used as an element name in
   `rushti_task_id`.
 - `instance` — **the TM1 instance where this task executes** (task-level).
-- `process` — the TI process name on that instance.
-- `parameters`, `predecessors`, `stage`, `timeout`, etc.
+- exactly one **kind field** — either `process` (TI process) or `chore`
+  (TM1 chore). The field name *is* the discriminator; there is no
+  meta-`kind` field. See [[adr/0002-polymorphic-task-kinds]].
+- kind-specific and shared optional fields — see **Task kind** below.
+
+### Task kind
+RushTI supports two task kinds, identified by which field names the
+execution target:
+
+| Kind | Field | Applicable optional fields |
+|---|---|---|
+| **process** (TI process) | `process` | `parameters`, `succeed_on_minor_errors`, `timeout`, `cancel_at_timeout`, `safe_retry`, plus shared (below) |
+| **chore** (TM1 chore) | `chore` | `safe_retry` (only when chore is `SINGLE_COMMIT`), plus shared |
+
+**Shared optional fields** (apply to both kinds): `predecessors`, `stage`,
+`require_predecessor_success`.
+
+A task with both `process` and `chore` set is invalid; a task with
+neither is invalid. The invariant is enforced at parse-time validation
+*and* as a class invariant in `Task.__init__`.
+
+Chores are intentionally narrower than processes:
+- **No parameters** — TM1 chores have no invocation parameters.
+- **No timeout / cancel** — TM1 chore execution has no native timeout.
+- **No minor-error tier** — chore execution is binary at the API
+  boundary (HTTP 204 = success, 500 = failure).
+- **Retry is whole-chore.** When `safe_retry: true` on a chore task,
+  retry re-executes the entire chore. Restricted to SINGLE_COMMIT
+  chores so partial state never leaks on failure.
 
 ### TM1 instance
 A named TM1 server defined in `config.ini`. Three roles can apply

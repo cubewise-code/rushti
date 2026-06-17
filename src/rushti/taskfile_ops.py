@@ -520,20 +520,26 @@ def _visualize_dag_html(
             if in_degree[child] == 0:
                 queue.append(child)
 
-    # Build nodes list for vis.js with all data needed for all views
+    # Build nodes list for vis.js with all data needed for all views.
+    # Chore tasks render the chore name as the task target with a short
+    # kind tag so the same column can show either kind without ambiguity.
     nodes = []
     for task_id, task in tasks_by_id.items():
         stage_name = task.stage if task.stage else "NoStage"
         color = stage_colors.get(stage_name, stage_colors["default"])
 
+        is_chore = bool(task.chore)
+        task_target = task.chore if is_chore else (task.process or "")
+        kind_label = "Chore" if is_chore else "Process"
+
         # Compact label (just ID)
         compact_label = f"{task_id}"
 
-        # Detailed label (ID, process, instance, optionally parameters)
-        detailed_parts = [f"ID: {task_id}", f"Process: {task.process}"]
+        # Detailed label (ID, target, instance, optionally parameters)
+        detailed_parts = [f"ID: {task_id}", f"{kind_label}: {task_target}"]
         if task.instance:
             detailed_parts.append(f"Instance: {task.instance}")
-        if show_parameters and task.parameters:
+        if show_parameters and not is_chore and task.parameters:
             params_str = ", ".join(f"{k}={v}" for k, v in task.parameters.items())
             if len(params_str) > 40:
                 params_str = params_str[:37] + "..."
@@ -541,20 +547,20 @@ def _visualize_dag_html(
         detailed_label = "\n".join(detailed_parts)
 
         # Build tooltip with full details (plain text for proper rendering)
-        tooltip_parts = [f"ID: {task_id}", f"Process: {task.process}"]
+        tooltip_parts = [f"ID: {task_id}", f"{kind_label}: {task_target}"]
         if task.instance:
             tooltip_parts.append(f"Instance: {task.instance}")
         if task.stage:
             tooltip_parts.append(f"Stage: {task.stage}")
         if task.predecessors:
             tooltip_parts.append(f"Predecessors: {', '.join(task.predecessors)}")
-        if task.parameters:
+        if not is_chore and task.parameters:
             params_str = ", ".join(f"{k}={v}" for k, v in task.parameters.items())
             tooltip_parts.append(f"Parameters: {params_str}")
         tooltip = "\n".join(tooltip_parts)
 
-        # Parameters as object for table/details view
-        params_obj = task.parameters if task.parameters else {}
+        # Parameters as object for table/details view (always empty for chores).
+        params_obj = task.parameters if (not is_chore and task.parameters) else {}
 
         nodes.append(
             {
@@ -571,7 +577,13 @@ def _visualize_dag_html(
                     "hover": {"background": color, "border": "#64748B"},
                 },
                 "stage": stage_name,
-                "process": task.process,
+                # Kind discriminator and unified task target. ``process``
+                # and ``chore`` carry the raw kind-specific name; the JS
+                # renders ``task_target`` with a [P]/[C] tag.
+                "process": task.process or "",
+                "chore": task.chore or "",
+                "task_target": task_target,
+                "task_kind": "chore" if is_chore else "process",
                 "instance": task.instance or "",
                 "predecessors": task.predecessors if task.predecessors else [],
                 "parameters": params_obj,
