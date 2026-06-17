@@ -206,11 +206,15 @@ def setup_tm1_services(
                 # case no connection file provided or connection file expired
                 if tm1_server_name not in tm1_services:
                     resolved_params = resolve_tm1_params(config, tm1_server_name)
-                    tm1_services[tm1_server_name] = TM1Service(
-                        **resolved_params,
-                        session_context=session_context,
-                        connection_pool_size=max_workers,
-                    )
+                    # RushTI-managed defaults; any value explicitly set in
+                    # config.ini takes precedence (avoids "multiple values for
+                    # keyword argument" when e.g. connection_pool_size is set).
+                    service_kwargs = {
+                        "session_context": session_context,
+                        "connection_pool_size": max_workers,
+                    }
+                    service_kwargs.update(resolved_params)
+                    tm1_services[tm1_server_name] = TM1Service(**service_kwargs)
 
                 if connection_file:
                     # implicitly re-connects if session is timed out
