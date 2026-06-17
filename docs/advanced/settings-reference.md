@@ -46,9 +46,9 @@ Common execution settings that control basic RushTI behavior.
 | `max_workers` | int | `4` | Maximum number of parallel workers. Valid range: 1--100. Recommended: start at 4, increase based on TM1 server capacity. |
 | `retries` | int | `0` | Number of retry attempts for failed TI process executions. Valid range: 0--10. Retries use exponential backoff (1s, 2s, 4s, ...). |
 | `result_file` | str | `""` (empty) | CSV output path for execution summary. Empty string means no CSV is created. |
-| `mode` | str | `norm` | **Deprecated.** Execution mode is now auto-detected from file content. JSON files always use DAG execution; TXT files use the mode indicated by their content structure. Kept for backward compatibility only. |
+| `mode` | str | `norm` | Default execution mode (`norm` or `opt`) for **cube reads** (`--tm1-instance`). A cube read cannot auto-detect its mode, so this value (or the `--mode` CLI override) decides whether the `predecessors` measure is honoured (`opt`) or the `wait` measure drives sequencing (`norm`). **Ignored for file sources**, where the mode is auto-detected from file content. See [Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). |
 
-**Overridable via CLI:** `--max-workers` / `-w`, `--retries` / `-r`, `--result` / `-o`, `--mode` / `-m` (deprecated)
+**Overridable via CLI:** `--max-workers` / `-w`, `--retries` / `-r`, `--result` / `-o`, `--mode` / `-m`
 
 **Overridable via JSON task file:** `max_workers`, `retries`, `result_file`
 
@@ -243,7 +243,10 @@ Copy this template to `config/settings.ini` and uncomment the settings you want 
 # Default: (empty - no CSV created)
 # result_file = rushti.csv
 
-# Execution mode (deprecated - auto-detected from file content)
+# Default execution mode for cube reads (--tm1-instance): norm or opt.
+# Cube reads cannot auto-detect the mode; set opt here if most of your
+# cube-stored workflows use explicit predecessors. Ignored for file
+# sources (--tasks), where the mode is auto-detected from file content.
 # Default: norm
 # mode = norm
 

@@ -72,10 +72,13 @@ Each task is defined by writing values to these measures:
 ### Run Tasks from the Cube
 
 ```bash
-rushti run --tm1-instance tm1srv01 --workflow daily-refresh --max-workers 4
+rushti run --tm1-instance tm1srv01 --workflow daily-refresh --mode opt --max-workers 4
 ```
 
 RushTI reads the task definitions from the cube, builds the DAG, and executes — exactly like running from a file.
+
+!!! warning "`--mode opt` is required for predecessor-based workflows"
+    Because the workflow above uses the `predecessors` measure, you must pass `--mode opt`. A cube read cannot auto-detect its mode (unlike a file source) and defaults to `norm`, which ignores `predecessors` and sequences tasks by the `wait` measure instead. See [TM1 integration → Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads).
 
 ### View Results
 

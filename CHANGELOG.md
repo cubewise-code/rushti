@@ -2,6 +2,19 @@
 
 All notable changes to RushTI are documented in this file.
 
+## Unreleased — docs: `--mode` for cube reads (#160)
+
+- **Docs fix:** corrected the long-standing claim that `--mode` is
+  deprecated/ignored. It is only auto-detected (and ignored) for **file
+  sources** (`--tasks`). A **cube read** (`--tm1-instance`) cannot infer
+  the mode — every workflow occupies the same cube measures — so it
+  defaults to `norm` and silently drops the `predecessors` measure unless
+  `--mode opt` is passed. This caused predecessors to disappear from
+  cube-read execution plans (e.g. `Sample_Optimal_Mode`). Updated the CLI
+  reference, settings reference, migration guide, TM1 integration guide
+  (new "Choosing the mode for cube reads" section), getting-started
+  task-files page, and the `rushti run --help` text.
+
 ## Unreleased — `feat/issue-154-v12-load-results`
 
 - Fix: `rushti build` now installs a TM1-version-aware `}rushti.load.results`

@@ -55,7 +55,7 @@ rushti --tasks FILE [options]          # 'run' is the default command
 | `--retries` | `-r` | INT | `0` | Retry count for failed TI executions. Uses exponential backoff. |
 | `--result` | `-o` | PATH | *(empty)* | Output CSV path for execution summary. Omit to skip CSV creation. |
 | `--settings` | `-s` | PATH | auto | Path to `settings.ini`. Auto-discovered if omitted. |
-| `--mode` | `-m` | CHOICE | auto | **Deprecated.** Mode is auto-detected from file content. Ignored. |
+| `--mode` | `-m` | CHOICE | `norm` | Execution mode: `norm` or `opt`. **Ignored for file sources** (`--tasks`), where mode is auto-detected from file content. **Required for cube reads** (`--tm1-instance`) when the workflow uses explicit `predecessors` — pass `--mode opt`, otherwise the cube is read in `norm` mode and predecessors are dropped. See [TM1 integration → Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). |
 | `--exclusive` | `-x` | FLAG | `false` | Enable exclusive mode. Waits for other RushTI sessions to finish. |
 | `--force` | `-f` | FLAG | `false` | Bypass exclusive mode checks and run immediately. |
 | `--optimize` | | CHOICE | *(none)* | Enable task optimization with a scheduling algorithm: `longest_first` or `shortest_first`. |
@@ -80,8 +80,11 @@ rushti run --tasks critical.json --exclusive --result results/critical.csv
 # Override workflow name for a file-based run
 rushti run --tasks daily-etl.json --workflow DailyETL --max-workers 8
 
-# Read task file from TM1 cube
+# Read task file from TM1 cube (norm mode — wait-based sequencing)
 rushti run --tm1-instance tm1srv01 --workflow DailyETL --max-workers 8
+
+# Read an optimized workflow from the cube — --mode opt is required to honour predecessors
+rushti run --tm1-instance tm1srv01 --workflow DailyETL --mode opt --max-workers 8
 
 # Optimize with shortest-first scheduling (good for shared-resource TM1 workloads)
 rushti run --tasks tasks.json --max-workers 20 --optimize shortest_first

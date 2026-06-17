@@ -249,11 +249,14 @@ Examples:
   %(prog)s -t tasks.txt -w 4 -r 2 -o results.csv
   %(prog)s --tasks tasks.json --max-workers 8 --retries 3
   %(prog)s --tm1-instance tm1srv01 --workflow Sample --max-workers 4
+  %(prog)s --tm1-instance tm1srv01 --workflow Sample_Optimal_Mode --mode opt
 
 Configuration:
   Default values can be set in settings.ini (see settings.ini.template).
   Settings precedence: CLI args > JSON task file > settings.ini > defaults
-  File format is auto-detected (--mode is deprecated for file sources).
+  File sources auto-detect the mode (--mode is ignored). Cube reads
+  (--tm1-instance) cannot, and default to norm; pass --mode opt to honour
+  the 'predecessors' measure.
         """,
     )
 
@@ -286,7 +289,7 @@ Configuration:
         dest="execution_mode",
         choices=["norm", "opt"],
         default=None,
-        help="[Deprecated] Execution mode is now auto-detected from file content. This option is kept for backwards compatibility but ignored.",
+        help="Execution mode: norm or opt. Auto-detected (and ignored) for file sources. For cube reads (--tm1-instance) it defaults to norm; pass 'opt' to honour the 'predecessors' measure.",
     )
 
     parser.add_argument(
