@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from rushti.app_paths import add_config_arg
 from rushti.checkpoint import find_checkpoint_for_taskfile, load_checkpoint
 from rushti.logging_setup import add_log_level_arg, apply_log_level
 from rushti.settings import load_settings
@@ -86,6 +87,7 @@ Examples:
         default=False,
         help="Force resume even if checkpoint doesn't match taskfile",
     )
+    add_config_arg(parser)
     add_log_level_arg(parser)
 
     args = parser.parse_args(argv[2:])
@@ -199,6 +201,9 @@ Examples:
 
     if args.settings_file:
         resume_argv.extend(["--settings", args.settings_file])
+
+    if args.config:
+        resume_argv.extend(["--config", args.config])
 
     if args.force:
         resume_argv.append("--force")

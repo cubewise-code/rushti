@@ -55,6 +55,7 @@ rushti --tasks FILE [options]          # 'run' is the default command
 | `--retries` | `-r` | INT | `0` | Retry count for failed TI executions. Uses exponential backoff. |
 | `--result` | `-o` | PATH | *(empty)* | Output CSV path for execution summary. Omit to skip CSV creation. |
 | `--settings` | `-s` | PATH | auto | Path to `settings.ini`. Auto-discovered if omitted. |
+| `--config` | | PATH | auto | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. Relocates **only** `config.ini`; `settings.ini` and `logging_config.ini` keep their own resolution. A missing path fails fast (exit 1, no traceback). |
 | `--mode` | `-m` | CHOICE | `norm` | Execution mode: `norm` or `opt`. **Ignored for file sources** (`--tasks`), where mode is auto-detected from file content. **Required for cube reads** (`--tm1-instance`) when the workflow uses explicit `predecessors` — pass `--mode opt`, otherwise the cube is read in `norm` mode and predecessors are dropped. See [TM1 integration → Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). |
 | `--exclusive` | `-x` | FLAG | `false` | Enable exclusive mode. Waits for other RushTI sessions to finish. |
 | `--force` | `-f` | FLAG | `false` | Bypass exclusive mode checks and run immediately. |
@@ -123,6 +124,7 @@ rushti resume --tasks FILE [options]          # auto-finds checkpoint
 | `--resume-from` | | STR | *(none)* | Resume from a specific task ID, overriding checkpoint state. |
 | `--max-workers` | `-w` | INT | *(from settings)* | Maximum parallel workers. |
 | `--settings` | `-s` | PATH | auto | Path to `settings.ini`. |
+| `--config` | | PATH | auto | Path to `config.ini` (TM1 connection parameters). Forwarded into the resumed run. |
 | `--force` | `-f` | FLAG | `false` | Force resume even if checkpoint does not match the current task file. |
 | `--log-level` | `-L` | CHOICE | `INFO` | Override log level. |
 
@@ -164,6 +166,7 @@ rushti tasks export --tm1-instance tm1srv01 -W DailyETL --output daily.json
 | `--tm1-instance` | | STR | Read source from TM1 |
 | `--workflow` | `-W` | STR | Workflow in TM1 |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -183,6 +186,7 @@ rushti tasks expand --tasks template.json --output expanded.json
 | `--tm1-instance` | | STR | TM1 source instance |
 | `--workflow` | `-W` | STR | Workflow in TM1 |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -203,6 +207,7 @@ rushti tasks visualize --tasks daily-etl.json --output dag.html --show-parameter
 | `--tm1-instance` | | STR | TM1 source instance |
 | `--workflow` | `-W` | STR | Workflow in TM1 |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -224,6 +229,7 @@ rushti tasks validate --tasks daily-etl.json --json > validation.json
 | `--tm1-instance` | | STR | TM1 source instance |
 | `--workflow` | `-W` | STR | Workflow in TM1 |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -241,6 +247,7 @@ rushti tasks push --tasks daily-etl.json --tm1-instance tm1srv01
 | `--tm1-instance` | | STR | TM1 instance to push the taskfile to. Context disambiguates the role — on `tasks push` this is the destination. |
 | `--target-tm1-instance` | | STR | **Deprecated alias** for `--tm1-instance`. Still works; emits a `DEPRECATION:` warning when used. |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -265,6 +272,7 @@ rushti stats list tasks --workflow daily-etl --limit 50
 | `--workflow` | `-W` | STR | Workflow (*required*) |
 | `--limit` | `-n` | INT | Maximum items to show (default: 20) |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -283,6 +291,7 @@ rushti stats export --workflow daily-etl --run-id 20260115_103000 --output run.c
 | `--run-id` | `-r` | STR | Specific run ID to export (all runs if omitted) |
 | `--output` | `-o` | PATH | Output CSV file path (*required*) |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -301,6 +310,7 @@ rushti stats visualize --workflow daily-etl --runs 10 --output dashboard.html
 | `--runs` | `-n` | INT | Number of recent runs to display (default: 5) |
 | `--output` | `-o` | PATH | Output HTML file path (default: `visualizations/rushti_dashboard_<id>.html`) |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 !!! info "DAG reflects the latest executed run"
     Both the dashboard and the DAG are sourced from the stats database — not from the live taskfile or TM1 cube definition. Editing a workflow definition without re-running it will not update either visualization. Re-run the workflow to refresh.
@@ -328,6 +338,7 @@ rushti stats analyze --workflow daily-etl --report report.json --ewma-alpha 0.5
 | `--runs` | `-n` | INT | Number of recent runs to analyze (default: 10) |
 | `--ewma-alpha` | | FLOAT | EWMA smoothing factor 0--1 (default: 0.3). Higher = more weight on recent runs. |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 
 ---
 
@@ -374,6 +385,7 @@ rushti build --tm1-instance INSTANCE [options]
 | `--tm1-instance` | | STR | TM1 instance name from `config.ini` (*required*) |
 | `--force` | `-f` | FLAG | Delete and recreate existing objects |
 | `--settings` | `-s` | PATH | Path to `settings.ini` |
+| `--config` | | PATH | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. |
 | `--log-level` | `-L` | CHOICE | Override log level |
 
 ### Examples

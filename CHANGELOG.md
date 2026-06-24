@@ -2,7 +2,20 @@
 
 All notable changes to RushTI are documented in this file.
 
-## Unreleased — `feat/issue-156-chore-task-kind`
+## [Unreleased]
+
+- **Added: `--config PATH` CLI flag** (closes #164). Overrides the location of
+  `config.ini` (TM1 connection parameters) for a single invocation, on every
+  TM1-connecting command (`run`, `build`, `tasks …`, `resume`). Precedence:
+  `--config` > `RUSHTI_DIR` > legacy CWD > `config/`. The flag relocates only
+  `config.ini` — `settings.ini` (`--settings`) and `logging_config.ini` keep
+  their own resolution. A missing path fails fast (exit 1, no traceback). The
+  resolved path is threaded explicitly into the TM1 connection layer rather
+  than mutating a global. Enables sharing one read-only `config.ini` with other
+  tm1py utilities. No behavioural change when the flag is absent. See
+  `docs/adr/0003-config-ini-location-resolution.md`.
+
+## [2.3.0] - 2026-06-17
 
 - **Added: TM1 chore execution as a first-class task kind** (closes #156).
   Mixed process + chore taskfiles are now supported across JSON, TXT, and
@@ -29,13 +42,10 @@ All notable changes to RushTI are documented in this file.
 - Dashboard: the per-task "Process" column is replaced by a unified
   "Task target" column with a `[P]` / `[C]` kind indicator so process
   and chore rows render side-by-side.
-
-## Unreleased — docs: `--mode` for cube reads (#160)
-
 - **Docs fix:** corrected the long-standing claim that `--mode` is
-  deprecated/ignored. It is only auto-detected (and ignored) for **file
-  sources** (`--tasks`). A **cube read** (`--tm1-instance`) cannot infer
-  the mode — every workflow occupies the same cube measures — so it
+  deprecated/ignored (#160). It is only auto-detected (and ignored) for
+  **file sources** (`--tasks`). A **cube read** (`--tm1-instance`) cannot
+  infer the mode — every workflow occupies the same cube measures — so it
   defaults to `norm` and silently drops the `predecessors` measure unless
   `--mode opt` is passed. This caused predecessors to disappear from
   cube-read execution plans (e.g. `Sample_Optimal_Mode`). Updated the CLI
@@ -43,13 +53,21 @@ All notable changes to RushTI are documented in this file.
   (new "Choosing the mode for cube reads" section), getting-started
   task-files page, and the `rushti run --help` text.
 
-## Unreleased — `feat/issue-154-v12-load-results`
+## [2.2.3] - 2026-06-01
+
+- Fix: `TM1Service` kwarg collision when connection parameters are set in
+  `config.ini` (#158).
+
+## [2.2.2] - 2026-05-20
 
 - Fix: `rushti build` now installs a TM1-version-aware `}rushti.load.results`
   TI (closes #154). On v12 targets the body no longer references the removed
   `CubeGetLogChanges` / `CubeSetLogChanges` / `ExecuteCommand` functions;
   source-file cleanup uses the TM1-native `ASCIIDelete` instead of shelling
   out via `cmd /c del`. The v11 body is unchanged.
+
+## [2.2.1] - 2026-05-20
+
 - **Per-workflow `tm1_instance` setting** for results push and auto-load.
   Set it inside a JSON taskfile's `settings` block to override the
   `settings.ini` default per workflow. Resolution chain (highest wins):
@@ -71,7 +89,7 @@ All notable changes to RushTI are documented in this file.
   `--tm1-instance` instead. The legacy flag is aliased and continues to
   work; a `DEPRECATION:` warning fires on use.
 
-## Unreleased — `feat/issue-146-detailed-results`
+## [2.2.0] - 2026-05-18
 
 - Add `--detailed-results` for per-execution cube rows (closes #146).
 - Log migration hint at run start when `--detailed-results` is enabled.

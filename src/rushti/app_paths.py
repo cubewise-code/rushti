@@ -6,6 +6,7 @@ and tracks which legacy paths have been used so a deprecation warning
 can be emitted once logging is initialized.
 """
 
+import argparse
 import logging
 import os
 
@@ -15,6 +16,7 @@ __all__ = [
     "CURRENT_DIRECTORY",
     "resolve_config_path",
     "log_legacy_path_warnings",
+    "add_config_arg",
 ]
 
 
@@ -71,6 +73,26 @@ def resolve_config_path(filename: str, warn_on_legacy: bool = True, cli_path: st
 
     # Neither exists - return new path for error messaging
     return new_path
+
+
+def add_config_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the ``--config`` argument to a parser.
+
+    Long-form only (``-c`` is taken by ``resume --checkpoint``). Relocates
+    only ``config.ini`` (TM1 connection parameters); ``settings.ini`` and
+    ``logging_config.ini`` keep their own resolution. The resolved value is
+    fed to :func:`resolve_config_path` as ``cli_path``.
+    """
+    parser.add_argument(
+        "--config",
+        dest="config",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Path to a config.ini file (TM1 connection parameters). "
+            "Overrides RUSHTI_DIR/default location."
+        ),
+    )
 
 
 def log_legacy_path_warnings(logger: logging.Logger) -> None:

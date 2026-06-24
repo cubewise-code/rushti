@@ -19,6 +19,7 @@ from pathlib import Path
 from TM1py.Utils import integerize_version
 
 from rushti.app_paths import (
+    add_config_arg,
     log_legacy_path_warnings,
     resolve_config_path,
 )
@@ -273,6 +274,9 @@ Configuration:
     # Add taskfile source arguments
     add_taskfile_source_args(parser, required=False, include_settings=True)
 
+    # Add --config (relocates config.ini only)
+    add_config_arg(parser)
+
     parser.add_argument(
         "--max-workers",
         "-w",
@@ -426,6 +430,7 @@ def parse_named_arguments(argv: list):
         "workflow": workflow,
         "log_level": args.log_level,
         "detailed_results": args.detailed_results,
+        "config": args.config,
     }
 
     return tasks_file_path, cli_args
@@ -471,6 +476,7 @@ def parse_arguments(argv: list):
             "exclusive": None,
             "no_checkpoint": False,
             "log_level": None,  # Not supported in positional style
+            "config": None,  # Legacy positional style does not support --config
         }
         return tasks_file, cli_args
 
@@ -626,6 +632,14 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     if resume_context:
         cli_args.update(resume_context)
 
+    # Resolve config.ini location, threading the resolved path explicitly into
+    # the TM1 connection layer (CLI --config > RUSHTI_DIR > legacy CWD > config/).
+    # Fail fast with a clean message (no traceback) on an explicit bad path.
+    try:
+        config_path = resolve_config_path("config.ini", cli_path=cli_args.get("config"))
+    except FileNotFoundError:
+        sys.exit(f"RushTI: --config file not found: {cli_args.get('config')}")
+
     # Apply log level override if specified
     apply_log_level(cli_args.get("log_level"))
 
@@ -645,7 +659,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         try:
             from rushti.tm1_integration import read_taskfile_from_tm1, connect_to_tm1_instance
 
-            tm1_source = connect_to_tm1_instance(tm1_instance, CONFIG)
+            tm1_source = connect_to_tm1_instance(tm1_instance, config_path)
             try:
                 # Resolve execution mode for TM1 read (affects predecessor parsing)
                 tm1_mode = "opt" if cli_args.get("execution_mode") == ExecutionMode.OPT else "norm"
@@ -752,6 +766,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         tasks_file_path=tasks_file_path_for_services if not tm1_taskfile else None,
         workflow=workflow,
         exclusive=exclusive_mode,
+        config_path=config_path,
         tm1_instances=tm1_instances_needed,
     )
 
@@ -1106,7 +1121,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                         )
                         tm1_upload = connect_to_tm1_instance(
                             upload_instance,
-                            CONFIG,
+                            config_path,
                         )
                         try:
                             results_df = build_results_dataframe(

@@ -10,6 +10,7 @@ import sys
 
 from TM1py import TM1Service
 
+from rushti.app_paths import add_config_arg, resolve_config_path
 from rushti.logging_setup import add_log_level_arg, apply_log_level
 from rushti.settings import load_settings
 from rushti.tm1_build import build_logging_objects, get_build_status
@@ -25,8 +26,6 @@ def run_build_command(argv: list) -> None:
 
     :param argv: Command line arguments
     """
-    from rushti.cli import CONFIG
-
     parser = argparse.ArgumentParser(
         prog=f"{APP_NAME} build",
         description="Create TM1 dimensions and cube for RushTI execution logging.",
@@ -60,6 +59,7 @@ Examples:
         metavar="FILE",
         help="Path to settings.ini file",
     )
+    add_config_arg(parser)
     add_log_level_arg(parser)
 
     args = parser.parse_args(argv[2:])  # Skip "rushti" and "build"
@@ -68,16 +68,22 @@ Examples:
     # Load settings
     settings = load_settings(args.settings_file)
 
+    # Resolve config.ini location (CLI --config > RUSHTI_DIR > legacy CWD > config/)
+    try:
+        config_path = resolve_config_path("config.ini", cli_path=args.config)
+    except FileNotFoundError:
+        sys.exit(f"RushTI: --config file not found: {args.config}")
+
     # Load config to get TM1 connection details
-    if not os.path.isfile(CONFIG):
-        print(f"Error: {CONFIG} does not exist")
+    if not os.path.isfile(config_path):
+        print(f"Error: {config_path} does not exist")
         sys.exit(1)
 
     config = configparser.ConfigParser()
-    config.read(CONFIG, encoding="utf-8")
+    config.read(config_path, encoding="utf-8")
 
     if args.tm1_instance not in config.sections():
-        print(f"Error: Instance '{args.tm1_instance}' not found in {CONFIG}")
+        print(f"Error: Instance '{args.tm1_instance}' not found in {config_path}")
         print(f"Available instances: {', '.join(config.sections())}")
         sys.exit(1)
 

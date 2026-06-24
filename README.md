@@ -65,6 +65,11 @@ user = admin
 password = apple
 ```
 
+RushTI looks for `config.ini` under `config/` (or `RUSHTI_DIR`). To point a
+single run at a different file — e.g. a `config.ini` shared with other tm1py
+utilities — pass `--config PATH` to any TM1-connecting command (`run`, `build`,
+`tasks`, `resume`).
+
 **2. Create a task file**
 
 ```json

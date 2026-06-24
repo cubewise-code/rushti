@@ -118,7 +118,34 @@ The effective value for a settings-driven knob is resolved in this order
 
 Three knobs are *not* settings-driven and don't follow this chain:
 - Per-task `instance` and `process` — taskfile-only, no fallback.
-- TM1 connection parameters — `config.ini` only.
+- TM1 connection parameters — `config.ini` only (the *values*; the file's
+  *location* is resolved separately, see below).
+
+---
+
+## config.ini location resolution
+
+`config.ini` holds TM1 connection parameters only; its *location* is resolved
+by `resolve_config_path("config.ini", cli_path=…)` (`app_paths.py`) in this
+order (highest wins):
+
+1. **`--config` CLI flag** — explicit path to a `config.ini` file. Present on
+   every TM1-connecting command (`run`, `build`, `tasks …`, `resume`); not on
+   `stats`/`db`, which touch only local SQLite + settings.ini. A missing path
+   fails fast with a clean error, no traceback.
+2. **`RUSHTI_DIR` env var** — looks in `{RUSHTI_DIR}/config/config.ini`.
+3. **Legacy CWD** — `./config.ini` (deprecated, warns once).
+4. **`config/config.ini`** — the recommended default location.
+
+`--config` relocates **only `config.ini`** — settings.ini keeps `--settings`,
+logging_config.ini keeps its own resolution, and `RUSHTI_DIR` still governs
+those siblings. The flag exists so RushTI can share one read-only `config.ini`
+with other tm1py utilities (e.g. OptimusPy) instead of duplicating it. When
+`--config` is absent, resolution is unchanged from prior behaviour.
+
+The resolved path is **threaded explicitly** as `config_path` into the TM1
+connection layer (`connect_to_tm1_instance`, `setup_tm1_services`); the
+module-level `CONFIG` global in `cli.py` is now only the no-flag default.
 
 ---
 
