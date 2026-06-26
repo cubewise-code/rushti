@@ -148,14 +148,12 @@ def setup_tm1_services(
     :param tasks_file_path: Path to the tasks file (can be None if tm1_instances provided)
     :param workflow: Workflow identifier for session context
     :param exclusive: Whether running in exclusive mode
-    :param config_path: Optional path to config.ini file (defaults to resolved CONFIG)
+    :param config_path: Path to config.ini file (resolved by the caller; required)
     :param tm1_instances: Optional set of TM1 instance names (used when reading from TM1)
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
     """
     if config_path is None:
-        from rushti.cli import CONFIG
-
-        config_path = CONFIG
+        raise ValueError("config_path is required")
 
     config_file = config_path
     if not os.path.isfile(config_file):

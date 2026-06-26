@@ -33,6 +33,22 @@ RushTI searches for `settings.ini` in the following order:
 
 If no file is found, built-in defaults are used for all settings.
 
+### config.ini location
+
+`config.ini` (TM1 connection parameters) is resolved separately, with its own
+precedence (highest wins):
+
+1. `--config` CLI flag (TM1-connecting commands: `run`, `build`, `tasks …`, `resume`)
+2. `RUSHTI_DIR` environment variable (looks for `config/config.ini` under this directory)
+3. `./config.ini` (current directory -- legacy location, deprecation warning emitted)
+4. `./config/config.ini` (recommended location)
+
+`--config` relocates **only** `config.ini`; `settings.ini` keeps `--settings`
+and `logging_config.ini` keeps its own resolution. Use it to share a single
+read-only `config.ini` with other tm1py utilities. A missing `--config` path
+fails fast (exit 1, no traceback). When `--config` is absent, resolution is
+unchanged.
+
 ---
 
 ## Configuration Sections

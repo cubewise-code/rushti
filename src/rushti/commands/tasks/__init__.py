@@ -9,8 +9,9 @@ Subcommands:
 """
 
 import argparse
+import sys
 
-from rushti.app_paths import resolve_config_path
+from rushti.app_paths import add_config_arg, resolve_config_path
 from rushti.commands.tasks.expand import handle_tasks_expand
 from rushti.commands.tasks.export import handle_tasks_export
 from rushti.commands.tasks.push import handle_tasks_push
@@ -98,6 +99,7 @@ Examples:
         help="[TM1 sources only] 'norm' for wait-based sequencing, 'opt' for explicit predecessors. "
         "Ignored for file sources (auto-detected). Default: opt",
     )
+    add_config_arg(export_parser)
     add_log_level_arg(export_parser)
 
     # --- push subcommand ---
@@ -122,6 +124,7 @@ Examples:
         help="[TM1 sources only] 'norm' for wait-based sequencing, 'opt' for explicit predecessors. "
         "Ignored for file sources (auto-detected). Default: opt",
     )
+    add_config_arg(push_parser)
     add_log_level_arg(push_parser)
 
     # --- expand subcommand ---
@@ -155,6 +158,7 @@ Examples:
         help="[TM1 sources only] 'norm' for wait-based sequencing, 'opt' for explicit predecessors. "
         "Ignored for file sources (auto-detected). Default: opt",
     )
+    add_config_arg(expand_parser)
     add_log_level_arg(expand_parser)
 
     # --- visualize subcommand ---
@@ -188,6 +192,7 @@ Examples:
         help="[TM1 sources only] 'norm' for wait-based sequencing, 'opt' for explicit predecessors. "
         "Ignored for file sources (auto-detected). Default: opt",
     )
+    add_config_arg(visualize_parser)
     add_log_level_arg(visualize_parser)
 
     # --- validate subcommand ---
@@ -219,14 +224,18 @@ Examples:
         help="[TM1 sources only] 'norm' for wait-based sequencing, 'opt' for explicit predecessors. "
         "Ignored for file sources (auto-detected). Default: opt",
     )
+    add_config_arg(validate_parser)
     add_log_level_arg(validate_parser)
 
     # Parse arguments (skip script name and 'tasks' command)
     args = parser.parse_args(argv[2:])
     apply_log_level(args.log_level)
 
-    # Resolve config path
-    config_path = resolve_config_path("config.ini", cli_path=None)
+    # Resolve config.ini location (CLI --config > RUSHTI_DIR > legacy CWD > config/)
+    try:
+        config_path = resolve_config_path("config.ini", cli_path=args.config)
+    except FileNotFoundError:
+        sys.exit(f"RushTI: --config file not found: {args.config}")
 
     # Dispatch to appropriate handler based on subcommand
     if args.subcommand == "export":
