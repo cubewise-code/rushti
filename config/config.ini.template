@@ -48,5 +48,8 @@ ssl=True
 #   decode_b64=True
 #
 # Option 3: Keyring integration (most secure - password stored in OS keyring)
-#   Leave password empty and store in keyring:
-#   python -c "import keyring; keyring.set_password('TM1py', 'tm1srv01', 'mypassword')"
+#   1. Add `use_keyring=true` to this section (RushTI only queries keyring when opted in).
+#   2. Leave `password=` empty in this file.
+#   3. Store the secret so the service/account match RushTI's lookup —
+#      service = section name, account = user:
+#      python -c "import keyring; keyring.set_password('tm1srv01', 'admin', 'mypassword')"
