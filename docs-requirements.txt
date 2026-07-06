@@ -11,7 +11,7 @@ mkdocs-material>=9.7.6
 mike>=2.2.0
 
 # Markdown extensions (most are included with mkdocs-material, but explicit for clarity)
-pymdown-extensions>=10.21.3
+pymdown-extensions>=11.0.1
 
 # Optional: Useful plugins for enhanced documentation
 # Uncomment if needed:
