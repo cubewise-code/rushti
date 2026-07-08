@@ -171,6 +171,9 @@ Task file validation failed:
 
 You don't need a separate command — bare `rushti build` does the right thing. CI/CD pipelines that run `rushti build` on every release continue to work across version upgrades without manual intervention.
 
+!!! warning "Re-run `rushti build` after every upgrade"
+    `}rushti.load.results` maps result-CSV columns to its variables **by position**. If a release adds a measure column (as 2.3.0 did with `chore`) and you upgrade the Python package **without** re-running `rushti build`, the stale process reads each column into the wrong variable and writes values to the next measure over (issue [#169](https://github.com/cubewise-code/rushti/issues/169)). The loader now validates the CSV header and fails with a clear error instead of silently scrambling data — but the fix for a stale deployment is still to **re-run `rushti build --tm1-instance <inst>`**. If you already have scrambled rows, clear them and re-run the workflow.
+
 ---
 
 ## Step-by-Step Migration

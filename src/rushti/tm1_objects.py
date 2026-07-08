@@ -150,6 +150,8 @@ nProcessReturnCode  = 0;
 nErrors             = 0;
 nMetadataRecordCount= 0;
 nDataRecordCount    = 0;
+nHeaderChecked      = 0;
+nDataHeaderChecked  = 0;
 
 ### Process Specific Constants
 cFileSrc            = pSourceFile;
@@ -220,7 +222,9 @@ CubeSetLogChanges( cCubeTgt, 0 );
 If( nErrors = 0 );
     DatasourceType          = 'CHARACTERDELIMITED';
     DatasourceNameForServer = cFileSrc;
-    DatasourceASCIIHeaderRecords = 1;
+    # 0 (not 1): the header row is consumed as the first record so the
+    # metadata tab can validate it against the expected columns (issue #169).
+    DatasourceASCIIHeaderRecords = 0;
     DatasourceASCIIDelimiter=',';
     DatasourceASCIIDecimalSeparator='.';
     DatasourceASCIIThousandSeparator='';
@@ -290,6 +294,8 @@ nProcessReturnCode  = 0;
 nErrors             = 0;
 nMetadataRecordCount= 0;
 nDataRecordCount    = 0;
+nHeaderChecked      = 0;
+nDataHeaderChecked  = 0;
 
 ### Process Specific Constants
 cFileSrc            = pSourceFile;
@@ -356,7 +362,9 @@ EndIf;
 If( nErrors = 0 );
     DatasourceType          = 'CHARACTERDELIMITED';
     DatasourceNameForServer = cFileSrc;
-    DatasourceASCIIHeaderRecords = 1;
+    # 0 (not 1): the header row is consumed as the first record so the
+    # metadata tab can validate it against the expected columns (issue #169).
+    DatasourceASCIIHeaderRecords = 0;
     DatasourceASCIIDelimiter=',';
     DatasourceASCIIDecimalSeparator='.';
     DatasourceASCIIThousandSeparator='';
@@ -366,10 +374,17 @@ EndIf;
 #################################################################################################
 """
 
-PROCESS_METADATA = r"""#****Begin: Generated Statements***
+# Marker pair TM1 Architect uses to inject auto-generated variable/parameter
+# code at the top of a tab. Kept as the first lines of every generated
+# procedure so the process round-trips cleanly if later opened in Architect.
+_GENERATED_STATEMENTS_MARKER = """#****Begin: Generated Statements***
 #****End: Generated Statements****
+"""
 
-If( pLogOutput >= 1 );
+# Body of the metadata tab. The header-validation preamble is generated from
+# PROCESS_VARIABLES and prepended in ``build_metadata_procedure`` so it stays
+# in lockstep with the CSV column contract (see issue #169).
+_PROCESS_METADATA_BODY = r"""If( pLogOutput >= 1 );
    nMetadataRecordCount = nMetadataRecordCount + 1;
 EndIf;
 
@@ -388,10 +403,9 @@ if (DimensionElementExists(pRunId_Dim, vrun_id) = 0);
   DimensionElementInsertDirect(pRunId_Dim, '', vrun_id, 'N');
 endif;"""
 
-PROCESS_DATA = r"""#****Begin: Generated Statements***
-#****End: Generated Statements****
-
-If( pLogOutput >= 1 );
+# Body of the data tab. The header-skip preamble is prepended in
+# ``build_data_procedure`` so the CSV header row is not written to the cube.
+_PROCESS_DATA_BODY = r"""If( pLogOutput >= 1 );
    nDataRecordCount = nDataRecordCount + 1;
 EndIf;
 
@@ -544,8 +558,9 @@ PROCESS_PARAMETERS = [
 # declaration list. Must match the column order produced by
 # ``rushti.tm1_integration.upload_results_to_tm1`` (which inserts
 # ``workflow`` and ``run_id`` ahead of the columns built by
-# ``build_results_dataframe``). Mismatched ordering silently scrambles
-# the loaded payload.
+# ``build_results_dataframe``). Mismatched ordering scrambles the loaded
+# payload; the metadata-tab header check generated from this list turns a
+# stale-process mismatch into a hard error instead (see issue #169).
 PROCESS_VARIABLES = [
     "vworkflow",
     "vrun_id",
@@ -571,12 +586,73 @@ PROCESS_VARIABLES = [
     "vsucceed_on_minor_errors",
 ]
 
+
+def build_metadata_procedure() -> str:
+    """Assemble the ``}rushti.load.results`` metadata tab.
+
+    Prepends a header-validation preamble generated from ``PROCESS_VARIABLES``
+    so it stays in lockstep with the CSV column contract. The loader maps CSV
+    columns to variables positionally; with ``asciiHeaderRecords=0`` the CSV
+    header row is the first source record, so validating each column name
+    against the variable it feeds makes a process left stale by an in-place
+    rushti upgrade fail loudly instead of silently writing values to the wrong
+    measures (issue #169). Re-run ``rushti build`` to refresh a stale process.
+    """
+    checks = "\n".join(
+        f"    If( {var} @<> '{var[1:]}' );\n"
+        f"        sHeaderError = sHeaderError | ' {var[1:]}';\n"
+        f"    EndIf;"
+        for var in PROCESS_VARIABLES
+    )
+    preamble = f"""### Validate the CSV header against the columns this process expects.
+### The loader maps columns to variables positionally, so a process built by
+### an older rushti scrambles measures (issue #169). Fail loudly on mismatch
+### and skip the header so it is not loaded as data.
+If( nHeaderChecked = 0 );
+    nHeaderChecked = 1;
+    sHeaderError = '';
+{checks}
+    If( Trim( sHeaderError ) @<> '' );
+        nErrors = nErrors + 1;
+        sMessage = Expand( 'Results CSV header does not match the columns }}rushti.load.results expects (mismatched:%sHeaderError% ). This process is out of date with the rushti version that produced the file - re-run: rushti build --tm1-instance <instance>.' );
+        LogOutput( cMsgErrorLevel, Expand( cMsgErrorContent ) );
+        ProcessQuit;
+    EndIf;
+    ItemSkip;
+EndIf;
+
+"""
+    return _GENERATED_STATEMENTS_MARKER + "\n" + preamble + _PROCESS_METADATA_BODY
+
+
+def build_data_procedure() -> str:
+    """Assemble the ``}rushti.load.results`` data tab.
+
+    Skips the CSV header row (validated in the metadata tab) so it is not
+    written to the cube, then delegates to the static body. See issue #169.
+    """
+    preamble = """### Skip the CSV header row (asciiHeaderRecords=0; validated in the
+### metadata tab). See issue #169.
+If( nDataHeaderChecked = 0 );
+    nDataHeaderChecked = 1;
+    ItemSkip;
+EndIf;
+
+"""
+    return _GENERATED_STATEMENTS_MARKER + "\n" + preamble + _PROCESS_DATA_BODY
+
+
+PROCESS_METADATA = build_metadata_procedure()
+PROCESS_DATA = build_data_procedure()
+
 PROCESS_DATASOURCE = {
     "Type": "ASCII",
     "asciiDecimalSeparator": ".",
     "asciiDelimiterChar": ",",
     "asciiDelimiterType": "Character",
-    "asciiHeaderRecords": 1,
+    # 0: the header row is validated (not skipped) by the metadata tab; see
+    # the DatasourceASCIIHeaderRecords note in the prolog and issue #169.
+    "asciiHeaderRecords": 0,
     "asciiQuoteCharacter": '"',
     "asciiThousandSeparator": ",",
     "dataSourceNameForClient": "",
