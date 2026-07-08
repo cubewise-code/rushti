@@ -4,6 +4,19 @@ All notable changes to RushTI are documented in this file.
 
 ## [Unreleased]
 
+- **Fixed: results written to the wrong measures after an in-place upgrade**
+  (closes #169). `}rushti.load.results` maps CSV columns to TI variables
+  positionally. A cube/process built by a pre-2.3.0 rushti (before the `chore`
+  column) that was then upgraded without re-running `rushti build` would
+  silently shift every value from `chore`/`parameters` onward into the next
+  measure. The loader now reads the CSV header row (`asciiHeaderRecords=0`) and
+  validates each column against the variable it feeds in the metadata tab: on
+  mismatch it logs the offending columns and `ProcessQuit`s instead of writing
+  scrambled data. **After upgrading rushti you must re-run
+  `rushti build --tm1-instance X`** to refresh the process (and additively add
+  any new measure element) — the guard only turns future drift into a clear
+  error, it does not repair an already-stale process. Existing rows written
+  under the wrong measures should be cleared and the workflow re-run.
 - **Added: `--config PATH` CLI flag** (closes #164). Overrides the location of
   `config.ini` (TM1 connection parameters) for a single invocation, on every
   TM1-connecting command (`run`, `build`, `tasks …`, `resume`). Precedence:

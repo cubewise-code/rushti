@@ -10,6 +10,12 @@ from unittest.mock import Mock, patch
 from rushti.tm1_objects import (
     MEASURE_ELEMENTS,
     MEASURE_ATTRIBUTES,
+    PROCESS_DATA,
+    PROCESS_DATASOURCE,
+    PROCESS_METADATA,
+    PROCESS_PROLOG_V11,
+    PROCESS_PROLOG_V12,
+    PROCESS_VARIABLES,
     TASK_ID_ELEMENT_COUNT,
     WORKFLOW_SEED_ELEMENTS,
     RUN_ID_SEED_ELEMENTS,
@@ -99,6 +105,50 @@ class TestTM1ObjectsConstants(unittest.TestCase):
                 self.assertIn("run_id", record)
                 self.assertIn("measure", record)
                 self.assertIn("value", record)
+
+
+class TestLoadResultsHeaderValidation(unittest.TestCase):
+    """Guards the }rushti.load.results header-validation contract (issue #169).
+
+    The loader maps CSV columns to process variables positionally. A process
+    built by an older rushti silently wrote values to the wrong measures after
+    a column was added. These tests lock in the metadata-tab header check that
+    turns such drift into a hard error.
+    """
+
+    def test_datasource_reads_header_as_data(self):
+        """Header row must reach the tabs (records=0) so it can be validated."""
+        self.assertEqual(PROCESS_DATASOURCE["asciiHeaderRecords"], 0)
+
+    def test_prologs_read_header_as_data_and_seed_skip_flags(self):
+        """Both prolog variants set records=0 and init the header-skip flags."""
+        for prolog in (PROCESS_PROLOG_V11, PROCESS_PROLOG_V12):
+            self.assertIn("DatasourceASCIIHeaderRecords = 0;", prolog)
+            self.assertNotIn("DatasourceASCIIHeaderRecords = 1;", prolog)
+            self.assertIn("nHeaderChecked", prolog)
+            self.assertIn("nDataHeaderChecked", prolog)
+
+    def test_metadata_validates_every_expected_column(self):
+        """Every CSV column is checked against the variable that feeds it.
+
+        Generated from PROCESS_VARIABLES, so adding a column without updating
+        the loader keeps the check and the CSV contract in lockstep.
+        """
+        for var in PROCESS_VARIABLES:
+            column = var[1:]  # strip the leading 'v'
+            self.assertIn(f"If( {var} @<> '{column}' );", PROCESS_METADATA)
+
+    def test_metadata_fails_loud_and_skips_header(self):
+        """On mismatch the process quits; the header itself is never loaded."""
+        self.assertIn("If( nHeaderChecked = 0 );", PROCESS_METADATA)
+        self.assertIn("ProcessQuit;", PROCESS_METADATA)
+        self.assertIn("ItemSkip;", PROCESS_METADATA)
+        self.assertIn("rushti build --tm1-instance", PROCESS_METADATA)
+
+    def test_data_tab_skips_header_row(self):
+        """The data tab drops the header record so it is not written to cube."""
+        self.assertIn("If( nDataHeaderChecked = 0 );", PROCESS_DATA)
+        self.assertIn("ItemSkip;", PROCESS_DATA)
 
 
 class TestDimensionBuilders(unittest.TestCase):
