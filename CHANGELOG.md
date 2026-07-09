@@ -4,6 +4,8 @@ All notable changes to RushTI are documented in this file.
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-07-09
+
 - **Fixed: results written to the wrong measures after an in-place upgrade**
   (closes #169). `}rushti.load.results` maps CSV columns to TI variables
   positionally. A cube/process built by a pre-2.3.0 rushti (before the `chore`
@@ -17,6 +19,9 @@ All notable changes to RushTI are documented in this file.
   any new measure element) — the guard only turns future drift into a clear
   error, it does not repair an already-stale process. Existing rows written
   under the wrong measures should be cleared and the workflow re-run.
+
+## [2.3.1] - 2026-06-26
+
 - **Added: `--config PATH` CLI flag** (closes #164). Overrides the location of
   `config.ini` (TM1 connection parameters) for a single invocation, on every
   TM1-connecting command (`run`, `build`, `tasks …`, `resume`). Precedence:
