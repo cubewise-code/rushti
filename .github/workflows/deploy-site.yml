@@ -1,12 +1,29 @@
-# RushTI Website Deployment Workflow
+# RushTI Website Build & Deployment Workflow
 #
-# Deploys the React homepage and MkDocs documentation to GitHub Pages.
+# Builds the React homepage and MkDocs documentation, and on master
+# deploys them to GitHub Pages.
+#
+# On pull request: build only, as validation. Nothing is published.
+# On push to master: build and deploy.
+#
+# The PR path runs the exact same build steps as the deploy path, so a
+# broken site or docs change is caught in review rather than after merge,
+# when it would already be live.
+#
 # Only triggers when website or documentation files change.
 
-name: Deploy Website
+name: Website
 
 on:
   push:
+    branches: [master, main]
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'docs-requirements.txt'
+      - '.github/workflows/deploy-site.yml'
+  pull_request:
     branches: [master, main]
     paths:
       - 'site/**'
@@ -21,9 +38,12 @@ permissions:
   pages: write
   id-token: write
 
+# Real deploys serialize on a single "pages" group and are never cancelled.
+# PR validation builds get a per-PR group so they neither queue behind a
+# deploy nor block one, and superseded runs are cancelled.
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('site-pr-{0}', github.event.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -68,14 +88,17 @@ jobs:
           cp -r mkdocs_site/* _site/docs/
 
       - name: Setup Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v6
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: '_site'
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

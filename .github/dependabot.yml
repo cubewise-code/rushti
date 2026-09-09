@@ -19,3 +19,22 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "deps"
+
+  # Homepage npm dependencies
+  #
+  # Without this block the site build toolchain received security updates
+  # only, so its lockfile drifted between advisories instead of staying
+  # current. Grouped into a single weekly PR: these are all dev-scope
+  # build tooling, and reviewing them one at a time is noise.
+  - package-ecosystem: "npm"
+    directory: "/site/homepage"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps"
+    groups:
+      homepage:
+        patterns:
+          - "*"
