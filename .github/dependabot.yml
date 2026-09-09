@@ -24,8 +24,17 @@ updates:
   #
   # Without this block the site build toolchain received security updates
   # only, so its lockfile drifted between advisories instead of staying
-  # current. Grouped into a single weekly PR: these are all dev-scope
-  # build tooling, and reviewing them one at a time is noise.
+  # current.
+  #
+  # Minor and patch updates are grouped into a single weekly PR: they are
+  # all dev-scope build tooling and reviewing them one at a time is noise.
+  #
+  # Majors are deliberately left out of the group so they arrive as
+  # individual PRs. Grouping everything swept tailwindcss 3 -> 4, react
+  # 18 -> 19 and lucide-react 0.x -> 1.x into one PR alongside eight safe
+  # updates, and the Tailwind major broke the build (its PostCSS plugin
+  # moved to @tailwindcss/postcss), blocking the whole batch. Each major
+  # needs its own migration, so each gets its own PR.
   - package-ecosystem: "npm"
     directory: "/site/homepage"
     schedule:
@@ -38,3 +47,6 @@ updates:
       homepage:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
