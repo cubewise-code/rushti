@@ -97,7 +97,10 @@ rushti resume --checkpoint checkpoints/monthly-close_20260209_143022.json
 
 ### Resuming After a Time Limit
 
-When the `task_execution` [run phase time limit](timeouts.md) is hit, RushTI saves the checkpoint and keeps it (it doesn't clean it up as a finished run would), then logs out of TM1 and exits with `Status` = `TimedOut`. The logout rolls back the TI processes that were still running, so those tasks show as **in progress** in the checkpoint.
+When the `task_execution` [run phase time limit](timeouts.md) is hit, RushTI saves the checkpoint and keeps it (it doesn't clean it up as a finished run would), then logs out of TM1 and exits with `Status` = `TimedOut`. The tasks that were still running show as **in progress** in the checkpoint.
+
+!!! warning "In-progress tasks keep running on the server"
+    The logout doesn't stop a TI process that was already running: it carries on to completion and commits, after RushTI has exited. Before resuming, check each in-progress task's real outcome on the server (the TM1 message log or the process error logs). If it completed, re-running it does the work twice.
 
 Find out why the run hung first, then resume as usual:
 

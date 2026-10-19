@@ -121,9 +121,11 @@ A run phase that goes past its configured time limit. Only elapsed time
 counts: RushTI never decides a run is hung by reading TM1 server state
 (locks, threads, sessions). No limit is set by default, so nothing is ever a
 hang unless the user opts in. On a hang RushTI logs which limit was hit,
-tries to log out of TM1, and terminates. It doesn't cancel tasks itself, but
-a logout that goes through rolls back whatever its session was still
-running. A logout that hasn't finished within a few seconds is given up on.
+tries to log out of TM1, and terminates. It doesn't cancel tasks, and the
+logout doesn't stop them either: a TI process already running carries on to
+completion on the server and commits (confirmed on v11 and v12). Its real
+outcome has to be traced on the server; the checkpoint shows it as in
+progress. A logout that hasn't finished within a few seconds is given up on.
 _Avoid_: deadlock (RushTI can't prove one from the outside), stall.
 
 ---

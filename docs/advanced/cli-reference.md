@@ -108,8 +108,7 @@ rushti run --tasks daily-etl.json --timeout-connection 60 --timeout-task-executi
 | Code | Meaning |
 |------|---------|
 | `0` | All tasks completed successfully |
-| `1` | One or more tasks failed, or the run stopped early (aborted, or a run phase time limit was hit). The `Status` column of the `--result` file tells these apart. |
-| `5` | Exclusive mode timeout — could not get access |
+| `1` | One or more tasks failed, or the run stopped early: aborted (including an exclusive-mode timeout) or a run phase time limit was hit. The `Status` column of the `--result` file tells these apart. |
 
 ---
 

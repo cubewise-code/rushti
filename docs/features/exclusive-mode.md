@@ -62,7 +62,7 @@ flowchart TD
     WAIT_LOCK --> RETRY
 
     RETRY -- No --> POLL[Retry after<br/>polling_interval] --> CHECK
-    RETRY -- Yes --> FAIL([Exit code 5<br/>Timeout])
+    RETRY -- Yes --> FAIL([Exit code 1<br/>Status: Aborted])
 
     SET_CTX --> RUN[Execute tasks]
     RUN --> CLEANUP[Remove session<br/>context from TM1]
@@ -127,7 +127,7 @@ timeout = 600
 |---------|---------|-------------|
 | `enabled` | `false` | Enable exclusive mode by default for all runs |
 | `polling_interval` | `30` | Seconds between session checks while waiting |
-| `timeout` | `600` | Maximum seconds to wait before giving up (exit code 5) |
+| `timeout` | `600` | Maximum seconds to wait before giving up (exit code 1, `Status` = `Aborted`) |
 
 ### Three Ways to Enable
 
@@ -234,34 +234,32 @@ This feature is always active — no configuration needed.
 
 ## Timeout Behavior and Exit Codes
 
-If the timeout is exceeded, RushTI exits with code **5**:
+If the timeout is exceeded, RushTI stops before running any task and exits with code **1**:
 
 ```
-ERROR: Timeout (600s) exceeded waiting for exclusive access
-Blocking sessions:
-  RushTI session 'monthly-close' (exclusive) on tm1-finance
+ERROR - Timeout (600s) exceeded waiting for exclusive access. Blocking sessions: RushTI session 'monthly-close' (exclusive) on tm1-finance
 ```
 
 The `--result` file is still written, with `Overall Success` = `False` and `Status` = `Aborted`. Running out of the exclusive-mode wait is not a hang, so it never reports `TimedOut`: the wait has its own limit (`timeout` above) and doesn't count against the `connection` [run phase time limit](timeouts.md).
 
-Handle this in your scheduling scripts:
+Exit code 1 is shared with failed tasks and other errors, so read the `Status` column of the result file to tell the outcomes apart. The log says why a run was aborted:
 
 ```bash
 #!/bin/bash
-rushti run --tasks finance-close.json --exclusive
-
+rushti run --tasks finance-close.json --exclusive --result results/finance-close.csv
 EXIT_CODE=$?
 
-if [ $EXIT_CODE -eq 5 ]; then
-    echo "Timed out waiting for exclusive access"
-    # Alert the operations team or retry later
-    exit 5
-elif [ $EXIT_CODE -ne 0 ]; then
-    echo "Workflow failed with exit code $EXIT_CODE"
-    exit $EXIT_CODE
-fi
+# Status is the last column of the second line
+STATUS=$(tail -n 1 results/finance-close.csv | awk -F'|' '{print $NF}')
 
-echo "Workflow completed successfully"
+case "$STATUS" in
+    Success)  echo "Workflow completed successfully" ;;
+    Failed)   echo "Workflow finished with failed tasks" ;;
+    Aborted)  echo "Workflow aborted (e.g. timed out waiting for exclusive access); check rushti.log" ;;
+    TimedOut) echo "A run phase time limit was hit; check rushti.log" ;;
+esac
+
+exit $EXIT_CODE
 ```
 
 ### All RushTI Exit Codes
@@ -269,8 +267,7 @@ echo "Workflow completed successfully"
 | Code | Meaning |
 |------|---------|
 | `0` | Success -- all tasks completed |
-| `1` | Failure -- one or more tasks failed |
-| `5` | Exclusive mode timeout -- could not get access |
+| `1` | Failure -- one or more tasks failed, or the run stopped early: aborted (including an exclusive-mode timeout) or a run phase time limit was hit. The `Status` column of the `--result` file tells these apart. |
 
 ---
 

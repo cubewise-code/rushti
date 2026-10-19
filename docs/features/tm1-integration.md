@@ -189,7 +189,7 @@ Pushing results into a locked `rushti` cube can block. To stop waiting after a s
 push_results = 120
 ```
 
-Or per run: `--timeout-push-results 120`. When the limit is hit, RushTI writes `Status` = `TimedOut` to the result file, logs out of the results target (which rolls back a `}rushti.load.results` still running in that session) and exits with code 1. The tasks have all finished by then, and their stats are already in the local database. See [Run Phase Time Limits](timeouts.md).
+Or per run: `--timeout-push-results 120`. When the limit is hit, RushTI writes `Status` = `TimedOut` to the result file, logs out of the results target and exits with code 1. A `}rushti.load.results` that was already running carries on to completion on the server. The tasks have all finished by then, and their stats are already in the local database. See [Run Phase Time Limits](timeouts.md).
 
 ### Using the Sample Workflows
 

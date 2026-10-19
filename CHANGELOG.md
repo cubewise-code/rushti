@@ -12,10 +12,11 @@ All notable changes to RushTI are documented in this file.
   `--timeout-task-execution` and `--timeout-push-results` on `run` and
   `resume`. A phase that runs past its limit is a hang: RushTI logs which limit
   was hit, writes the result file with `Status` = `TimedOut`, keeps the
-  checkpoint for `rushti resume`, logs out of TM1 in the background (which rolls
-  back any TI process still running in those sessions) and exits with code 1,
-  so a TI process that called RushTI with `ExecuteCommand` stops waiting. Off
-  by default. The exclusive-mode wait doesn't count against `connection`. See
+  checkpoint for `rushti resume`, logs out of TM1 in the background and exits
+  with code 1, so a TI process that called RushTI with `ExecuteCommand` stops
+  waiting. TI processes that were already running are not stopped: they run to
+  completion on the server and commit, while the checkpoint shows them as in
+  progress. Off by default. The exclusive-mode wait doesn't count against `connection`. See
   [Run Phase Time Limits](docs/features/timeouts.md). The docs now also state
   that per-task `cancel_at_timeout` doesn't cancel the process on TM1 v12,
   where TM1py blocks its thread calls.

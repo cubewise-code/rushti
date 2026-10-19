@@ -118,18 +118,18 @@ When a phase goes past its limit, RushTI:
 
 It skips the normal end of a run: no results push to TM1 and no stats written to DynamoDB.
 
-!!! warning "Logging out rolls back running TI processes"
-    RushTI doesn't cancel tasks. But a logout that goes through rolls back whatever that session was still running, so a TI process that was mid-way through when `task_execution` ran out is rolled back. That's the expected result of a hang: the run is stopped, and nothing it was doing is left half-committed.
+!!! warning "Running TI processes are not stopped"
+    RushTI doesn't cancel tasks, and the logout doesn't stop them either. A TI process that was mid-way through when the limit was hit carries on to completion on the server and commits, after RushTI has exited (on both TM1 v11 and v12). RushTI stops waiting for it; it doesn't know how it ended. Trace the real outcome of those processes on the server (the TM1 message log or the process error logs).
 
 ### Resuming After a Hang
 
-A `task_execution` timeout leaves the checkpoint in place. The tasks that were rolled back show as in progress. Once you know why the run hung, resume it:
+A `task_execution` timeout leaves the checkpoint in place. The tasks that were still running show as in progress, even though they may since have completed on the server. Once you know why the run hung and how those tasks really ended, resume it:
 
 ```bash
 rushti resume --tasks month-end.json
 ```
 
-In-progress tasks are handled by their `safe_retry` setting, as described in [Checkpoint & Resume](checkpoint-resume.md#what-gets-resumed). `rushti resume` accepts the same `--timeout-*` flags.
+In-progress tasks are handled by their `safe_retry` setting, as described in [Checkpoint & Resume](checkpoint-resume.md#what-gets-resumed): a `safe_retry: true` task is re-run even if it did complete, so only mark tasks that are safe to run twice. `rushti resume` accepts the same `--timeout-*` flags.
 
 ---
 
@@ -140,7 +140,7 @@ In-progress tasks are handled by their `safe_retry` setting, as described in [Ch
 | **Limits** | A whole run phase | One task | The wait for exclusive access |
 | **Set in** | `[timeouts]`, `settings.timeouts`, `--timeout-*` | The task in the taskfile | `[exclusive_mode] timeout` |
 | **Default** | No limit | No limit | 600 seconds |
-| **When hit** | Run ends, TM1 sessions logged out | Task marked failed, run carries on | Run ends before any task starts |
+| **When hit** | Run ends, TM1 sessions logged out; running TI processes carry on | Task marked failed, run carries on | Run ends before any task starts |
 | **Result file `Status`** | `TimedOut` | `Failed` (if no other error) | `Aborted` |
 
 Use per-task `timeout` for a task that's known to run long sometimes, and run phase limits as the safety net for the run as a whole.

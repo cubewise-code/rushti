@@ -189,9 +189,9 @@
 
 # Each run goes through four run phases. Give a phase a time limit (in seconds)
 # and RushTI treats a phase that runs past it as a hang: it writes the result
-# file with Status = TimedOut, keeps the checkpoint, logs out of TM1 (which
-# rolls back any TI process still running in those sessions) and exits with
-# code 1. Only elapsed time counts.
+# file with Status = TimedOut, keeps the checkpoint, logs out of TM1 and exits
+# with code 1. Only elapsed time counts. TI processes that were already running
+# are not stopped: they run to completion on the server and commit.
 #
 # Can also be set per-taskfile via JSON settings.timeouts, or per run with
 # --timeout-task-retrieval, --timeout-connection, --timeout-task-execution and
