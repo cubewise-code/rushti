@@ -61,7 +61,7 @@ Common execution settings that control basic RushTI behavior.
 |---------|------|---------|-------------|
 | `max_workers` | int | `4` | Maximum number of parallel workers. Valid range: 1--100. Recommended: start at 4, increase based on TM1 server capacity. |
 | `retries` | int | `0` | Number of retry attempts for failed TI process executions. Valid range: 0--10. Retries use exponential backoff (1s, 2s, 4s, ...). |
-| `result_file` | str | `""` (empty) | CSV output path for execution summary. Empty string means no CSV is created. |
+| `result_file` | str | `""` (empty) | CSV output path for execution summary. Empty string means no CSV is created. Written on every run outcome; an aborted run reports `Overall Success` = `False`. |
 | `mode` | str | `norm` | Default execution mode (`norm` or `opt`) for **cube reads** (`--tm1-instance`). A cube read cannot auto-detect its mode, so this value (or the `--mode` CLI override) decides whether the `predecessors` measure is honoured (`opt`) or the `wait` measure drives sequencing (`norm`). **Ignored for file sources**, where the mode is auto-detected from file content. See [Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). |
 
 **Overridable via CLI:** `--max-workers` / `-w`, `--retries` / `-r`, `--result` / `-o`, `--mode` / `-m`

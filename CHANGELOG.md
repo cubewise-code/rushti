@@ -4,6 +4,16 @@ All notable changes to RushTI are documented in this file.
 
 ## [Unreleased]
 
+- **Fixed: `--result` file not written when a run aborts** (part of #124).
+  The result file was only written when RushTI reached the end of a run, so a
+  calling TI process couldn't tell an aborted run from one that never ran. It
+  is now written on every exit of a run: fatal errors during execution, a
+  missing `--config`, an invalid taskfile, a failed TM1 taskfile read and an
+  exclusive-mode timeout. Aborted runs report `Overall Success` = `False`. When
+  RushTI aborts before reading the taskfile, the path comes from `--result` or
+  `settings.ini`, because a `result_file` set inside the taskfile isn't known
+  yet.
+
 ## [2.3.2] - 2026-07-09
 
 - **Fixed: results written to the wrong measures after an in-place upgrade**

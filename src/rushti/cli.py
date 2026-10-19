@@ -500,19 +500,7 @@ def exit_rushti(
     :param result_file:
     :return:
     """
-    if not overall_success:
-        message = MSG_RUSHTI_ABORTED.format(app_name=APP_NAME)
-        logger.error(message)
-        sys.exit(message)
-
     fails = executions - successes
-    message = MSG_RUSHTI_ENDS.format(
-        app_name=APP_NAME,
-        fails=fails,
-        executions=executions,
-        time=str(elapsed_time),
-        parameters=sys.argv,
-    )
 
     if result_file:
         create_results_file(
@@ -525,12 +513,55 @@ def exit_rushti(
             elapsed_time,
         )
 
+    if not overall_success:
+        message = MSG_RUSHTI_ABORTED.format(app_name=APP_NAME)
+        logger.error(message)
+        sys.exit(message)
+
+    message = MSG_RUSHTI_ENDS.format(
+        app_name=APP_NAME,
+        fails=fails,
+        executions=executions,
+        time=str(elapsed_time),
+        parameters=sys.argv,
+    )
+
     if fails > 0:
         logger.error(message)
         sys.exit(message)
 
     logger.info(message)
     sys.exit(0)
+
+
+def abort_rushti(exit_value, start_time: datetime, result_file: str):
+    """Exit a run that aborted before executing any task, writing the result file first
+
+    The calling TI reads the result file to decide what to do next, so it must
+    exist even when RushTI never got to execute anything.
+
+    :param exit_value: Value passed to sys.exit (exit code or message)
+    :param start_time: When the run started
+    :param result_file: Path of the result file; nothing is written if empty
+    """
+    if result_file:
+        end_time = datetime.now()
+        try:
+            create_results_file(
+                result_file, False, 0, 0, start_time, end_time, end_time - start_time
+            )
+        except OSError as e:
+            logger.error(f"Failed to write result file {result_file}: {e}")
+    sys.exit(exit_value)
+
+
+def resolve_result_file(result_file: str) -> str:
+    """Resolve a result file setting to an absolute path (empty stays empty)"""
+    if not result_file:
+        return result_file
+    from rushti.utils import resolve_app_path
+
+    return resolve_app_path(result_file)
 
 
 from rushti.commands import (  # noqa: E402
@@ -632,19 +663,25 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     if resume_context:
         cli_args.update(resume_context)
 
+    # Apply log level override if specified
+    apply_log_level(cli_args.get("log_level"))
+
+    # Load settings from settings.ini
+    settings = load_settings(cli_args.get("settings_file"))
+
+    # Result file for runs that abort before the taskfile settings are merged:
+    # CLI --result > settings.ini (the taskfile's own result_file isn't known yet)
+    result_file = resolve_result_file(cli_args.get("output_file") or settings.defaults.result_file)
+
     # Resolve config.ini location, threading the resolved path explicitly into
     # the TM1 connection layer (CLI --config > RUSHTI_DIR > legacy CWD > config/).
     # Fail fast with a clean message (no traceback) on an explicit bad path.
     try:
         config_path = resolve_config_path("config.ini", cli_path=cli_args.get("config"))
     except FileNotFoundError:
-        sys.exit(f"RushTI: --config file not found: {cli_args.get('config')}")
-
-    # Apply log level override if specified
-    apply_log_level(cli_args.get("log_level"))
-
-    # Load settings from settings.ini
-    settings = load_settings(cli_args.get("settings_file"))
+        abort_rushti(
+            f"RushTI: --config file not found: {cli_args.get('config')}", start, result_file
+        )
 
     # Handle TM1 source if specified
     tm1_instance = cli_args.get("tm1_instance")
@@ -678,7 +715,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 tm1_source.logout()
         except Exception as e:
             logger.error(f"Failed to read taskfile from TM1: {e}")
-            sys.exit(1)
+            abort_rushti(1, start, result_file)
 
     # Determine workflow and exclusive mode from task file
     # Parse task file early to get metadata for session context
@@ -707,7 +744,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 exclusive_mode = taskfile_preview.settings.exclusive
         except TaskfileValidationError as e:
             logger.error(str(e))
-            sys.exit(1)
+            abort_rushti(1, start, result_file)
 
     # Merge taskfile JSON settings (tier 2) into the effective settings
     # before any setting is read. CLI args overlay JSON, which overlays
@@ -728,11 +765,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     # Extract effective execution params (CLI > taskfile JSON > settings.ini > defaults)
     max_workers = settings.defaults.max_workers
     process_execution_retries = settings.defaults.retries
-    result_file = settings.defaults.result_file
-    if result_file:
-        from rushti.utils import resolve_app_path
-
-        result_file = resolve_app_path(result_file)
+    result_file = resolve_result_file(settings.defaults.result_file)
 
     logger.debug(
         f"Effective settings: max_workers={max_workers}, "
@@ -790,7 +823,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         logger.error(str(e))
         # Force logout in exclusive mode to ensure session context is cleared
         logout(tm1_service_by_instance, preserve_connections, force=exclusive_mode)
-        sys.exit(1)
+        abort_rushti(1, start, result_file)
 
     # setup results variable (guarantee it's not empty in case of error)
     results = list()

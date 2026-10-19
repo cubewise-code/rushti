@@ -53,7 +53,7 @@ rushti --tasks FILE [options]          # 'run' is the default command
 | `--tasks` | `-t` | PATH | *required* | Path to task file (JSON or TXT). |
 | `--max-workers` | `-w` | INT | `4` | Maximum parallel workers. Overrides settings.ini and task file. |
 | `--retries` | `-r` | INT | `0` | Retry count for failed TI executions. Uses exponential backoff. |
-| `--result` | `-o` | PATH | *(empty)* | Output CSV path for execution summary. Omit to skip CSV creation. |
+| `--result` | `-o` | PATH | *(empty)* | Output CSV path for execution summary. Omit to skip CSV creation. Written on every run outcome; an aborted run reports `Overall Success` = `False`. |
 | `--settings` | `-s` | PATH | auto | Path to `settings.ini`. Auto-discovered if omitted. |
 | `--config` | | PATH | auto | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. Relocates **only** `config.ini`; `settings.ini` and `logging_config.ini` keep their own resolution. A missing path fails fast (exit 1, no traceback). |
 | `--mode` | `-m` | CHOICE | `norm` | Execution mode: `norm` or `opt`. **Ignored for file sources** (`--tasks`), where mode is auto-detected from file content. **Required for cube reads** (`--tm1-instance`) when the workflow uses explicit `predecessors` — pass `--mode opt`, otherwise the cube is read in `norm` mode and predecessors are dropped. See [TM1 integration → Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). |
