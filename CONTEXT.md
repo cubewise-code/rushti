@@ -100,6 +100,32 @@ This convention is intentional: prefixes don't scale across surfaces and
 fight against contextual disambiguation. See
 [[adr/0001-tm1-instance-resolution]] for the full rationale.
 
+### Run phase
+One of the steps every `rushti run` goes through, each with its own optional
+time limit, in this order:
+- **task retrieval**: connecting to the source instance and reading the
+  taskfile from the `rushti` cube. Only for TM1 sources.
+- **connection**: from connecting to the TM1 instances the tasks run on
+  until the first task starts. It includes parameter expansion and checking
+  that the processes exist, and leaves out the exclusive-mode wait, which
+  has its own limit.
+- **task execution**: from the first task starting to the last one
+  finishing.
+- **push results**: connecting to the results target, uploading, and loading
+  the results into the cube.
+
+_Avoid_: stage (that's the taskfile `stage` field that groups tasks).
+
+### Hang
+A run phase that goes past its configured time limit. Only elapsed time
+counts: RushTI never decides a run is hung by reading TM1 server state
+(locks, threads, sessions). No limit is set by default, so nothing is ever a
+hang unless the user opts in. On a hang RushTI logs which limit was hit,
+tries to log out of TM1, and terminates. It doesn't cancel tasks itself, but
+a logout that goes through rolls back whatever its session was still
+running. A logout that hasn't finished within a few seconds is given up on.
+_Avoid_: deadlock (RushTI can't prove one from the outside), stall.
+
 ---
 
 ## Settings precedence

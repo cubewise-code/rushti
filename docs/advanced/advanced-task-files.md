@@ -82,7 +82,7 @@ The [`finance-close.json`](../samples/finance-close.json) sample demonstrates a 
 
 ## Timeouts
 
-Per-task timeouts prevent runaway TI processes from blocking the entire workflow.
+Per-task timeouts prevent runaway TI processes from blocking the entire workflow. They cap one task; to put a limit on a whole run phase (connecting, executing all tasks, pushing results), see [Run Phase Limits](#run-phase-limits) below.
 
 ### Task-Level Timeout
 
@@ -117,13 +117,36 @@ By default, a timed-out task's TI process continues running on the TM1 server --
 !!! warning "When to Use cancel_at_timeout"
     Only use `cancel_at_timeout` for non-critical tasks or tasks that are safe to interrupt. Cancelling a TI process mid-execution can leave data in an inconsistent state if the process modifies cube data without proper transaction handling.
 
+!!! warning "TM1 v12: `cancel_at_timeout` doesn't cancel the process"
+    On TM1 v12 and later the TI process is **not** cancelled. RushTI cancels through TM1py, and TM1py's `ThreadService` blocks itself on servers v12 and later; its `MonitoringService` thread methods just call `ThreadService`. So RushTI stops waiting and marks the task as failed, while the process keeps running on the server.
+
 ### Timeout Behavior Summary
 
 | `timeout` | `cancel_at_timeout` | Behavior on Timeout |
 |-----------|---------------------|---------------------|
 | Not set | N/A | Task runs indefinitely |
 | Set | `false` (default) | Task marked as failed; TI process continues on server |
-| Set | `true` | Task marked as failed; TI process cancelled on server |
+| Set | `true` | Task marked as failed; TI process cancelled on server (TM1 v11 only; on v12 it keeps running) |
+
+### Run Phase Limits
+
+`settings.timeouts` sets a time limit, in seconds, on each run phase. A phase that goes past its limit is a hang: RushTI writes the result file with `Status` = `TimedOut`, keeps the checkpoint, logs out of TM1 and exits with code 1.
+
+```json
+{
+  "version": "2.0",
+  "settings": {
+    "timeouts": {
+      "connection": 60,
+      "task_execution": 7200,
+      "push_results": 120
+    }
+  },
+  "tasks": [...]
+}
+```
+
+The keys are `task_retrieval`, `connection`, `task_execution` and `push_results`; leave a phase out to keep the `settings.ini` value. Values must be non-negative integers, and `0` means no limit. `task_retrieval` has no effect here: a taskfile read from a file has no retrieval phase, and a taskfile read from the cube carries no settings. See [Run Phase Time Limits](../features/timeouts.md).
 
 ---
 
@@ -417,7 +440,7 @@ The following task file combines stages, timeouts, expandable parameters, and co
 | `predecessors` | array | `[]` | Task IDs that must complete first |
 | `stage` | string | `null` | Execution stage label |
 | `timeout` | integer | `null` | Max execution time in seconds |
-| `cancel_at_timeout` | boolean | `false` | Cancel TI process on timeout |
+| `cancel_at_timeout` | boolean | `false` | Cancel TI process on timeout (not on TM1 v12, see [Cancel at Timeout](#cancel-at-timeout)) |
 | `require_predecessor_success` | boolean | `false` | Only run if all predecessors succeeded |
 | `safe_retry` | boolean | `false` | Task is idempotent, safe to retry on resume |
 | `succeed_on_minor_errors` | boolean | `false` | Treat ProcessCompletedWithMessages as success |

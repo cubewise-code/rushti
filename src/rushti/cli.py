@@ -125,6 +125,12 @@ from rushti.execution import (  # noqa: E402
     logout,
 )
 from rushti.execution import ExecutionContext  # noqa: E402
+from rushti.timeouts import (  # noqa: E402
+    HangHandler,
+    PhaseWatchdog,
+    add_timeout_args,
+    timeout_cli_args,
+)
 
 
 def translate_cmd_arguments(*args):
@@ -371,6 +377,8 @@ Configuration:
         ),
     )
 
+    add_timeout_args(parser)
+
     return parser
 
 
@@ -431,6 +439,7 @@ def parse_named_arguments(argv: list):
         "log_level": args.log_level,
         "detailed_results": args.detailed_results,
         "config": args.config,
+        **timeout_cli_args(args),
     }
 
     return tasks_file_path, cli_args
@@ -503,6 +512,12 @@ def exit_rushti(
     fails = executions - successes
 
     if result_file:
+        if not overall_success:
+            status = "Aborted"
+        elif fails > 0:
+            status = "Failed"
+        else:
+            status = "Success"
         create_results_file(
             result_file,
             overall_success,
@@ -511,6 +526,7 @@ def exit_rushti(
             start_time,
             end_time,
             elapsed_time,
+            status=status,
         )
 
     if not overall_success:
@@ -548,7 +564,14 @@ def abort_rushti(exit_value, start_time: datetime, result_file: str):
         end_time = datetime.now()
         try:
             create_results_file(
-                result_file, False, 0, 0, start_time, end_time, end_time - start_time
+                result_file,
+                False,
+                0,
+                0,
+                start_time,
+                end_time,
+                end_time - start_time,
+                status="Aborted",
             )
         except OSError as e:
             logger.error(f"Failed to write result file {result_file}: {e}")
@@ -673,6 +696,11 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     # CLI --result > settings.ini (the taskfile's own result_file isn't known yet)
     result_file = resolve_result_file(cli_args.get("output_file") or settings.defaults.result_file)
 
+    # Run phase time limits: the watchdog ends a run whose current phase
+    # goes past its limit (see rushti.timeouts). Off unless a limit is set.
+    hang = HangHandler(start_time=start, result_file=result_file)
+    watchdog = PhaseWatchdog(on_hang=hang)
+
     # Resolve config.ini location, threading the resolved path explicitly into
     # the TM1 connection layer (CLI --config > RUSHTI_DIR > legacy CWD > config/).
     # Fail fast with a clean message (no traceback) on an explicit bad path.
@@ -693,26 +721,35 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         # workflow is validated as non-None in parse_arguments when tm1_instance is set
         assert workflow is not None, "workflow must be provided with tm1_instance"
         logger.info(f"Reading taskfile from TM1 instance '{tm1_instance}', workflow '{workflow}'")
+        # The taskfile isn't read yet, so its settings can't apply: CLI > settings.ini
+        retrieval_limit = cli_args.get("timeout_task_retrieval")
+        if retrieval_limit is None:
+            retrieval_limit = settings.timeouts.task_retrieval
         try:
-            from rushti.tm1_integration import read_taskfile_from_tm1, connect_to_tm1_instance
+            with watchdog.phase("task_retrieval", retrieval_limit):
+                from rushti.tm1_integration import read_taskfile_from_tm1, connect_to_tm1_instance
 
-            tm1_source = connect_to_tm1_instance(tm1_instance, config_path)
-            try:
-                # Resolve execution mode for TM1 read (affects predecessor parsing)
-                tm1_mode = "opt" if cli_args.get("execution_mode") == ExecutionMode.OPT else "norm"
-                tm1_taskfile = read_taskfile_from_tm1(
-                    tm1_source,
-                    workflow,
-                    cube_name=settings.tm1_integration.default_rushti_cube,
-                    dim_workflow=settings.tm1_integration.default_workflow_dim,
-                    dim_task=settings.tm1_integration.default_task_id_dim,
-                    dim_run=settings.tm1_integration.default_run_id_dim,
-                    dim_measure=settings.tm1_integration.default_measure_dim,
-                    mode=tm1_mode,
-                )
-                logger.info(f"Loaded {len(tm1_taskfile.tasks)} tasks from TM1")
-            finally:
-                tm1_source.logout()
+                tm1_source = connect_to_tm1_instance(tm1_instance, config_path)
+                hang.other_sessions[tm1_instance] = tm1_source
+                try:
+                    # Resolve execution mode for TM1 read (affects predecessor parsing)
+                    tm1_mode = (
+                        "opt" if cli_args.get("execution_mode") == ExecutionMode.OPT else "norm"
+                    )
+                    tm1_taskfile = read_taskfile_from_tm1(
+                        tm1_source,
+                        workflow,
+                        cube_name=settings.tm1_integration.default_rushti_cube,
+                        dim_workflow=settings.tm1_integration.default_workflow_dim,
+                        dim_task=settings.tm1_integration.default_task_id_dim,
+                        dim_run=settings.tm1_integration.default_run_id_dim,
+                        dim_measure=settings.tm1_integration.default_measure_dim,
+                        mode=tm1_mode,
+                    )
+                    logger.info(f"Loaded {len(tm1_taskfile.tasks)} tasks from TM1")
+                finally:
+                    tm1_source.logout()
+                    hang.other_sessions.pop(tm1_instance)
         except Exception as e:
             logger.error(f"Failed to read taskfile from TM1: {e}")
             abort_rushti(1, start, result_file)
@@ -766,6 +803,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     max_workers = settings.defaults.max_workers
     process_execution_retries = settings.defaults.retries
     result_file = resolve_result_file(settings.defaults.result_file)
+    hang.result_file = result_file
 
     logger.debug(
         f"Effective settings: max_workers={max_workers}, "
@@ -794,6 +832,11 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     session_context = build_session_context(workflow, exclusive_mode)
     logger.debug(f"Session context: {session_context}")
 
+    # Connection run phase: runs until the first task starts
+    watchdog.start("connection", settings.timeouts.connection)
+    hang.force_logout = exclusive_mode
+    # The hang handler's dicts are filled in place, so a hang during a later
+    # login still logs out the sessions opened before it
     tm1_service_by_instance, preserve_connections = setup_tm1_services(
         max_workers=max_workers,
         tasks_file_path=tasks_file_path_for_services if not tm1_taskfile else None,
@@ -801,6 +844,13 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         exclusive=exclusive_mode,
         config_path=config_path,
         tm1_instances=tm1_instances_needed,
+        tm1_services=hang.tm1_services,
+        tm1_preserve_connections=hang.tm1_preserve_connections,
+    )
+    # From here on, the handler logs out of the sessions the run actually uses
+    hang.tm1_services, hang.tm1_preserve_connections = (
+        tm1_service_by_instance,
+        preserve_connections,
     )
 
     # Always check for exclusive access before execution
@@ -810,19 +860,23 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     logger.debug(f"Exclusive access check: exclusive_mode={exclusive_mode}")
     logger.debug(f"TM1 services available: {list(tm1_service_by_instance.keys())}")
     try:
-        wait_for_exclusive_access(
-            tm1_services=tm1_service_by_instance,
-            current_exclusive=exclusive_mode,
-            session_context=session_context,
-            polling_interval=settings.exclusive_mode.polling_interval,
-            timeout=settings.exclusive_mode.timeout,
-            force=force_mode,
-        )
+        # The wait has its own limit ([exclusive_mode] timeout), so it doesn't
+        # count against the connection phase
+        with watchdog.paused():
+            wait_for_exclusive_access(
+                tm1_services=tm1_service_by_instance,
+                current_exclusive=exclusive_mode,
+                session_context=session_context,
+                polling_interval=settings.exclusive_mode.polling_interval,
+                timeout=settings.exclusive_mode.timeout,
+                force=force_mode,
+            )
         logger.debug("Exclusive access check completed successfully")
     except ExclusiveModeTimeoutError as e:
         logger.error(str(e))
         # Force logout in exclusive mode to ensure session context is cleared
         logout(tm1_service_by_instance, preserve_connections, force=exclusive_mode)
+        watchdog.stop()
         abort_rushti(1, start, result_file)
 
     # setup results variable (guarantee it's not empty in case of error)
@@ -845,6 +899,9 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         stats_db=create_stats_database(**db_kwargs),
         execution_logger=create_execution_logger(workflow=workflow),
     )
+    hang.ctx = ctx
+    if ctx.stats_db and ctx.stats_db.enabled:
+        hang.stats_db = ctx.stats_db
     if settings.stats.enabled:
         logger.debug("Stats database initialized")
     logger.debug(f"Execution logger initialized: run_id={ctx.execution_logger.run_id}")
@@ -1024,6 +1081,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 checkpoint_interval=settings.resume.checkpoint_interval,
                 enabled=True,
             )
+            hang.checkpoint_manager = checkpoint_manager
             # If resuming, update checkpoint with already-completed tasks
             if completed_task_ids and checkpoint_manager.checkpoint:
                 for task_id in completed_task_ids:
@@ -1091,6 +1149,9 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 stage_workers=stage_workers,
                 tm1_preserve_connections=preserve_connections,
                 force_logout=exclusive_mode,
+                on_first_task_start=lambda: watchdog.start(
+                    "task_execution", settings.timeouts.task_execution
+                ),
             )
         )
         success = True
@@ -1100,6 +1161,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         success = False
 
     finally:
+        watchdog.stop()
         # Force logout in exclusive mode to ensure session context is cleared
         # This allows subsequent exclusive runs to proceed without waiting
         logout(tm1_service_by_instance, preserve_connections, force=exclusive_mode)
@@ -1108,6 +1170,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         # Clean up checkpoint
         if checkpoint_manager:
             checkpoint_manager.cleanup(success=success)
+            hang.checkpoint_manager = None
 
         # Batch write stats data and complete run (in finally to ensure cleanup)
         if ctx.stats_db and ctx.stats_db.enabled:
@@ -1131,6 +1194,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 )
             except Exception as e:
                 logger.error(f"Failed to complete stats run: {e}")
+            hang.stats_db = None
 
             # Auto-upload results to TM1 if push_results is enabled
             if settings.tm1_integration.push_results:
@@ -1152,54 +1216,57 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                             upload_instance,
                             source_tier,
                         )
-                        tm1_upload = connect_to_tm1_instance(
-                            upload_instance,
-                            config_path,
-                        )
-                        try:
-                            results_df = build_results_dataframe(
-                                ctx.stats_db,
-                                workflow,
-                                ctx.execution_logger.run_id if ctx.execution_logger else "",
+                        with watchdog.phase("push_results", settings.timeouts.push_results):
+                            tm1_upload = connect_to_tm1_instance(
+                                upload_instance,
+                                config_path,
                             )
-                            if settings.tm1_integration.detailed_results:
-                                results_df = assign_unique_task_ids(results_df)
-                            else:
-                                results_df = summarize_expanded_tasks(results_df)
-                            if not results_df.empty:
-                                file_name = upload_results_to_tm1(
-                                    tm1_upload,
+                            hang.other_sessions[upload_instance] = tm1_upload
+                            try:
+                                results_df = build_results_dataframe(
+                                    ctx.stats_db,
                                     workflow,
                                     ctx.execution_logger.run_id if ctx.execution_logger else "",
-                                    results_df,
                                 )
+                                if settings.tm1_integration.detailed_results:
+                                    results_df = assign_unique_task_ids(results_df)
+                                else:
+                                    results_df = summarize_expanded_tasks(results_df)
+                                if not results_df.empty:
+                                    file_name = upload_results_to_tm1(
+                                        tm1_upload,
+                                        workflow,
+                                        ctx.execution_logger.run_id if ctx.execution_logger else "",
+                                        results_df,
+                                    )
 
-                                # Optionally call }rushti.load.results to load CSV into cube
-                                if settings.tm1_integration.auto_load_results:
-                                    # include .blb file extension for TM1 versions < 12 for process source files
-                                    if integerize_version(tm1_upload.version, 2) < 12:
-                                        file_name = file_name + ".blb"
+                                    # Optionally call }rushti.load.results to load CSV into cube
+                                    if settings.tm1_integration.auto_load_results:
+                                        # include .blb file extension for TM1 versions < 12 for process source files
+                                        if integerize_version(tm1_upload.version, 2) < 12:
+                                            file_name = file_name + ".blb"
 
-                                    success, status, error_log_file = (
-                                        tm1_upload.processes.execute_with_return(
-                                            "}rushti.load.results",
-                                            pSourceFile=file_name,
-                                            pTargetCube=settings.tm1_integration.default_rushti_cube,
+                                        load_success, status, error_log_file = (
+                                            tm1_upload.processes.execute_with_return(
+                                                "}rushti.load.results",
+                                                pSourceFile=file_name,
+                                                pTargetCube=settings.tm1_integration.default_rushti_cube,
+                                            )
                                         )
-                                    )
-                                    logger.info(
-                                        "Executed }rushti.load.results on %s",
-                                        upload_instance,
-                                    )
-                                    if not success:
-                                        logger.warning(
-                                            "auto_load_results: Failed to execute "
-                                            "}rushti.load.results on %s: %s",
+                                        logger.info(
+                                            "Executed }rushti.load.results on %s",
                                             upload_instance,
-                                            status,
                                         )
-                        finally:
-                            tm1_upload.logout()
+                                        if not load_success:
+                                            logger.warning(
+                                                "auto_load_results: Failed to execute "
+                                                "}rushti.load.results on %s: %s",
+                                                upload_instance,
+                                                status,
+                                            )
+                            finally:
+                                tm1_upload.logout()
+                                hang.other_sessions.pop(upload_instance)
                     else:
                         logger.warning(
                             "push_results enabled but no TM1 instance configured "

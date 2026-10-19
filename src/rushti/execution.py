@@ -17,10 +17,11 @@ import functools
 import logging
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from TM1py import TM1Service
 from TM1py.Exceptions import TM1pyTimeout
@@ -77,6 +78,8 @@ class ExecutionContext:
     stats_data: list = dataclasses.field(default_factory=list)
     #: Execution results per task id (for predecessor checking)
     task_execution_results: dict = dataclasses.field(default_factory=dict)
+    #: Outcome of every task finished so far, in completion order
+    task_outcomes: list = dataclasses.field(default_factory=list)
 
 
 def _collect_task_stats(
@@ -141,6 +144,8 @@ def setup_tm1_services(
     exclusive: bool = False,
     config_path: Optional[str] = None,
     tm1_instances: Optional[set] = None,
+    tm1_services: Optional[dict] = None,
+    tm1_preserve_connections: Optional[dict] = None,
 ) -> Tuple[dict, dict]:
     """Return Dictionary with TM1ServerName (as in config.ini) : Instantiated TM1Service
 
@@ -150,6 +155,9 @@ def setup_tm1_services(
     :param exclusive: Whether running in exclusive mode
     :param config_path: Path to config.ini file (resolved by the caller; required)
     :param tm1_instances: Optional set of TM1 instance names (used when reading from TM1)
+    :param tm1_services: Optional dict to fill in place, so a caller can see the
+        sessions opened so far while a later login is still blocked
+    :param tm1_preserve_connections: Optional dict to fill in place, as above
     :return: Dictionary server_names and TM1py.TM1Service instances pairs
     """
     if config_path is None:
@@ -166,8 +174,8 @@ def setup_tm1_services(
         tm1_instances_in_tasks = get_instances_from_tasks_file(tasks_file_path)
     else:
         raise ValueError("Either tm1_instances or tasks_file_path must be provided")
-    tm1_preserve_connections = dict()
-    tm1_services = dict()
+    tm1_preserve_connections = {} if tm1_preserve_connections is None else tm1_preserve_connections
+    tm1_services = {} if tm1_services is None else tm1_services
 
     # Build session context for RushTI identification
     session_context = build_session_context(workflow, exclusive)
@@ -762,6 +770,7 @@ async def work_through_tasks_dag(
     stage_workers: Optional[Dict[str, int]] = None,
     tm1_preserve_connections: Optional[Dict] = None,
     force_logout: bool = False,
+    on_first_task_start: Optional[Callable[[], None]] = None,
 ) -> List[bool]:
     """Execute tasks using DAG-based scheduling.
 
@@ -792,6 +801,8 @@ async def work_through_tasks_dag(
         When provided, enables early session release. Preserved connections are exempt
         from early release unless force_logout is True.
     :param force_logout: If True, force logout even from preserved connections (exclusive mode)
+    :param on_first_task_start: Optional callback, called once just before the first task
+        is submitted (ends the connection run phase)
     :return: List of execution outcomes (True/False for each task)
     """
     outcomes = []
@@ -813,6 +824,7 @@ async def work_through_tasks_dag(
             enforced. Tasks whose stage is at capacity are skipped (not
             broken out of), allowing tasks from other stages to submit.
             """
+            nonlocal on_first_task_start
             ready_tasks = dag.get_ready_tasks()
 
             # Apply optimization if available (sort using configured algorithm)
@@ -837,6 +849,10 @@ async def work_through_tasks_dag(
                     if task_stage and task_stage in stage_workers:
                         if running_per_stage.get(task_stage, 0) >= stage_workers[task_stage]:
                             continue
+
+                if on_first_task_start:
+                    on_first_task_start()
+                    on_first_task_start = None  # only once
 
                 # Mark as running before submitting
                 dag.mark_running(task)
@@ -877,6 +893,7 @@ async def work_through_tasks_dag(
                     success = False
 
                 outcomes.append(success)
+                ctx.task_outcomes.append(success)
                 dag.mark_complete(task, success)
 
                 # Calculate duration and update checkpoint
@@ -992,3 +1009,35 @@ def logout(
             logger.debug(f"Logged out from {connection}")
         except Exception as e:
             logger.warning(f"Failed to logout from {connection}: {e}")
+
+
+def _logout_quietly(name: str, service: TM1Service) -> None:
+    try:
+        service.logout()
+        logger.debug(f"Logged out from {name}")
+    except Exception as e:
+        logger.warning(f"Failed to logout from {name}: {e}")
+
+
+def logout_in_background(sessions: List[Tuple[str, TM1Service]], timeout: float) -> List[str]:
+    """Log out of each session on its own daemon thread, waiting at most ``timeout`` in total.
+
+    Used when a run hangs: a logout may itself block on the TM1 server, and
+    must not hold up the exit. A logout that hasn't finished is given up on.
+
+    :param sessions: ``(name, service)`` pairs to log out of
+    :param timeout: Seconds to wait for all logouts together
+    :return: Names of the sessions whose logout didn't finish in time
+    """
+    threads = []
+    for name, service in sessions:
+        thread = threading.Thread(
+            target=_logout_quietly, args=(name, service), name=f"logout-{name}", daemon=True
+        )
+        thread.start()
+        threads.append((name, thread))
+
+    deadline = time.monotonic() + timeout
+    for _, thread in threads:
+        thread.join(max(0.0, deadline - time.monotonic()))
+    return [name for name, thread in threads if thread.is_alive()]

@@ -295,6 +295,11 @@ timeout = 600
 }
 ```
 
+!!! warning "TM1 v12: `cancel_at_timeout` doesn't cancel the process"
+    On TM1 v12 and later the TI process is **not** cancelled. RushTI cancels through TM1py, and TM1py's `ThreadService` blocks itself on servers v12 and later; its `MonitoringService` thread methods just call `ThreadService`. So RushTI stops waiting and marks the task as failed, while the process keeps running on the server.
+
+**Run phase time limits** (stop a hung run instead of blocking the calling TI): see [Run Phase Time Limits](../features/timeouts.md).
+
 ### Phase 5: Enable Optimization (Week 3--4)
 
 After several runs have populated the stats database, opt in to optimization on your runs:
@@ -438,7 +443,8 @@ TXT files must start with either `id=` (opt mode) or `instance=` (norm mode) for
 | Parallel execution | Yes (level-based) | Yes (DAG-based) |
 | Wait barriers | Yes | Yes (auto-converted to DAG) |
 | Per-task dependencies | No | Yes (`predecessors`) |
-| Per-task timeouts | No | Yes (`timeout`, `cancel_at_timeout`) |
+| Per-task timeouts | No | Yes (`timeout`, `cancel_at_timeout`; cancel not on TM1 v12) |
+| Run phase time limits | No | Yes (`[timeouts]`, `settings.timeouts`, `--timeout-*`) |
 | Conditional execution | No | Yes (`require_predecessor_success`) |
 | Stages | No | Yes |
 | Dynamic parameters (MDX) | No | Yes (expandable parameters) |

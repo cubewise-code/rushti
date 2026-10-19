@@ -95,6 +95,18 @@ rushti resume --checkpoint checkpoints/monthly-close_20260209_143022.json
 !!! info "The `safe_retry` Flag"
     Mark tasks as `safe_retry: true` when they are **idempotent** -- running them twice produces the same result. Examples: clearing and rebuilding a cube view, mantain subsets, exporting a report. Tasks that append data or send emails should stay `safe_retry: false` (the default).
 
+### Resuming After a Time Limit
+
+When the `task_execution` [run phase time limit](timeouts.md) is hit, RushTI saves the checkpoint and keeps it (it doesn't clean it up as a finished run would), then logs out of TM1 and exits with `Status` = `TimedOut`. The logout rolls back the TI processes that were still running, so those tasks show as **in progress** in the checkpoint.
+
+Find out why the run hung first, then resume as usual:
+
+```bash
+rushti resume --tasks monthly-close.json --timeout-task-execution 7200
+```
+
+In-progress tasks follow the table above: `safe_retry: true` tasks re-run from the beginning, the others need a manual decision. The `--timeout-*` flags are forwarded to the resumed run.
+
 ---
 
 ## Checkpoint File Contents

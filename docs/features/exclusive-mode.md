@@ -242,6 +242,8 @@ Blocking sessions:
   RushTI session 'monthly-close' (exclusive) on tm1-finance
 ```
 
+The `--result` file is still written, with `Overall Success` = `False` and `Status` = `Aborted`. Running out of the exclusive-mode wait is not a hang, so it never reports `TimedOut`: the wait has its own limit (`timeout` above) and doesn't count against the `connection` [run phase time limit](timeouts.md).
+
 Handle this in your scheduling scripts:
 
 ```bash

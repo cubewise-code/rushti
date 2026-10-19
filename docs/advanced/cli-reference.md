@@ -53,7 +53,7 @@ rushti --tasks FILE [options]          # 'run' is the default command
 | `--tasks` | `-t` | PATH | *required* | Path to task file (JSON or TXT). |
 | `--max-workers` | `-w` | INT | `4` | Maximum parallel workers. Overrides settings.ini and task file. |
 | `--retries` | `-r` | INT | `0` | Retry count for failed TI executions. Uses exponential backoff. |
-| `--result` | `-o` | PATH | *(empty)* | Output CSV path for execution summary. Omit to skip CSV creation. Written on every run outcome; an aborted run reports `Overall Success` = `False`. |
+| `--result` | `-o` | PATH | *(empty)* | Output CSV path for execution summary. Omit to skip CSV creation. Written on every run outcome; an aborted run reports `Overall Success` = `False`. The last column, `Status`, is `Success`, `Failed`, `Aborted` or `TimedOut`. |
 | `--settings` | `-s` | PATH | auto | Path to `settings.ini`. Auto-discovered if omitted. |
 | `--config` | | PATH | auto | Path to `config.ini` (TM1 connection parameters). Overrides `RUSHTI_DIR`/default location. Relocates **only** `config.ini`; `settings.ini` and `logging_config.ini` keep their own resolution. A missing path fails fast (exit 1, no traceback). |
 | `--mode` | `-m` | CHOICE | `norm` | Execution mode: `norm` or `opt`. **Ignored for file sources** (`--tasks`), where mode is auto-detected from file content. **Required for cube reads** (`--tm1-instance`) when the workflow uses explicit `predecessors` — pass `--mode opt`, otherwise the cube is read in `norm` mode and predecessors are dropped. See [TM1 integration → Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). |
@@ -65,6 +65,12 @@ rushti --tasks FILE [options]          # 'run' is the default command
 | `--tm1-instance` | | STR | *(none)* | Read task file from TM1 instead of disk. Requires `--workflow`. |
 | `--workflow` | `-W` | STR | *(none)* | Workflow identifier. Defaults to JSON metadata `workflow` field or the taskfile filename stem if omitted. Required when using `--tm1-instance`. |
 | `--log-level` | `-L` | CHOICE | `INFO` | Override log level for this run. |
+| `--timeout-task-retrieval` | | INT | *(no limit)* | Time limit in seconds for reading the taskfile from TM1 (`--tm1-instance` only). `0` = no limit. |
+| `--timeout-connection` | | INT | *(no limit)* | Time limit in seconds for connecting to the task instances, until the first task starts. The exclusive-mode wait doesn't count. `0` = no limit. |
+| `--timeout-task-execution` | | INT | *(no limit)* | Time limit in seconds from the first task starting to the last one finishing. `0` = no limit. |
+| `--timeout-push-results` | | INT | *(no limit)* | Time limit in seconds for pushing results to TM1. `0` = no limit. |
+
+The `--timeout-*` flags override `settings.ini [timeouts]` and the taskfile `settings.timeouts`; `0` removes a limit set there. When a limit is hit, RushTI writes `Status` = `TimedOut` and exits with code 1. See [Run Phase Time Limits](../features/timeouts.md).
 
 ### Examples
 
@@ -92,6 +98,9 @@ rushti run --tasks tasks.json --max-workers 20 --optimize shortest_first
 
 # Optimize with longest-first scheduling (good for independent tasks with varied durations)
 rushti run --tasks tasks.json --max-workers 20 --optimize longest_first
+
+# Give up if connecting takes more than a minute or the tasks take more than two hours
+rushti run --tasks daily-etl.json --timeout-connection 60 --timeout-task-execution 7200
 ```
 
 ### Exit Codes
@@ -99,7 +108,7 @@ rushti run --tasks tasks.json --max-workers 20 --optimize longest_first
 | Code | Meaning |
 |------|---------|
 | `0` | All tasks completed successfully |
-| `1` | One or more tasks failed |
+| `1` | One or more tasks failed, or the run stopped early (aborted, or a run phase time limit was hit). The `Status` column of the `--result` file tells these apart. |
 | `5` | Exclusive mode timeout — could not get access |
 
 ---
@@ -127,6 +136,7 @@ rushti resume --tasks FILE [options]          # auto-finds checkpoint
 | `--config` | | PATH | auto | Path to `config.ini` (TM1 connection parameters). Forwarded into the resumed run. |
 | `--force` | `-f` | FLAG | `false` | Force resume even if checkpoint does not match the current task file. |
 | `--log-level` | `-L` | CHOICE | `INFO` | Override log level. |
+| `--timeout-task-retrieval`, `--timeout-connection`, `--timeout-task-execution`, `--timeout-push-results` | | INT | *(from settings)* | Run phase time limits, as for `run`. Forwarded into the resumed run. |
 
 ### Examples
 

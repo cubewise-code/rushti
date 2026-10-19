@@ -4,6 +4,31 @@ All notable changes to RushTI are documented in this file.
 
 ## [Unreleased]
 
+- **Added: run phase time limits** (closes #124). A run goes through four
+  run phases (`task_retrieval`, `connection`, `task_execution`,
+  `push_results`), and each can now have a time limit in seconds: a
+  `[timeouts]` section in `settings.ini`, `settings.timeouts` in the taskfile,
+  or `--timeout-task-retrieval`, `--timeout-connection`,
+  `--timeout-task-execution` and `--timeout-push-results` on `run` and
+  `resume`. A phase that runs past its limit is a hang: RushTI logs which limit
+  was hit, writes the result file with `Status` = `TimedOut`, keeps the
+  checkpoint for `rushti resume`, logs out of TM1 in the background (which rolls
+  back any TI process still running in those sessions) and exits with code 1,
+  so a TI process that called RushTI with `ExecuteCommand` stops waiting. Off
+  by default. The exclusive-mode wait doesn't count against `connection`. See
+  [Run Phase Time Limits](docs/features/timeouts.md). The docs now also state
+  that per-task `cancel_at_timeout` doesn't cancel the process on TM1 v12,
+  where TM1py blocks its thread calls.
+- **Added: `Status` column in the `--result` file.** Every run outcome now
+  writes `Success`, `Failed` (at least one task failed), `Aborted` (stopped on
+  an error, including the exclusive-mode wait running out) or `TimedOut`. The
+  column is added at the end of the row; the existing columns are unchanged.
+  **If a TI process reads the result file with a fixed set of variables, check
+  that it still accepts the extra column.**
+- **Fixed: a failed `}rushti.load.results` marked the whole run as aborted.**
+  With `auto_load_results = true`, the load's outcome overwrote the run's own,
+  so a load failure (logged as a non-blocking warning) wrote
+  `Overall Success` = `False`. It no longer affects the run's outcome.
 - **Fixed: `--result` file not written when a run aborts** (part of #124).
   The result file was only written when RushTI reached the end of a run, so a
   calling TI process couldn't tell an aborted run from one that never ran. It

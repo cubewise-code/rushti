@@ -13,7 +13,7 @@ Settings precedence (highest to lowest):
 import configparser
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -103,6 +103,24 @@ class ResumeSettings:
 
 
 @dataclass
+class TimeoutsSettings:
+    """Time limits for each run phase, in seconds (0 = no limit).
+
+    A run phase going past its limit is a hang: RushTI writes a ``TimedOut``
+    result and terminates. See ``rushti.timeouts``.
+    """
+
+    task_retrieval: int = 0
+    connection: int = 0
+    task_execution: int = 0
+    push_results: int = 0
+
+
+#: Run phases in execution order (see CONTEXT.md, "Run phase")
+RUN_PHASES = tuple(f.name for f in fields(TimeoutsSettings))
+
+
+@dataclass
 class StatsSettings:
     """Stats storage settings.
 
@@ -136,6 +154,7 @@ class Settings:
     exclusive_mode: ExclusiveModeSettings = field(default_factory=ExclusiveModeSettings)
     resume: ResumeSettings = field(default_factory=ResumeSettings)
     stats: StatsSettings = field(default_factory=StatsSettings)
+    timeouts: TimeoutsSettings = field(default_factory=TimeoutsSettings)
 
 
 # Known sections and their valid keys with types
@@ -184,6 +203,12 @@ SETTINGS_SCHEMA = {
         "dynamodb_runs_table": str,
         "dynamodb_task_results_table": str,
         "dynamodb_endpoint_url": str,
+    },
+    "timeouts": {
+        "task_retrieval": int,
+        "connection": int,
+        "task_execution": int,
+        "push_results": int,
     },
 }
 
@@ -264,6 +289,8 @@ def validate_setting(section: str, key: str, value: Any) -> None:
         ):
             if value < 0:
                 raise ValueError(f"{section}.{key} must be non-negative, got {value}")
+        if section == "timeouts" and value < 0:
+            raise ValueError(f"{section}.{key} must be non-negative, got {value}")
         if key == "max_workers" and value < 1:
             raise ValueError(f"{section}.{key} must be at least 1, got {value}")
 
@@ -357,6 +384,9 @@ def load_settings(settings_path: Optional[str] = None) -> Settings:
                 continue
 
             expected_type = section_schema[key]
+            # An empty time limit means no limit
+            if section == "timeouts" and not value.strip():
+                value = "0"
             try:
                 parsed_value = parse_value(value, expected_type)
                 validate_setting(section, key, parsed_value)
@@ -494,6 +524,11 @@ def _apply_json_settings(settings: Settings, json_settings: Dict[str, Any]) -> N
         setattr(section_obj, attr, value)
         logger.debug(f"JSON override: {section}.{attr} = {value}")
 
+    # Nested object: each phase listed overrides settings.ini, the rest keep it
+    for phase, value in (json_settings.get("timeouts") or {}).items():
+        setattr(settings.timeouts, phase, value)
+        logger.debug(f"JSON override: timeouts.{phase} = {value}")
+
 
 def _apply_cli_args(settings: Settings, cli_args: Dict[str, Any]) -> None:
     """Apply CLI argument overrides.
@@ -508,6 +543,10 @@ def _apply_cli_args(settings: Settings, cli_args: Dict[str, Any]) -> None:
         "output_file": ("defaults", "result_file"),
         "execution_mode": ("defaults", "mode"),
         "detailed_results": ("tm1_integration", "detailed_results"),
+        "timeout_task_retrieval": ("timeouts", "task_retrieval"),
+        "timeout_connection": ("timeouts", "connection"),
+        "timeout_task_execution": ("timeouts", "task_execution"),
+        "timeout_push_results": ("timeouts", "push_results"),
     }
 
     for cli_key, (section, attr) in cli_to_settings.items():

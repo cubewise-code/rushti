@@ -9,6 +9,9 @@ What we test (no TM1 required):
 - ``exit_rushti`` writes the file on an aborted run, not only on completion.
 - ``main()`` writes the file when it exits early: missing ``--config``,
   invalid taskfile, and exclusive-mode timeout.
+- The ``Status`` column, last in the row, for each outcome: ``Success``,
+  ``Failed``, ``Aborted`` (``TimedOut`` is covered in
+  ``test_run_phase_timeouts.py``).
 """
 
 import sys
@@ -44,6 +47,7 @@ class TestExitRushti:
         assert result["Overall Success"] == "False"
         assert result["Process Runs"] == "3"
         assert result["Process Fails"] == "2"
+        assert result["Status"] == "Aborted"
 
     def test_completed_run_still_writes_result_file(self, tmp_path):
         result_file = tmp_path / "result.csv"
@@ -59,7 +63,53 @@ class TestExitRushti:
                 result_file=str(result_file),
             )
         assert exc_info.value.code == 0
-        assert _read_result(result_file)["Overall Success"] == "True"
+        result = _read_result(result_file)
+        assert result["Overall Success"] == "True"
+        assert result["Status"] == "Success"
+
+    def test_run_with_failed_tasks_reports_failed(self, tmp_path):
+        result_file = tmp_path / "result.csv"
+        start = datetime.now()
+        with pytest.raises(SystemExit) as exc_info:
+            cli.exit_rushti(
+                overall_success=True,
+                executions=3,
+                successes=2,
+                start_time=start,
+                end_time=start,
+                elapsed_time=start - start,
+                result_file=str(result_file),
+            )
+        assert exc_info.value.code not in (0, None)
+        result = _read_result(result_file)
+        assert result["Overall Success"] == "True"
+        assert result["Process Fails"] == "1"
+        assert result["Status"] == "Failed"
+
+    def test_status_is_the_last_column(self, tmp_path):
+        result_file = tmp_path / "result.csv"
+        start = datetime.now()
+        with pytest.raises(SystemExit):
+            cli.exit_rushti(
+                overall_success=True,
+                executions=1,
+                successes=1,
+                start_time=start,
+                end_time=start,
+                elapsed_time=start - start,
+                result_file=str(result_file),
+            )
+        header = result_file.read_text(encoding="utf-8").splitlines()[0].split("|")
+        assert header == [
+            "PID",
+            "Process Runs",
+            "Process Fails",
+            "Start",
+            "End",
+            "Runtime",
+            "Overall Success",
+            "Status",
+        ]
 
 
 class TestEarlyExitWritesResultFile:
@@ -73,6 +123,7 @@ class TestEarlyExitWritesResultFile:
         result = _read_result(result_file)
         assert result["Overall Success"] == "False"
         assert result["Process Runs"] == "0"
+        assert result["Status"] == "Aborted"
 
     def test_missing_config(self, tmp_path, monkeypatch):
         taskfile = tmp_path / "tasks.json"

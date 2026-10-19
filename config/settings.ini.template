@@ -183,6 +183,41 @@
 # timeout = 600
 
 # ------------------------------------------------------------------------------
+# [timeouts] - Run phase time limits (hang detection)
+# ------------------------------------------------------------------------------
+[timeouts]
+
+# Each run goes through four run phases. Give a phase a time limit (in seconds)
+# and RushTI treats a phase that runs past it as a hang: it writes the result
+# file with Status = TimedOut, keeps the checkpoint, logs out of TM1 (which
+# rolls back any TI process still running in those sessions) and exits with
+# code 1. Only elapsed time counts.
+#
+# Can also be set per-taskfile via JSON settings.timeouts, or per run with
+# --timeout-task-retrieval, --timeout-connection, --timeout-task-execution and
+# --timeout-push-results.
+#
+# 0 or empty = no limit. Default: no limit for every phase
+
+# Connecting to the source instance and reading the taskfile from the rushti
+# cube. Only used with --tm1-instance.
+# task_retrieval = 60
+
+# Connecting to the TM1 instances the tasks run on, until the first task
+# starts. Includes parameter expansion and checking that the processes exist.
+# The exclusive-mode wait doesn't count: it has its own limit
+# ([exclusive_mode] timeout).
+# connection = 60
+
+# From the first task starting to the last task finishing. Set it well above
+# your longest normal run.
+# task_execution = 3600
+
+# Connecting to the results target, uploading the results and running
+# }rushti.load.results. Only used with push_results = true.
+# push_results = 120
+
+# ------------------------------------------------------------------------------
 # [resume] - Checkpoint and resume feature
 # ------------------------------------------------------------------------------
 [resume]
