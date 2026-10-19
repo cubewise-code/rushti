@@ -110,7 +110,7 @@ time limit, in this order:
   that the processes exist, and leaves out the exclusive-mode wait, which
   has its own limit.
 - **task execution**: from the first task starting to the last one
-  finishing.
+  finishing and RushTI logging out of the instances the tasks ran on.
 - **push results**: connecting to the results target, uploading, and loading
   the results into the cube.
 

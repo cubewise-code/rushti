@@ -9,6 +9,7 @@ This module provides the command-line interface for RushTI, including:
 
 import argparse
 import asyncio
+import copy
 import logging
 import os
 import sys
@@ -722,9 +723,9 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         assert workflow is not None, "workflow must be provided with tm1_instance"
         logger.info(f"Reading taskfile from TM1 instance '{tm1_instance}', workflow '{workflow}'")
         # The taskfile isn't read yet, so its settings can't apply: CLI > settings.ini
-        retrieval_limit = cli_args.get("timeout_task_retrieval")
-        if retrieval_limit is None:
-            retrieval_limit = settings.timeouts.task_retrieval
+        retrieval_limit = get_effective_settings(
+            copy.deepcopy(settings), cli_args=cli_args
+        ).timeouts.task_retrieval
         try:
             with watchdog.phase("task_retrieval", retrieval_limit):
                 from rushti.tm1_integration import read_taskfile_from_tm1, connect_to_tm1_instance
@@ -846,11 +847,6 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         tm1_instances=tm1_instances_needed,
         tm1_services=hang.tm1_services,
         tm1_preserve_connections=hang.tm1_preserve_connections,
-    )
-    # From here on, the handler logs out of the sessions the run actually uses
-    hang.tm1_services, hang.tm1_preserve_connections = (
-        tm1_service_by_instance,
-        preserve_connections,
     )
 
     # Always check for exclusive access before execution
@@ -1161,10 +1157,12 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         success = False
 
     finally:
-        watchdog.stop()
         # Force logout in exclusive mode to ensure session context is cleared
         # This allows subsequent exclusive runs to proceed without waiting
         logout(tm1_service_by_instance, preserve_connections, force=exclusive_mode)
+        # The phase still running (task_execution, or connection if no task
+        # started) covers this logout: it can block on the server too
+        watchdog.stop()
         if event_loop:
             event_loop.close()
         # Clean up checkpoint

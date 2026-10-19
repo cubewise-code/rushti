@@ -805,7 +805,6 @@ async def work_through_tasks_dag(
         is submitted (ends the connection run phase)
     :return: List of execution outcomes (True/False for each task)
     """
-    outcomes = []
     loop = asyncio.get_event_loop()
     task_start_times: Dict[str, datetime] = {}
     # Track instances that have been early-released to avoid double-logout
@@ -892,7 +891,6 @@ async def work_through_tasks_dag(
                     logger.error(f"Unexpected error executing task {task_id}: {e}")
                     success = False
 
-                outcomes.append(success)
                 ctx.task_outcomes.append(success)
                 dag.mark_complete(task, success)
 
@@ -938,7 +936,7 @@ async def work_through_tasks_dag(
         if not dag.is_complete():
             logger.warning("DAG execution incomplete - some tasks may have unmet dependencies")
 
-    return outcomes
+    return list(ctx.task_outcomes)
 
 
 def _logout_instance(

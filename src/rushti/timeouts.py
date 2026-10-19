@@ -39,7 +39,10 @@ PHASE_HELP = {
         "connecting to the task instances until the first task starts "
         "(the exclusive-mode wait doesn't count)"
     ),
-    "task_execution": "from the first task starting to the last one finishing",
+    "task_execution": (
+        "from the first task starting to the last one finishing and the logout "
+        "from the task instances"
+    ),
     "push_results": "pushing results to the results target and loading them into the cube",
 }
 
@@ -94,6 +97,10 @@ class PhaseWatchdog:
 
     One phase is timed at a time: starting a phase ends the previous one.
     The timer thread is a daemon, so it never keeps the process alive.
+
+    Once a hang is being handled, ``start``, ``stop`` and ``paused`` block
+    until the handler is done (it ends the process), so the main thread
+    can't run its own end-of-run cleanup at the same time.
     """
 
     def __init__(self, on_hang: Callable[[str, int], None]):
@@ -105,9 +112,11 @@ class PhaseWatchdog:
         self._limit = 0
         self._deadline = 0.0
         self._remaining: Optional[float] = None  # seconds left while paused
+        self._hang_done: Optional[threading.Event] = None  # set once a hang is handled
 
     def start(self, phase: str, limit: int) -> None:
         """Start timing ``phase``, ending whichever phase was running. 0 means no limit."""
+        self._wait_for_hang()
         with self._lock:
             self._cancel()
             self._phase, self._limit, self._remaining = phase, limit, None
@@ -116,6 +125,7 @@ class PhaseWatchdog:
 
     def stop(self) -> None:
         """End the current phase."""
+        self._wait_for_hang()
         with self._lock:
             self._cancel()
             self._phase, self._remaining = None, None
@@ -132,6 +142,7 @@ class PhaseWatchdog:
     @contextmanager
     def paused(self):
         """Stop the clock of the current phase while the block runs."""
+        self._wait_for_hang()
         with self._lock:
             if self._timer:
                 self._remaining = max(0.0, self._deadline - time.monotonic())
@@ -144,6 +155,11 @@ class PhaseWatchdog:
                 if self._remaining is not None:
                     self._arm(self._remaining)
                     self._remaining = None
+
+    def _wait_for_hang(self) -> None:
+        done = self._hang_done
+        if done is not None:
+            done.wait()
 
     def _arm(self, seconds: float) -> None:
         self._generation += 1
@@ -163,7 +179,11 @@ class PhaseWatchdog:
                 return  # the phase ended or was paused just as the limit hit
             self._timer = None
             phase, limit = self._phase, self._limit
-        self._on_hang(phase, limit)
+            done = self._hang_done = threading.Event()
+        try:
+            self._on_hang(phase, limit)
+        finally:
+            done.set()
 
 
 @dataclass

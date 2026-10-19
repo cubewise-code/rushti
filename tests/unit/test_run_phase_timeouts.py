@@ -134,7 +134,10 @@ def env(tmp_path, monkeypatch, caplog):
     e.write_settings()
 
     def _setup(**kwargs):
-        return e.services, e.preserve
+        # Like the real setup_tm1_services: fill the dicts it's given
+        kwargs["tm1_services"].update(e.services)
+        kwargs["tm1_preserve_connections"].update(e.preserve)
+        return kwargs["tm1_services"], kwargs["tm1_preserve_connections"]
 
     monkeypatch.setattr(cli, "setup_tm1_services", _setup)
     monkeypatch.setattr(cli, "wait_for_exclusive_access", lambda **kwargs: None)
@@ -353,6 +356,75 @@ class TestTaskExecution:
         assert hang.exited_at - started < LIMIT + timeouts.LOGOUT_WAIT_SECONDS + 1
         warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
         assert any("tm1srv01" in m and "logout" in m.lower() for m in warnings), warnings
+
+    def test_final_logout_counts_against_task_execution(self, env, hang, monkeypatch, caplog):
+        monkeypatch.setattr(timeouts, "LOGOUT_WAIT_SECONDS", 1)
+
+        class EarlyReleaseFails(FakeTM1):
+            """Early release fails, so the end-of-run logout retries it, and that one blocks."""
+
+            calls = 0
+
+            def logout(self):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("early release failed")
+                hang.block()
+
+        env.services["tm1srv01"] = EarlyReleaseFails()
+        _snapshot_result(env, hang)
+
+        started = _run_main(monkeypatch, env.args("--timeout-task-execution", str(LIMIT)))
+
+        _assert_timed_out(hang, started, env.result, "task_execution", caplog, runs="2")
+
+
+class TestPhaseWatchdog:
+    """A hang that's already being handled must finish before the run goes on."""
+
+    @pytest.mark.parametrize("next_step", ["stop", "start"])
+    def test_waits_for_a_hang_in_progress(self, next_step):
+        in_handler, release = threading.Event(), threading.Event()
+
+        def on_hang(phase, limit):
+            in_handler.set()
+            release.wait(5)
+
+        watchdog = timeouts.PhaseWatchdog(on_hang)
+        watchdog.start("connection", 0.1)
+        assert in_handler.wait(2)
+
+        returned = threading.Event()
+
+        def _next():
+            if next_step == "stop":
+                watchdog.stop()
+            else:
+                watchdog.start("task_execution", 0)
+            returned.set()
+
+        threading.Thread(target=_next, daemon=True).start()
+        assert not returned.wait(0.3)  # blocked while the hang is handled
+        release.set()
+        assert returned.wait(2)
+
+    def test_stop_before_the_limit_means_no_hang(self):
+        hangs = []
+        watchdog = timeouts.PhaseWatchdog(lambda phase, limit: hangs.append(phase))
+        watchdog.start("connection", 0.2)
+        watchdog.stop()
+        time.sleep(0.4)
+        assert hangs == []
+
+    def test_paused_time_does_not_count(self):
+        hangs = []
+        watchdog = timeouts.PhaseWatchdog(lambda phase, limit: hangs.append(phase))
+        watchdog.start("connection", 0.3)
+        with watchdog.paused():
+            time.sleep(0.5)
+        assert hangs == []
+        time.sleep(0.5)
+        assert hangs == ["connection"]
 
 
 class TestPushResults:

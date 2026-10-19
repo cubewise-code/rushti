@@ -67,7 +67,7 @@ rushti --tasks FILE [options]          # 'run' is the default command
 | `--log-level` | `-L` | CHOICE | `INFO` | Override log level for this run. |
 | `--timeout-task-retrieval` | | INT | *(no limit)* | Time limit in seconds for reading the taskfile from TM1 (`--tm1-instance` only). `0` = no limit. |
 | `--timeout-connection` | | INT | *(no limit)* | Time limit in seconds for connecting to the task instances, until the first task starts. The exclusive-mode wait doesn't count. `0` = no limit. |
-| `--timeout-task-execution` | | INT | *(no limit)* | Time limit in seconds from the first task starting to the last one finishing. `0` = no limit. |
+| `--timeout-task-execution` | | INT | *(no limit)* | Time limit in seconds from the first task starting to the last one finishing, including the logout from the task instances. `0` = no limit. |
 | `--timeout-push-results` | | INT | *(no limit)* | Time limit in seconds for pushing results to TM1. `0` = no limit. |
 
 The `--timeout-*` flags override `settings.ini [timeouts]` and the taskfile `settings.timeouts`; `0` removes a limit set there. When a limit is hit, RushTI writes `Status` = `TimedOut` and exits with code 1. See [Run Phase Time Limits](../features/timeouts.md).

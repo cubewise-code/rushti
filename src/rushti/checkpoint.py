@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -556,6 +557,9 @@ class CheckpointManager:
         self.checkpoint_path = get_checkpoint_path(checkpoint_dir, workflow)
         self.checkpoint_interval = checkpoint_interval
         self._last_save_time = datetime.now()
+        # A hung run saves from the watchdog thread while the scheduler may
+        # still be recording results; reentrant because mark_* call _save
+        self._lock = threading.RLock()
 
         if enabled:
             self.checkpoint = Checkpoint.create(
@@ -572,8 +576,9 @@ class CheckpointManager:
         """Mark a task as running."""
         if not self.enabled or not self.checkpoint:
             return
-        self.checkpoint.mark_running(task_id)
-        self._maybe_save()
+        with self._lock:
+            self.checkpoint.mark_running(task_id)
+            self._maybe_save()
 
     def mark_completed(
         self,
@@ -587,22 +592,24 @@ class CheckpointManager:
         if not self.enabled or not self.checkpoint:
             return
 
-        self.checkpoint.mark_completed(
-            task_id=task_id,
-            success=success,
-            duration_seconds=duration_seconds,
-            retry_count=retry_count,
-            error_message=error_message,
-        )
-        # Always save on task completion
-        self._save()
+        with self._lock:
+            self.checkpoint.mark_completed(
+                task_id=task_id,
+                success=success,
+                duration_seconds=duration_seconds,
+                retry_count=retry_count,
+                error_message=error_message,
+            )
+            # Always save on task completion
+            self._save()
 
     def mark_skipped(self, task_id: str, reason: str = "predecessor_failed") -> None:
         """Mark a task as skipped."""
         if not self.enabled or not self.checkpoint:
             return
-        self.checkpoint.mark_skipped(task_id, reason)
-        self._maybe_save()
+        with self._lock:
+            self.checkpoint.mark_skipped(task_id, reason)
+            self._maybe_save()
 
     def _maybe_save(self) -> None:
         """Save checkpoint if interval has elapsed."""
@@ -617,8 +624,9 @@ class CheckpointManager:
             return
 
         try:
-            save_checkpoint(self.checkpoint, self.checkpoint_path)
-            self._last_save_time = datetime.now()
+            with self._lock:
+                save_checkpoint(self.checkpoint, self.checkpoint_path)
+                self._last_save_time = datetime.now()
         except Exception as e:
             logger.warning(f"Failed to save checkpoint: {e}")
 

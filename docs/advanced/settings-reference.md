@@ -192,7 +192,7 @@ Optional time limits for each run phase, in seconds. A run phase that goes past 
 |---------|------|---------|-------------|
 | `task_retrieval` | int | `0` (no limit) | Connecting to the source instance and reading the taskfile from the `rushti` cube. Only used for TM1 sources (`--tm1-instance`). |
 | `connection` | int | `0` (no limit) | Connecting to the TM1 instances the tasks run on, until the first task starts. Includes parameter expansion and checking that the processes exist. The exclusive-mode wait doesn't count. |
-| `task_execution` | int | `0` (no limit) | From the first task starting to the last task finishing. |
+| `task_execution` | int | `0` (no limit) | From the first task starting to the last task finishing, including the logout from the task instances. |
 | `push_results` | int | `0` (no limit) | Connecting to the results target, uploading the results and running `}rushti.load.results`. Only used when `push_results = true`. |
 
 `0` or an empty value means no limit. Negative or non-integer values are an error.

@@ -209,8 +209,9 @@
 # ([exclusive_mode] timeout).
 # connection = 60
 
-# From the first task starting to the last task finishing. Set it well above
-# your longest normal run.
+# From the first task starting to the last task finishing, including logging
+# out of the task instances afterwards. Set it well above your longest
+# normal run.
 # task_execution = 3600
 
 # Connecting to the results target, uploading the results and running
