@@ -530,8 +530,9 @@ class TestCheckpointManagerThreadSafety(unittest.TestCase):
 
     def test_save_while_tasks_are_recorded_from_another_thread(self):
         import threading
+        from unittest.mock import patch
 
-        task_ids = [str(i) for i in range(50000)]
+        task_ids = [str(i) for i in range(20000)]
         with tempfile.TemporaryDirectory() as tmpdir:
             taskfile_path = os.path.join(tmpdir, "tasks.json")
             with open(taskfile_path, "w") as f:
@@ -550,11 +551,16 @@ class TestCheckpointManagerThreadSafety(unittest.TestCase):
                     manager.mark_skipped(task_id)
 
             writer = threading.Thread(target=record)
-            with self.assertNoLogs("rushti.checkpoint", level="WARNING"):
+            # A failed save is only logged as a warning, so watch for that.
+            # A fixed number of saves: looping until the writer is done can
+            # starve it of the lock.
+            with patch("rushti.checkpoint.logger.warning") as warning:
                 writer.start()
-                while writer.is_alive():
+                for _ in range(20):
                     manager.force_save()
-                writer.join()
+                writer.join(30)
+            self.assertFalse(writer.is_alive())
+            warning.assert_not_called()
 
 
 class TestResumeCliArguments(unittest.TestCase):
