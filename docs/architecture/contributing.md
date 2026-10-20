@@ -8,7 +8,7 @@ How to set up a development environment and contribute to RushTI.
 
 ### Prerequisites
 
-- Python 3.9 or later
+- Python 3.11 or later
 - Git
 - (Optional) A TM1/Planning Analytics server for running integration tests
 
@@ -131,7 +131,7 @@ python -m pytest -m "requires_tm1" -v
 
 ## Code Style
 
-- **Python version**: 3.9+ (match the `requires-python` in `pyproject.toml`)
+- **Python version**: 3.11+ (match the `requires-python` in `pyproject.toml`)
 - **Formatting**: [black](https://github.com/psf/black) (line length 100)
 - **Linting**: [ruff](https://docs.astral.sh/ruff/) (replaces flake8 and isort)
 - **Type checking**: [mypy](https://mypy-lang.org/) -- type hints are encouraged on all public functions

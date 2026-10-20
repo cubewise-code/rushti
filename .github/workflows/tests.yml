@@ -52,12 +52,40 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
+  python-versions:
+    name: Supported Python versions
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.eol.outputs.versions }}
+      oldest: ${{ steps.eol.outputs.oldest }}
+    steps:
+      - id: eol
+        # Released and not past end of life, from endoflife.date.
+        # Falls back to a fixed list if the API is unreachable or returns nothing.
+        run: |
+          set -o pipefail
+          fallback='["3.11","3.12","3.13","3.14","3.15"]'
+          if versions=$(curl -fsS --retry 3 https://endoflife.date/api/python.json \
+              | jq -c --arg today "$(date -u +%F)" \
+                '[.[] | select(.releaseDate <= $today and (.eol == false or .eol > $today)) | .cycle]
+                 | sort_by(split(".") | map(tonumber))') \
+             && [ "$(jq length <<< "$versions")" -gt 0 ]; then
+            echo "Supported Python versions: $versions"
+          else
+            echo "::warning::Couldn't read supported Python versions from endoflife.date; using $fallback"
+            versions=$fallback
+          fi
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+          echo "oldest=$(jq -r '.[0]' <<< "$versions")" >> "$GITHUB_OUTPUT"
+
   unit-tests:
     name: Unit Tests
+    needs: python-versions
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.13"]
+        python-version: ${{ fromJSON(needs.python-versions.outputs.versions) }}
 
     steps:
       - uses: actions/checkout@v7
@@ -77,13 +105,13 @@ jobs:
         run: |
           pytest tests/unit/ -v --tb=short
 
-      - name: Run unit tests with coverage (Python 3.11 only)
-        if: matrix.python-version == '3.11'
+      - name: Run unit tests with coverage (oldest supported Python only)
+        if: matrix.python-version == needs.python-versions.outputs.oldest
         run: |
           pytest tests/unit/ -v --cov=src/rushti --cov-report=xml --cov-report=term
 
       - name: Upload coverage reports
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == needs.python-versions.outputs.oldest
         uses: codecov/codecov-action@v7
         with:
           file: ./coverage.xml
