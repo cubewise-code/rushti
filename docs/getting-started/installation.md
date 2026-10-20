@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.9+** (if installing via pip)
+- **Python 3.11+** (if installing via pip)
 - **TM1 server** with REST API enabled (address, port, credentials)
 
 ## Option 1: pip (Recommended)
