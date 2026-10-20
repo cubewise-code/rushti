@@ -4,6 +4,11 @@ All notable changes to RushTI are documented in this file.
 
 ## [Unreleased]
 
+- **Changed: RushTI now requires Python 3.11 or later.** Python 3.9 and 3.10
+  are past end of life and are no longer tested. `requires-python` is now
+  `>=3.11`, so pip won't install new RushTI releases on 3.9 or 3.10; existing
+  installs keep working on the release they have. The standalone Windows
+  executable is unaffected.
 - **Added: run phase time limits** (closes #124). A run goes through four
   run phases (`task_retrieval`, `connection`, `task_execution`,
   `push_results`), and each can now have a time limit in seconds: a
@@ -39,6 +44,9 @@ All notable changes to RushTI are documented in this file.
   RushTI aborts before reading the taskfile, the path comes from `--result` or
   `settings.ini`, because a `result_file` set inside the taskfile isn't known
   yet.
+- **CI tests every supported Python version.** The unit-test matrix is read
+  from endoflife.date on each run (currently 3.11 to 3.15), so it follows new
+  releases and end-of-life dates without workflow edits.
 
 ## [2.3.2] - 2026-07-09
 

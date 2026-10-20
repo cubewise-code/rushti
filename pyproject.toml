@@ -22,14 +22,15 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Database",
     "Topic :: System :: Systems Administration",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "TM1py>=2.0.0",
     "keyring>=25.7.0",
@@ -87,7 +88,7 @@ asyncio_mode = "auto"
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py311", "py312", "py313", "py314"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -111,7 +112,7 @@ src_paths = ["src", "tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]
