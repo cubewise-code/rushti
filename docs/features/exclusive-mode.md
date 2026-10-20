@@ -240,7 +240,7 @@ If the timeout is exceeded, RushTI stops before running any task and exits with 
 ERROR - Timeout (600s) exceeded waiting for exclusive access. Blocking sessions: RushTI session 'monthly-close' (exclusive) on tm1-finance
 ```
 
-The `--result` file is still written, with `Overall Success` = `False` and `Status` = `Aborted`. Running out of the exclusive-mode wait is not a hang, so it never reports `TimedOut`: the wait has its own limit (`timeout` above) and doesn't count against the `connection` [run phase time limit](timeouts.md).
+The `--result` file is still written, with `Overall Success` = `False` and `Status` = `Aborted`. Running out of the exclusive-mode wait is not a hang, so it never reports `TimedOut`: the wait has its own limit (`timeout` above), and the time between session polls doesn't count against the `connection` [run phase time limit](timeouts.md). The polls themselves do count: if one blocks on an unresponsive server, the `connection` limit ends the run with `TimedOut`.
 
 Exit code 1 is shared with failed tasks and other errors, so read the `Status` column of the result file to tell the outcomes apart. The log says why a run was aborted:
 

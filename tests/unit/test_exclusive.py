@@ -463,6 +463,33 @@ class TestWaitForExclusiveAccess(unittest.TestCase):
         self.assertTrue(result)
         mock_sleep.assert_called_once_with(1)
 
+    def test_waits_between_polls_with_the_given_sleep(self):
+        """The caller's sleep is used between polls, e.g. to pause a run phase clock."""
+        mock_tm1 = MagicMock()
+        mock_tm1.monitoring.get_current_user.return_value = {"ID": 1}
+        mock_tm1.monitoring.get_sessions.side_effect = [
+            [
+                {
+                    "ID": 2,
+                    "User": {"Name": "admin"},
+                    "Threads": [{"ID": 100, "Context": "RushTIX_blocking"}],
+                }
+            ],
+            [],
+        ]
+        sleeps = []
+
+        result = wait_for_exclusive_access(
+            {"tm1srv01": mock_tm1},
+            current_exclusive=False,
+            polling_interval=7,
+            timeout=10,
+            sleep=sleeps.append,
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(sleeps, [7])
+
     @patch("rushti.exclusive.time.sleep")
     def test_timeout_raises_error(self, mock_sleep):
         """Test timeout raises ExclusiveModeTimeoutError."""

@@ -116,8 +116,7 @@ class PhaseWatchdog:
 
     def start(self, phase: str, limit: int) -> None:
         """Start timing ``phase``, ending whichever phase was running. 0 means no limit."""
-        self._wait_for_hang()
-        with self._lock:
+        with self._locked():
             self._cancel()
             self._phase, self._limit, self._remaining = phase, limit, None
             if limit:
@@ -125,8 +124,7 @@ class PhaseWatchdog:
 
     def stop(self) -> None:
         """End the current phase."""
-        self._wait_for_hang()
-        with self._lock:
+        with self._locked():
             self._cancel()
             self._phase, self._remaining = None, None
 
@@ -142,24 +140,41 @@ class PhaseWatchdog:
     @contextmanager
     def paused(self):
         """Stop the clock of the current phase while the block runs."""
-        self._wait_for_hang()
-        with self._lock:
+        with self._locked():
             if self._timer:
                 self._remaining = max(0.0, self._deadline - time.monotonic())
                 self._cancel()
         try:
             yield
         finally:
-            with self._lock:
+            with self._locked():
                 # start() or stop() inside the block clears _remaining
                 if self._remaining is not None:
                     self._arm(self._remaining)
                     self._remaining = None
 
-    def _wait_for_hang(self) -> None:
+    def paused_sleep(self, seconds: float) -> None:
+        """Sleep without the time counting against the current phase."""
+        with self.paused():
+            time.sleep(seconds)
+
+    @contextmanager
+    def _locked(self):
+        """Hold the lock, first waiting out a hang being handled.
+
+        The check is made under the lock, so a hang that the timer declared
+        just before can't slip past.
+        """
+        self._lock.acquire()
         done = self._hang_done
-        if done is not None:
-            done.wait()
+        if done is not None and not done.is_set():
+            self._lock.release()
+            done.wait()  # the handler ends the process; in tests it returns
+            self._lock.acquire()
+        try:
+            yield
+        finally:
+            self._lock.release()
 
     def _arm(self, seconds: float) -> None:
         self._generation += 1
@@ -210,6 +225,8 @@ class HangHandler:
     other_sessions: dict = field(default_factory=dict)
 
     def __call__(self, phase: str, limit: int) -> None:
+        if self.ctx:
+            self.ctx.hung.set()  # the scheduler starts nothing new from here on
         logger.error(
             f"Run phase '{phase}' went past its time limit of {limit}s. "
             "RushTI is terminating and logging out of TM1."

@@ -80,6 +80,8 @@ class ExecutionContext:
     task_execution_results: dict = dataclasses.field(default_factory=dict)
     #: Outcome of every task finished so far, in completion order
     task_outcomes: list = dataclasses.field(default_factory=list)
+    #: Set when a run phase went past its time limit: no new task is started
+    hung: threading.Event = dataclasses.field(default_factory=threading.Event)
 
 
 def _collect_task_stats(
@@ -824,6 +826,8 @@ async def work_through_tasks_dag(
             broken out of), allowing tasks from other stages to submit.
             """
             nonlocal on_first_task_start
+            if ctx.hung.is_set():
+                return  # the run is ending; tasks still running just finish
             ready_tasks = dag.get_ready_tasks()
 
             # Apply optimization if available (sort using configured algorithm)
@@ -918,7 +922,8 @@ async def work_through_tasks_dag(
             # end-of-run logout() call cannot double-logout the same session (which
             # would otherwise emit a CookieConflictError warning when the second
             # logout response leaves a duplicate TM1SessionId in the cookie jar).
-            if tm1_preserve_connections is not None:
+            # Skipped once the run has hung: the hang handler logs out instead.
+            if tm1_preserve_connections is not None and not ctx.hung.is_set():
                 remaining = dag.get_remaining_tasks_by_instance()
                 for instance_name in list(tm1_services.keys()):
                     if instance_name not in remaining:

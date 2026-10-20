@@ -246,8 +246,9 @@ class TestConnection:
         assert hang.snapshot["logged_out"] is True
 
     def test_exclusive_wait_does_not_count(self, env, hang, monkeypatch):
+        # The wait between session polls goes through the sleep RushTI passes in
         monkeypatch.setattr(
-            cli, "wait_for_exclusive_access", lambda **kwargs: time.sleep(LIMIT + 0.5)
+            cli, "wait_for_exclusive_access", lambda **kwargs: kwargs["sleep"](LIMIT + 0.5)
         )
         monkeypatch.setattr(sys, "argv", ["rushti", *env.args("--timeout-connection", str(LIMIT))])
         with pytest.raises(SystemExit) as exc_info:
@@ -255,6 +256,14 @@ class TestConnection:
         assert exc_info.value.code == 0
         assert hang.code is None
         assert _read_result(env.result)["Status"] == "Success"
+
+    def test_exclusive_session_poll_that_blocks_counts(self, env, hang, monkeypatch, caplog):
+        monkeypatch.setattr(cli, "wait_for_exclusive_access", hang.block)
+        _snapshot_result(env, hang)
+
+        started = _run_main(monkeypatch, env.args("--timeout-connection", str(LIMIT)))
+
+        _assert_timed_out(hang, started, env.result, "connection", caplog)
 
     def test_ends_when_first_task_starts(self, env, hang, monkeypatch):
         def _slow_task(ctx, task, *args):
@@ -378,6 +387,27 @@ class TestTaskExecution:
 
         _assert_timed_out(hang, started, env.result, "task_execution", caplog, runs="2")
 
+    def test_no_new_task_starts_once_the_run_has_hung(self, env, hang, monkeypatch):
+        # Task 1 is slow but healthy: it finishes while the handler waits on a
+        # logout. Task 2, which depends on it, must not be started any more.
+        monkeypatch.setattr(timeouts, "LOGOUT_WAIT_SECONDS", 1)
+        env.services["tm1srv01"] = FakeTM1(logout_blocks_until=hang.exited)
+        started_tasks = []
+
+        def _execute(ctx, task, *args):
+            started_tasks.append(str(task.id))
+            if str(task.id) == "1":
+                time.sleep(LIMIT + 0.3)
+            return True
+
+        monkeypatch.setattr(execution, "execute_task", _execute)
+        _snapshot_result(env, hang)
+
+        _run_main(monkeypatch, env.args("--timeout-task-execution", str(LIMIT)))
+
+        assert hang.code == 1
+        assert started_tasks == ["1"]
+
 
 class TestPhaseWatchdog:
     """A hang that's already being handled must finish before the run goes on."""
@@ -407,6 +437,30 @@ class TestPhaseWatchdog:
         assert not returned.wait(0.3)  # blocked while the hang is handled
         release.set()
         assert returned.wait(2)
+
+    def test_stop_racing_the_limit_never_returns_during_a_hang(self):
+        # stop() and the timer contend for the lock; whichever wins, stop()
+        # must not return while the hang handler is running
+        for _ in range(10):
+            in_handler, release = threading.Event(), threading.Event()
+
+            def on_hang(phase, limit):
+                in_handler.set()
+                release.wait(5)
+
+            watchdog = timeouts.PhaseWatchdog(on_hang)
+            watchdog.start("connection", 0.05)
+            watchdog._lock.acquire()
+            time.sleep(0.1)  # the timer is now waiting for the lock
+            stopped = threading.Event()
+            threading.Thread(target=lambda: (watchdog.stop(), stopped.set()), daemon=True).start()
+            time.sleep(0.05)  # so is stop()
+            watchdog._lock.release()
+            time.sleep(0.2)
+
+            assert not (in_handler.is_set() and stopped.is_set())
+            release.set()
+            assert stopped.wait(2)
 
     def test_stop_before_the_limit_means_no_hang(self):
         hangs = []

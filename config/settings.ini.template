@@ -205,8 +205,8 @@
 
 # Connecting to the TM1 instances the tasks run on, until the first task
 # starts. Includes parameter expansion and checking that the processes exist.
-# The exclusive-mode wait doesn't count: it has its own limit
-# ([exclusive_mode] timeout).
+# The time spent waiting between exclusive-mode session polls doesn't count:
+# it has its own limit ([exclusive_mode] timeout). The polls themselves do.
 # connection = 60
 
 # From the first task starting to the last task finishing, including logging

@@ -856,17 +856,18 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
     logger.debug(f"Exclusive access check: exclusive_mode={exclusive_mode}")
     logger.debug(f"TM1 services available: {list(tm1_service_by_instance.keys())}")
     try:
-        # The wait has its own limit ([exclusive_mode] timeout), so it doesn't
-        # count against the connection phase
-        with watchdog.paused():
-            wait_for_exclusive_access(
-                tm1_services=tm1_service_by_instance,
-                current_exclusive=exclusive_mode,
-                session_context=session_context,
-                polling_interval=settings.exclusive_mode.polling_interval,
-                timeout=settings.exclusive_mode.timeout,
-                force=force_mode,
-            )
+        # The wait has its own limit ([exclusive_mode] timeout), so the time
+        # between session polls doesn't count against the connection phase;
+        # the polls themselves call TM1 and still do
+        wait_for_exclusive_access(
+            tm1_services=tm1_service_by_instance,
+            current_exclusive=exclusive_mode,
+            session_context=session_context,
+            polling_interval=settings.exclusive_mode.polling_interval,
+            timeout=settings.exclusive_mode.timeout,
+            force=force_mode,
+            sleep=watchdog.paused_sleep,
+        )
         logger.debug("Exclusive access check completed successfully")
     except ExclusiveModeTimeoutError as e:
         logger.error(str(e))
@@ -896,8 +897,6 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
         execution_logger=create_execution_logger(workflow=workflow),
     )
     hang.ctx = ctx
-    if ctx.stats_db and ctx.stats_db.enabled:
-        hang.stats_db = ctx.stats_db
     if settings.stats.enabled:
         logger.debug("Stats database initialized")
     logger.debug(f"Execution logger initialized: run_id={ctx.execution_logger.run_id}")
@@ -979,6 +978,7 @@ Use '{APP_NAME} <command> --help' for command-specific options and examples.
                 optimize=bool(_stats_algorithm),
                 optimization_algorithm=_stats_algorithm,
             )
+            hang.stats_db = ctx.stats_db  # the run row exists now
 
         # Handle resume mode
         completed_task_ids = set()

@@ -46,7 +46,7 @@ Every run goes through these phases, in this order. Each has its own limit.
 
 A few details:
 
-- **`connection`** includes everything between logging in and the first task starting: expanding MDX parameters and checking that the processes exist. It leaves out the [exclusive-mode](exclusive-mode.md) wait, which has its own limit (`[exclusive_mode] timeout`); the clock pauses while RushTI waits for exclusive access.
+- **`connection`** includes everything between logging in and the first task starting: expanding MDX parameters and checking that the processes exist. It leaves out the [exclusive-mode](exclusive-mode.md) wait, which has its own limit (`[exclusive_mode] timeout`): the clock pauses while RushTI sleeps between session polls. Each poll is a call to TM1 and still counts, so a poll that blocks on an unresponsive server is caught.
 - **`task_execution`** includes logging out of the task instances at the end of the run, since a logout can block on the server too. If no task ever started, that logout counts against `connection` instead.
 - **`task_retrieval`** doesn't apply to taskfiles read from disk. Setting it for a `--tasks` run has no effect.
 - Only elapsed time counts. RushTI never reads TM1 threads, sessions or locks to decide a run is stuck, so there's no extra load on the server.

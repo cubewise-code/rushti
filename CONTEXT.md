@@ -107,8 +107,9 @@ time limit, in this order:
   taskfile from the `rushti` cube. Only for TM1 sources.
 - **connection**: from connecting to the TM1 instances the tasks run on
   until the first task starts. It includes parameter expansion and checking
-  that the processes exist, and leaves out the exclusive-mode wait, which
-  has its own limit.
+  that the processes exist. It leaves out the time spent waiting between
+  exclusive-mode session polls, which has its own limit; the polls
+  themselves call TM1 and still count.
 - **task execution**: from the first task starting to the last one
   finishing and RushTI logging out of the instances the tasks ran on.
 - **push results**: connecting to the results target, uploading, and loading
