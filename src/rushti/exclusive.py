@@ -13,7 +13,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from TM1py import TM1Service
 
@@ -227,6 +227,7 @@ def wait_for_exclusive_access(
     polling_interval: int = 30,
     timeout: int = 600,
     force: bool = False,
+    sleep: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """Wait for exclusive access to TM1 servers.
 
@@ -239,6 +240,9 @@ def wait_for_exclusive_access(
     :param polling_interval: Seconds between session checks (default: 30)
     :param timeout: Maximum seconds to wait (default: 600)
     :param force: If True, bypass exclusive checks with warning
+    :param sleep: How to wait between polls (default: ``time.sleep``). RushTI
+        passes one that pauses the connection run phase clock, so the waiting
+        doesn't count against it but each session poll still does.
     :return: True if access granted, raises ExclusiveModeTimeoutError on timeout
     :raises ExclusiveModeTimeoutError: If timeout exceeded while waiting
     """
@@ -273,12 +277,13 @@ def wait_for_exclusive_access(
     )
 
     # Wait loop
+    sleep = sleep or time.sleep
     elapsed = 0
     attempt = 0
 
     while elapsed < timeout:
         attempt += 1
-        time.sleep(polling_interval)
+        sleep(polling_interval)
         elapsed += polling_interval
 
         # Re-check sessions (excluding our own)

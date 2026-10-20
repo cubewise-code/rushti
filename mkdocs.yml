@@ -166,6 +166,7 @@ nav:
     - Exclusive Mode: features/exclusive-mode.md
     - Statistics & Dashboards: features/statistics.md
     - Checkpoint & Resume: features/checkpoint-resume.md
+    - Run Phase Time Limits: features/timeouts.md
   - Advanced:
     - Settings Reference: advanced/settings-reference.md
     - CLI Reference: advanced/cli-reference.md

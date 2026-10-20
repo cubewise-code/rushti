@@ -164,7 +164,8 @@ These settings control DAG execution behavior:
 | `require_predecessor_success` | Per task | `false` | Skip task if any predecessor failed |
 | `safe_retry` | Per task | `false` | Mark TI process as idempotent — RushTI will retry on connection loss |
 | `timeout` | Per task | *(none)* | Max seconds before task is considered timed out |
-| `cancel_at_timeout` | Per task | `false` | Cancel the TI process on the TM1 server when it times out |
+| `cancel_at_timeout` | Per task | `false` | Cancel the TI process on the TM1 server when it times out (not on TM1 v12, see below) |
+| `timeouts` | CLI / JSON / settings.ini | *(no limit)* | Time limit per run phase; see [Run Phase Time Limits](timeouts.md) |
 
 ```ini
 # config/settings.ini
@@ -175,6 +176,9 @@ retries = 2
 
 !!! info "`safe_retry`"
     When `safe_retry` is `true`, RushTI assumes the TI process is idempotent (safe to run again without side effects). If the TM1 connection is lost during execution, RushTI will automatically retry the task instead of marking it as failed. Useful for read-only extracts or processes with built-in duplicate handling.
+
+!!! warning "TM1 v12: `cancel_at_timeout` doesn't cancel the process"
+    On TM1 v12 and later the TI process is **not** cancelled. RushTI cancels through TM1py, and TM1py's `ThreadService` blocks itself on servers v12 and later; its `MonitoringService` thread methods just call `ThreadService`. So RushTI stops waiting and marks the task as failed, while the process keeps running on the server.
 
 Settings are resolved in priority order: CLI arguments > JSON task file settings > settings.ini > built-in defaults.
 

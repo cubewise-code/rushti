@@ -1,7 +1,7 @@
 """CSV results-summary writer for RushTI runs.
 
 Writes a small two-row CSV summarizing a run's outcome (PID, executions,
-fails, start/end times, duration, overall success). The path is supplied
+fails, start/end times, duration, overall success, status). The path is supplied
 by the caller (typically from the ``--result`` CLI arg or the
 ``[defaults] result_file`` setting).
 """
@@ -24,8 +24,14 @@ def create_results_file(
     start_time: datetime,
     end_time: datetime,
     elapsed_time: timedelta,
+    status: str,
 ) -> None:
     """Write a one-record CSV summary of the run to ``result_file``.
+
+    ``status`` is the run outcome: ``Success`` (every task succeeded),
+    ``Failed`` (at least one task failed), ``Aborted`` (stopped on an error)
+    or ``TimedOut`` (a run phase went past its time limit). It's the last
+    column, so readers of the older columns are unaffected.
 
     Creates the parent directory if needed. The CSV uses ``|`` as the
     field separator (matching legacy convention) and ensures the
@@ -39,6 +45,7 @@ def create_results_file(
         "End",
         "Runtime",
         "Overall Success",
+        "Status",
     )
     record = (
         os.getpid(),
@@ -48,6 +55,7 @@ def create_results_file(
         end_time,
         elapsed_time,
         overall_success,
+        status,
     )
 
     makedirs_shared(str(Path(result_file).parent))

@@ -14,6 +14,7 @@ from rushti.app_paths import add_config_arg
 from rushti.checkpoint import find_checkpoint_for_taskfile, load_checkpoint
 from rushti.logging_setup import add_log_level_arg, apply_log_level
 from rushti.settings import load_settings
+from rushti.timeouts import add_timeout_args, timeout_argv
 
 APP_NAME = "RushTI"
 
@@ -89,6 +90,7 @@ Examples:
     )
     add_config_arg(parser)
     add_log_level_arg(parser)
+    add_timeout_args(parser)
 
     args = parser.parse_args(argv[2:])
     apply_log_level(args.log_level)
@@ -207,6 +209,8 @@ Examples:
 
     if args.force:
         resume_argv.append("--force")
+
+    resume_argv.extend(timeout_argv(args))
 
     # Set sys.argv for main() to parse standard args
     sys.argv = resume_argv
