@@ -61,7 +61,7 @@ Common execution settings that control basic RushTI behavior.
 |---------|------|---------|-------------|
 | `max_workers` | int | `4` | Maximum number of parallel workers. Valid range: 1--100. Recommended: start at 4, increase based on TM1 server capacity. |
 | `retries` | int | `0` | Number of retry attempts for failed TI process executions. Valid range: 0--10. Retries use exponential backoff (1s, 2s, 4s, ...). |
-| `result_file` | str | `""` (empty) | CSV output path for execution summary. Empty string means no CSV is created. |
+| `result_file` | str | `""` (empty) | CSV output path for execution summary. Empty string means no CSV is created. Written on every run outcome; an aborted run reports `Overall Success` = `False`. The last column, `Status`, says how the run ended: `Success`, `Failed` (at least one task failed), `Aborted` (stopped on an error, including the exclusive-mode wait running out) or `TimedOut` (a [run phase time limit](../features/timeouts.md) was hit). |
 | `mode` | str | `norm` | Default execution mode (`norm` or `opt`) for **cube reads** (`--tm1-instance`). A cube read cannot auto-detect its mode, so this value (or the `--mode` CLI override) decides whether the `predecessors` measure is honoured (`opt`) or the `wait` measure drives sequencing (`norm`). **Ignored for file sources**, where the mode is auto-detected from file content. See [Choosing the mode for cube reads](../features/tm1-integration.md#choosing-the-mode-for-cube-reads). |
 
 **Overridable via CLI:** `--max-workers` / `-w`, `--retries` / `-r`, `--result` / `-o`, `--mode` / `-m`
@@ -181,6 +181,25 @@ RushTI identifies sessions using the TM1 session context field:
 **Overridable via CLI:** `--exclusive` / `-x`, `--force` / `-f` (bypasses checks)
 
 **Overridable via JSON task file:** `exclusive` (boolean in settings section)
+
+---
+
+### [timeouts]
+
+Optional time limits for each run phase, in seconds. A run phase that goes past its limit is a hang: RushTI writes the result file with `Status` = `TimedOut`, keeps the checkpoint, logs out of TM1 and exits with code 1. See [Run Phase Time Limits](../features/timeouts.md).
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `task_retrieval` | int | `0` (no limit) | Connecting to the source instance and reading the taskfile from the `rushti` cube. Only used for TM1 sources (`--tm1-instance`). |
+| `connection` | int | `0` (no limit) | Connecting to the TM1 instances the tasks run on, until the first task starts. Includes parameter expansion and checking that the processes exist. The exclusive-mode wait doesn't count. |
+| `task_execution` | int | `0` (no limit) | From the first task starting to the last task finishing, including the logout from the task instances. |
+| `push_results` | int | `0` (no limit) | Connecting to the results target, uploading the results and running `}rushti.load.results`. Only used when `push_results = true`. |
+
+`0` or an empty value means no limit. Negative or non-integer values are an error.
+
+**Overridable via CLI:** `--timeout-task-retrieval`, `--timeout-connection`, `--timeout-task-execution`, `--timeout-push-results`
+
+**Overridable via JSON task file:** `timeouts` (object in the settings section, e.g. `{"connection": 60}`)
 
 ---
 
@@ -367,6 +386,19 @@ Copy this template to `config/settings.ini` and uncomment the settings you want 
 # Valid range: 0-3600
 # Default: 600 (10 minutes)
 # timeout = 600
+
+# ------------------------------------------------------------------------------
+# [timeouts] - Run phase time limits (hang detection)
+# ------------------------------------------------------------------------------
+[timeouts]
+
+# Seconds each run phase may take before RushTI treats it as a hang, writes
+# Status = TimedOut to the result file and exits. 0 or empty = no limit.
+# Default: no limit for every phase
+# task_retrieval = 60
+# connection = 60
+# task_execution = 3600
+# push_results = 120
 
 # ------------------------------------------------------------------------------
 # [resume] - Checkpoint and resume feature

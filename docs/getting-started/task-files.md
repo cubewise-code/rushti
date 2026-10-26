@@ -97,9 +97,9 @@ See [TM1 Integration](../features/tm1-integration.md) for the full setup guide, 
 
 JSON is RushTI's native format — internally, all TXT files are converted to JSON before execution. Use JSON when you need:
 
-- **Embedded settings** — override `optimization_algorithm`, logging, or retry behavior per task file
+- **Embedded settings** — override `optimization_algorithm`, logging, retry behavior or [run phase time limits](../features/timeouts.md) (`settings.timeouts`) per task file
 - **Rich metadata** — `workflow` (required for statistics, optimization, and TM1 integration)
-- **Per-task options** — `timeouts`, `cancel_at_timeout`, `safe_retry`, `require_predecessor_success`
+- **Per-task options** — `timeout`, `cancel_at_timeout`, `safe_retry`, `require_predecessor_success`
 - **Stages** — group tasks into logical phases
 
 ```json
@@ -148,6 +148,9 @@ JSON is RushTI's native format — internally, all TXT files are converted to JS
 | `process` | Yes | TI process name to execute |
 | `parameters` | No | Process parameters as key-value pairs |
 | `predecessors` | No | List of task IDs that must complete before this task starts |
+
+!!! warning "TM1 v12: `cancel_at_timeout` doesn't cancel the process"
+    On TM1 v12 and later the TI process is **not** cancelled when a task's `timeout` expires. RushTI cancels through TM1py, and TM1py's `ThreadService` blocks itself on servers v12 and later; its `MonitoringService` thread methods just call `ThreadService`. So RushTI stops waiting while the process keeps running on the server.
 
 !!! info "JSON is recommended when you want to customize"
     For quick runs and simple workflows, TXT files work great. Switch to JSON when you need metadata, embedded settings, stages, timeouts, or any of the advanced features covered in [Advanced Task Files](../advanced/advanced-task-files.md).

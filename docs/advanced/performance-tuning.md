@@ -315,6 +315,13 @@ rushti stats list tasks --workflow daily-etl
 }
 ```
 
+!!! warning "TM1 v12: `cancel_at_timeout` doesn't cancel the process"
+    On TM1 v12 and later the TI process is **not** cancelled. RushTI cancels through TM1py, and TM1py's `ThreadService` blocks itself on servers v12 and later; its `MonitoringService` thread methods just call `ThreadService`. So RushTI stops waiting and marks the task as failed, while the process keeps running on the server.
+
+### Limiting a Whole Run
+
+Per-task timeouts don't help when RushTI is stuck outside a task: a login blocked by a lock, a taskfile read that never returns, or a results push into a locked cube. For those, set [run phase time limits](../features/timeouts.md) so the run ends with `Status` = `TimedOut` instead of blocking the TI process that called it.
+
 ---
 
 ## EWMA Tuning

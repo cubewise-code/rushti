@@ -524,6 +524,45 @@ class TestCheckpointManager(unittest.TestCase):
                 os.unlink(taskfile_path)
 
 
+class TestCheckpointManagerThreadSafety(unittest.TestCase):
+    """A hung run saves the checkpoint from the watchdog thread (issue #124)
+    while the scheduler may still be recording task results."""
+
+    def test_save_while_tasks_are_recorded_from_another_thread(self):
+        import threading
+        from unittest.mock import patch
+
+        task_ids = [str(i) for i in range(20000)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            taskfile_path = os.path.join(tmpdir, "tasks.json")
+            with open(taskfile_path, "w") as f:
+                json.dump({"version": "2.0", "tasks": []}, f)
+            manager = CheckpointManager(
+                checkpoint_dir=tmpdir,
+                taskfile_path=taskfile_path,
+                workflow="thread-safety",
+                task_ids=task_ids,
+                checkpoint_interval=3600,  # only the explicit saves below
+                enabled=True,
+            )
+
+            def record():
+                for task_id in task_ids:
+                    manager.mark_skipped(task_id)
+
+            writer = threading.Thread(target=record)
+            # A failed save is only logged as a warning, so watch for that.
+            # A fixed number of saves: looping until the writer is done can
+            # starve it of the lock.
+            with patch("rushti.checkpoint.logger.warning") as warning:
+                writer.start()
+                for _ in range(20):
+                    manager.force_save()
+                writer.join(30)
+            self.assertFalse(writer.is_alive())
+            warning.assert_not_called()
+
+
 class TestResumeCliArguments(unittest.TestCase):
     """Tests for resume CLI argument handling.
 

@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from rushti._shlex_utils import shlex_split_literal_backslashes
 from rushti.messages import TRUE_VALUES
+from rushti.settings import RUN_PHASES
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ class TaskfileSettings:
     tm1_instance: Optional[str] = None
     stage_order: Optional[List[str]] = None
     stage_workers: Optional[Dict[str, int]] = None
+    timeouts: Optional[Dict[str, int]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result = {}
@@ -119,6 +121,7 @@ class TaskfileSettings:
             tm1_instance=data.get("tm1_instance"),
             stage_order=data.get("stage_order"),
             stage_workers=data.get("stage_workers"),
+            timeouts=data.get("timeouts"),
         )
 
 
@@ -514,11 +517,31 @@ def validate_taskfile(data: Dict[str, Any]) -> List[str]:
         if "retries" in settings:
             if not isinstance(settings["retries"], int) or settings["retries"] < 0:
                 errors.append("settings.retries must be a non-negative integer")
+        if "timeouts" in settings:
+            errors.extend(_validate_timeouts(settings["timeouts"]))
 
     # Validate metadata
     if "metadata" in data and not isinstance(data["metadata"], dict):
         errors.append("'metadata' must be an object")
 
+    return errors
+
+
+def _validate_timeouts(timeouts: Any) -> List[str]:
+    """Validate ``settings.timeouts``: run phase name -> seconds (0 = no limit)."""
+    if not isinstance(timeouts, dict):
+        return ["settings.timeouts must be an object"]
+
+    errors = []
+    for phase, seconds in timeouts.items():
+        if phase not in RUN_PHASES:
+            errors.append(
+                f"settings.timeouts: unknown run phase '{phase}'. "
+                f"Valid phases: {', '.join(RUN_PHASES)}"
+            )
+        # bool is an int subclass; reject it explicitly
+        elif not isinstance(seconds, int) or isinstance(seconds, bool) or seconds < 0:
+            errors.append(f"settings.timeouts.{phase} must be a non-negative integer (seconds)")
     return errors
 
 

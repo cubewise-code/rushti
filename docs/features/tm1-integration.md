@@ -180,6 +180,17 @@ default_rushti_cube = rushti
 
 This calls the `}rushti.load.results` TI process on the target instance after uploading the CSV file. The process receives `pSourceFile` (the uploaded CSV filename, with `.blb` extension for TM1 < v12) and `pTargetCube` (the configured cube name) as parameters.
 
+### Limiting the Results Push
+
+Pushing results into a locked `rushti` cube can block. To stop waiting after a set time, give the `push_results` run phase a limit (in seconds). It covers connecting to the results target, uploading the CSV and running `}rushti.load.results`:
+
+```ini
+[timeouts]
+push_results = 120
+```
+
+Or per run: `--timeout-push-results 120`. When the limit is hit, RushTI writes `Status` = `TimedOut` to the result file, logs out of the results target and exits with code 1. A `}rushti.load.results` that was already running carries on to completion on the server. The tasks have all finished by then, and their stats are already in the local database. See [Run Phase Time Limits](timeouts.md).
+
 ### Using the Sample Workflows
 
 The build command creates sample workflows you can run immediately to verify the setup:
@@ -404,6 +415,23 @@ ExecuteCommand(cmd, 1);
     - **"Config file not found"** — The TM1 service runs under a different user context and may not see user-level environment variables. Set `RUSHTI_DIR` as a **system** environment variable (System Properties → Advanced → Environment Variables → System Variables).
     - **Always use `cmd /c`** — TM1's `ExecuteCommand` does not invoke a shell by default. Wrapping with `cmd /c` ensures the command runs in a proper shell environment.
     - **Use `ExecuteCommand(cmd, 1)`** — The second parameter `1` makes TM1 wait for RushTI to complete before continuing the TI process.
+
+#### Reading the Outcome and Stopping a Hung Run
+
+`ExecuteCommand` can't pass RushTI's exit code back to the TI process, so pass `--result` and read the file afterwards. Its last column, `Status`, is `Success`, `Failed`, `Aborted` or `TimedOut`.
+
+With `ExecuteCommand(cmd, 1)` the calling TI waits as long as RushTI runs, so a RushTI that hangs (a login blocked by a lock, a task deadlocked with the caller) blocks it too. Set [run phase time limits](timeouts.md) so a hung run ends with `Status` = `TimedOut`:
+
+```
+cmd = 'cmd /c C:\rushti\rushti.exe run --tm1-instance tm1srv01 --workflow DailyETL --result C:\rushti\results\DailyETL.csv --timeout-task-retrieval 60 --timeout-connection 60 --timeout-task-execution 7200';
+ExecuteCommand(cmd, 1);
+```
+
+!!! warning "Result file: new `Status` column"
+    `Status` was added at the end of the row. If your TI reads the result file with a fixed set of variables, check that it still accepts the extra trailing column.
+
+!!! warning "TM1 v12: per-task `cancel_at_timeout` doesn't cancel the process"
+    On TM1 v12 and later the TI process is **not** cancelled when a task's `timeout` expires. RushTI cancels through TM1py, and TM1py's `ThreadService` blocks itself on servers v12 and later; its `MonitoringService` thread methods just call `ThreadService`. So RushTI stops waiting while the process keeps running on the server.
 
 !!! note "Log File Location"
     When launched from `ExecuteCommand`, the process working directory is typically `C:\windows\system32`. RushTI automatically resolves relative log file paths (configured in `logging_config.ini`) against the application directory (`RUSHTI_DIR` or the exe directory), so `rushti.log` is created in the correct location regardless of the working directory. See [Logging](../advanced/settings-reference.md#logging) for details.
