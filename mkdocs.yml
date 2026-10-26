@@ -16,6 +16,7 @@ copyright: |
 # Theme configuration
 theme:
   name: material
+  custom_dir: overrides  # adds the Matomo and Lead Forensics trackers (overrides/main.html)
   language: en
   logo: assets/images/rushti/RushTi2026_bluesqr.svg
   favicon: assets/images/rushti/RushTi2026_bluesqr.svg
