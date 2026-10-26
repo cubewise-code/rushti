@@ -35,6 +35,19 @@ updates:
   # updates, and the Tailwind major broke the build (its PostCSS plugin
   # moved to @tailwindcss/postcss), blocking the whole batch. Each major
   # needs its own migration, so each gets its own PR.
+  #
+  # The exception is React: react, react-dom and their type packages must
+  # move together or `npm ci` fails on peer dependencies. Left ungrouped,
+  # the 19 major arrived as a react-dom-only PR (#201) that could not
+  # install, so React majors get a group of their own. It is listed first
+  # because a dependency goes to the first group it matches; React minors
+  # and patches don't match it and fall through to the homepage group.
+  #
+  # tailwindcss 4 and lucide-react 1 are ignored until we plan those
+  # migrations: Tailwind 4 moved its PostCSS plugin to @tailwindcss/postcss
+  # (#190), and lucide-react 1 dropped the brand icons, including the
+  # `Github` icon the homepage imports in three components (#200). Remove
+  # the entry when starting the migration.
   - package-ecosystem: "npm"
     directory: "/site/homepage"
     schedule:
@@ -43,7 +56,22 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "deps"
+    ignore:
+      - dependency-name: "tailwindcss"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "lucide-react"
+        update-types:
+          - "version-update:semver-major"
     groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+        update-types:
+          - "major"
       homepage:
         patterns:
           - "*"
